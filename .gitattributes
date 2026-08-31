@@ -1,0 +1,7 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+# cmd resolves `call :label` by byte offset - LF-only .bat files break it
+# nondeterministically (see testing/FINDINGS.md #21). Always CRLF.
+*.bat text eol=crlf
+# The VBS hook shim is edited by tooling too - same CRLF discipline
+*.vbs text eol=crlf

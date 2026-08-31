@@ -1,0 +1,353 @@
+# wildscan — ROV Photogrammetry Pipeline for RealityScan 2.2
+
+Processing pipeline for underwater ROV photogrammetry: extract and
+georeference dive imagery, batch it, and drive **RealityScan 2.2**
+(Epic Games, formerly RealityCapture) through its CLI to align images and
+generate textured models.
+
+## Requirements
+
+- Windows 10/11 (RealityScan is Windows-only; the data-prep scripts are
+  Windows-oriented too)
+- RealityScan 2.2 — the scripts auto-detect the executable under
+  `C:\Program Files\Epic Games\RealityScan_2.2\` (and fall back to 2.1/2.0
+  and `Capturing Reality` install folders). Override with the
+  `RS_EXECUTABLE` environment variable or `"realityscan": {"executable": ...}`
+  in `rs_settings.json`.
+- **Python 3.12 or newer** (developed and run on `py -3.13`). The pinned
+  dependency set requires it: `numpy>=2.5` and `scipy>=1.18` are themselves
+  Python 3.12+ only, so an older interpreter cannot resolve the install.
+- One or more CUDA GPUs. RealityScan uses **all** GPUs by default; see
+  [Multi-GPU](#multi-gpu) to pin instances to specific GPUs.
+
+## Quickstart
+
+Every Python dependency is declared in `pyproject.toml`; installing the
+project installs them at the versions the shipped deliverables were built on.
+
+```
+git clone https://github.com/wild-technology/wildscan.git
+cd wildscan
+py -3.13 -m venv .venv
+.venv\Scripts\activate
+py -3.13 -m pip install -e ".[dev]"
+```
+
+Verify the checkout before running anything against real data:
+
+```
+py -3.13 -m pytest
+```
+
+Then start the TUI, which is the product entry point:
+
+```
+wildscan <workspace>
+```
+
+`py -3.13 -m wildscan <workspace>` is equivalent, and `py -3.13 main.py` runs
+the lower-level interactive module chain directly.
+
+Installing without the test suite is `pip install -e .`; `pip install -e
+".[tui]"` installs only the console UI (Textual + Rich) without the geo and
+imaging stack, for a machine that inspects workspaces but does not process
+them. `requirements.txt` is kept in step with `pyproject.toml` for anyone
+who prefers `pip install -r requirements.txt`.
+
+> RealityScan itself is a separate Windows install from Epic Games and is not
+> a pip dependency. Nira publishing additionally needs the `niraclient`
+> checkout (Enterprise plan) pointed at by `NIRACLIENT_DIR` — see
+> `publish_nira.py`.
+
+## Repository layout
+
+| Path | Purpose |
+|---|---|
+| `main.py` | Interactive orchestrator: Extract Images → Georeference → Preprocess Images → Batch Directory → RealityScan Alignment (per-zone `AlignZone.bat`; `RS_MODULES`/`RS_NO_INTERACTIVE` env vars for non-interactive runs; a failed module stops the chain) |
+| `wildscan/` | WildScan, the interactive TUI portal over the whole pipeline (`py -3.13 -m wildscan <workspace>`): session setup, resume-aware stage picking, parameter wizard, live run screen, pipeline census + final-components browser — always launching stages through the canonical drivers |
+| `merge_zones.py` | Iterative component-merge driver: imports every per-zone component into a fresh scene and escalates mechanism/flags (georef merge → align+rematch → +High overlap) until the registration target is met; writes `merge_report.json` |
+| `grow_zone.py` | Within-zone component growth driver: on a zone's ORIGINAL aligned scene, checkpointed global re-align → rigid `-mergeComponents` → per-component grow passes, each accepted or rolled back on the never-shrink invariant; writes `grow_report.json` |
+| `run_models.py` | Models every final component of a workspace's assembly via `GenerateModel.bat`, scale-gated (metric-scale oracle per component) and smallest-first; resumable via `models_report.json` |
+| `publish_batch.py` | Publishes every exported component (`exports/<comp>/obj`) to Cesium ion and/or Nira — whichever credentials are present — by driving the two publishers below; writes `publish_report.json` |
+| `publish_cesium.py` | Uploads one mesh export (OBJ) to Cesium ion as a tiled 3D asset via ion's REST flow — the scripted equivalent of the GUI-only "Share to Cesium ion" button |
+| `publish_nira.py` | Uploads one export to Nira through the official `niraclient` (Enterprise plan required), building the explicit typed file list Nira's docs recommend |
+| `modules/camera_registry.py` | Single source of truth for the four physical rig cameras (lens, calibration groups, XMP content, filename families) |
+| `geoall.py` | Standalone georeferencing (ROV nav CSV → RealityScan flight logs). The most up-to-date georeferencing implementation. |
+| `poses2flightlog.py` | Post-alignment: rewrite camera locations back to UTM from the computed poses (XMP sidecars), producing a refined flight log + per-image nav-error QC |
+| `decimator.py` | Copy a percentage of images to a new folder (dataset thinning) |
+| `timestamp_rename.py` | Rename `cam*_TIMESTAMP.jpg` → `TIMESTAMP_cam*.jpg` and validate JPEG integrity (was the misnamed `masking.py` — it never masked; renamed 2026-08-07) |
+| `organize_by_date.py` | Sort images into per-date subfolders (was `test.py`) |
+| `module_base/` | Framework: `RSModule` base class, `Parameter`, `SettingsStore` |
+| `modules/realityscan_interface/` | Everything that talks to RealityScan — see below |
+| `modules/extract_images/`, `modules/georeference/`, `modules/preprocess_images/`, `modules/image_batcher/` | Pipeline modules used by `main.py` |
+| `archive/colmap/` | Retired COLMAP scripts (reference only) — the live COLMAP line is the separate `colmap_studio` project; see `docs/COLMAP_CROSSOVER.md` |
+| `flightlogs.xml`, `sensorsdb.xml` | RealityScan reference data |
+| `docs/code-review-2026-07.md` | What the first-machine validation changed and why (read before trusting older assumptions about the CLI layer) |
+
+### Preprocessing default
+
+`Preprocess Images` applies CLAHE (clip 2.0, 8×8 tiles, L channel in LAB)
+to copies under `<output>/preprocessed_images`, leaving the originals in
+place — align on the processed copies, texture from the originals. The
+default was A/B-measured on a zone_9 400-image subset (2026-07-21,
+`testing/run_zone9_tests.py`): baseline registered 0% (no component at
+all), CLAHE 2.0/8×8 registered 59.8% and beat every neighboring clip/tile
+setting; gray-world white balance *reduced* registration (~34%) and is
+off by default.
+
+### Known duplication
+
+`geoall.py` (standalone) and `modules/georeference/georeference_images.py`
+(pipeline module) implement the same georeferencing workflow. The standalone
+is the newer, faster implementation (multiprocessing + binary-search
+timestamp matching); the module is the version wired into `main.py`. Prefer
+`geoall.py` for standalone runs. When the module needs improvements, port
+them from `geoall.py` rather than diverging further.
+
+## Persisted settings (`rs_settings.json`)
+
+All standalone scripts and `main.py` prompts remember your last answers.
+Values are stored in `rs_settings.json` at the repo root (gitignored,
+human-editable) via `module_base/settings_store.py`, and offered as the
+default on the next run — press Enter to reuse them.
+
+Reserved section `"realityscan"`:
+
+```json
+{
+  "realityscan": {
+    "executable": "C:\\Program Files\\Epic Games\\RealityScan_2.2\\RealityScan.exe",
+    "instance_name": "RS1",
+    "gpu_devices": "0,1"
+  }
+}
+```
+
+All keys are optional; omit the file entirely for auto-detection and
+defaults.
+
+## How RealityScan execution works (read before touching it)
+
+**Every** RealityScan run goes through one execution layer —
+`modules/realityscan_interface/realityscan_cli.py` on the Python side and
+the shared `:run` pattern in the `RS_CLI/Scripts/*.bat` workflow scripts.
+Do not add new code that shells out to RealityScan directly; reuse this
+layer so monitoring and race-condition handling stay uniform.
+
+The design (informed by hard-won lessons — see
+[Lessons learned](#lessons-learned)):
+
+1. `startRealityScan.bat` boots one persistent **headless** instance named
+   `RS1` (`-setInstanceName`), or attaches to it with a fresh scene if it
+   already exists, and waits for readiness by polling `-getStatus` (bounded
+   at 120 s).
+2. The instance is started with RealityScan's built-in monitoring hooks
+   (all marker files are namespaced per instance so parallel instances
+   stay isolated):
+   - `-writeProgress Errors\progress_<instance>.txt 600` — progress
+     stream, tailed live by `RealityScanCLI` for logging and stall
+     warnings;
+   - `appProcessAction=ExecuteProgram` + `appProcessExecCmd` →
+     `Errors\ErrorWriter.bat` — RealityScan itself reports every finished
+     process (`$(processResult)`, `$(processId)`, `$(processDuration)`).
+     Completions append to `results_<instance>.log`; failures (result
+     codes other than 0/1) append to `errors_<instance>.txt`;
+   - `-silent <Errors dir>` so crash dialogs can never hang an unattended
+     run (a crash exits with code 3 and a minidump instead).
+3. Workflow scripts execute every operation through the `:run` subroutine:
+   `-delegateTo <instance> <cmd>` → grace delay → `-waitCompleted` twice
+   with a second grace between them (`-waitCompleted` alone can return
+   prematurely before the instance picks the queued command up) → abort
+   the workflow if `errors_<instance>.txt` is non-empty. Do NOT gate on
+   `results_<instance>.log` growth: RealityScan 2.2 emits heartbeat
+   processes through the same trigger, so "the log grew" does not mean
+   "our command finished" (that check raced ahead of a running `-align`
+   and was removed). The results log is history/diagnostics; the errors
+   marker is the abort trigger. One command per delegation, always.
+4. `RealityScanCLI.run_batch_script()` wraps the whole workflow:
+   - a per-instance **lock file** (with PID liveness check) prevents two
+     orchestrators from driving the same instance name concurrently;
+   - a leftover instance from an interrupted run is shut down (never
+     silently attached to) before the workflow starts;
+   - marker files are cleared before each run so stale state can never be
+     misread, and read back only **after** verified shutdown so a failure
+     in the final save can never be missed;
+   - **no overall timeout** — alignment/reconstruction on large datasets
+     legitimately runs 10+ hours; a stall only logs a warning after 2 h of
+     silence;
+   - after the workflow ends, the instance is verified to have actually
+     shut down via `-getStatus` before the next run may start, so
+     consecutive runs can never share a scene.
+5. Completion is never inferred from process names. (Historical bug: the
+   old code polled `tasklist` for `RealityCapture.exe` after the executable
+   had been renamed `RealityScan.exe`, so the wait always returned
+   immediately and raced ahead of the CLI.)
+6. **Boot mode refuses `*` as an instance name.** `*` means "first
+   available instance" and a GUI/Epic-Launcher RealityScan answers it —
+   so booting against it would `-quit` and then `-newScene
+   -deleteAutosave` somebody's live interactive scene. Only *attach* mode
+   (`finish_model.py` / `run_attach_script`) accepts `*`; it never boots
+   and never resets.
+7. **Workflow arguments are validated before they reach `cmd`.** Python's
+   `list2cmdline` quotes only on whitespace and `cmd` re-parses even a
+   quoted argument, so `& ^ | < > ( ) = , ; % ! " ` ` in a path are
+   silently split, eaten, or *executed* — with the process still
+   returning 0. `RealityScanCLI` raises a `ValueError` naming the
+   argument instead. If an expedition folder is called `NA167, dive 2` or
+   `Wreck & Debris`, rename it or pass the value through a file/env var
+   (hard rule 8).
+
+### The input image folder is WRITTEN INTO
+
+Alignment does not treat the folder you hand it as read-only, and this
+matters when you point the pipeline at your own imagery rather than a
+pipeline-made zone tree:
+
+- the in-session identity harvest **MOVES** every pose-bearing `.xmp`
+  sidecar out of the tree into `<output>/identity_r<K>` and does not put
+  it back (leftover pose sidecars auto-import as exact-pose priors on any
+  later add — bug B7);
+- remaining sidecars are **rewritten** to calibration-only content, or
+  **deleted** when the filename matches no known camera;
+- missing calibration sidecars are **regenerated** for recognised
+  cameras.
+
+A run whose input folder already contains pose sidecars logs a loud
+warning naming the count before anything moves. Copy the folder first if
+those sidecars are yours.
+
+### Multi-GPU
+
+RealityScan uses every CUDA GPU by default (`sfmGPUAcceleration=true` in
+`Metadata/AlignmentParams.xml`) — a single instance already benefits from
+the multi-GPU machine with no configuration.
+
+To run **parallel instances pinned to specific GPUs** (e.g. two zones at
+once), give each its own instance name and GPU set:
+
+- Python: `RealityScanCLI(logger, instance_name="RS_GPU0")` and
+  `run_batch_script(..., gpu_devices="0")`, or set `instance_name` /
+  `gpu_devices` in `rs_settings.json`;
+- Batch: set `RS_INSTANCE=RS_GPU0` and `RS_GPU_DEVICES=0` before calling a
+  workflow script (`RS_GPU_DEVICES` is exported as `CUDA_VISIBLE_DEVICES`
+  for the launched instance).
+
+The per-instance lock makes concurrent same-instance runs fail fast instead
+of corrupting each other.
+
+## Lessons learned
+
+Collected from prior iterations of this repo (some of which only survive in
+git history — see `git log`):
+
+- **Delegation pickup race**: `-waitCompleted` returns prematurely when
+  called before the instance has picked up the queued command. Mitigation
+  (the `:run` pattern): `-delegateTo` → grace delay → `-waitCompleted`
+  twice with a second grace between them. Never infer completion from
+  `results_<instance>.log` growth — RealityScan 2.2 emits heartbeat
+  processes through the same trigger, so a log-growth gate races ahead of
+  a running `-align` (that check existed and was removed). The results
+  log is history/diagnostics; `errors_<instance>.txt` is the abort
+  trigger.
+- **No operation timeouts**: 10+ hour alignments are normal on these
+  datasets. Only *startup* (120 s) and *shutdown* (300 s) are bounded.
+- **Never detect completion by process name** — see the
+  `RealityCapture.exe`/`RealityScan.exe` bug above.
+- **Suppress dialogs for unattended runs**: `-silent` + `appAutoSaveMode=false`;
+  a modal dialog on a headless box hangs the pipeline forever.
+- **`-set` keys changed with the RealityScan rename**: the app settings are
+  `appQuitOnError`, `appProcessAction`, `appProcessExecCmd`,
+  `appProcessActionTime` — the legacy `RealityCapture*` key names the old
+  scripts used are not valid in 2.x.
+- **Network drives are slow for RealityScan file operations** — export to a
+  local disk first, then copy to network storage.
+- **One instance, one orchestrator** — enforced by the lock file.
+
+## Typical workflows
+
+**WildScan** — the interactive console over the whole pipeline (Wild
+Technology branding, cross-platform; RealityScan stages run on Windows,
+inspection/exports review works anywhere). It censuses a results folder,
+shows every stage as done/partial/pending, previews exactly what a stage
+will execute (command, settings, estimate) before launching it through the
+canonical drivers, streams progress, and browses the final components with
+their measured scales, models and exports:
+
+```
+py -3.13 -m pip install -e ".[tui]"
+py -3.13 -m wildscan F:/na156_h2024_v2
+```
+
+Deliverable export (OBJ by parts per Nira guidance, FBX by parts, ultra-dense
+colored PLY) and publishing:
+
+```
+modules\realityscan_interface\RS_CLI\Scripts\ExportDeliverables.bat "D:\dive\final_assembly\assembly\Assembly.rsproj" "D:\dive\exports" "D:\dive\exports\components.names"
+py -3.13 publish_cesium.py --name "IN-401 hull" --dir D:/dive/exports/<comp>/obj --input-crs EPSG:32604
+py -3.13 publish_nira.py --name "IN-401 hull" --dir D:/dive/exports/<comp>/obj --niraclient C:/tools/niraclient
+```
+
+(Cesium ion and Nira both recommend the OBJ; Nira scripted upload needs an
+Enterprise-plan API key, and Nira does not accept PLY point clouds — LAS/
+LAZ/E57 only.)
+
+Full interactive pipeline (extraction through per-zone alignment):
+
+```
+python main.py
+```
+
+Merge the per-zone components, then build the model on the merged result:
+
+```
+python merge_zones.py --components_root D:\dive\aligned_components --images_root D:\dive\batched_images_by_zone --output D:\dive\merged
+modules\realityscan_interface\RS_CLI\Scripts\GenerateModel.bat "D:\dive\merged\attempt_merge_georef\Merged.rsproj" "Merged"
+```
+
+### Finishing a model in a running instance
+
+`ModelToFinal.bat` takes an **already-computed** mesh through the model
+back half on its own — texture → (optional simplify) → unwrap →
+reproject → export → save — against a scene open in a **running**
+instance (e.g. a reconstruction computed interactively in the GUI). It
+never calculates a mesh and never creates a scene. Canonical example
+(from `modules\realityscan_interface\RS_CLI\Scripts`):
+
+```
+ModelToFinal.bat "*" "<outdir>" <name> 4x8k true objmetric false false
+```
+
+Arguments: target instance (`*` = "first available" — the way to reach a
+GUI-launched instance, which answers no named lookup), export directory,
+model name, texture preset (`4x8k` = the default 8K cap), simplify
+true/false, export format (`objmetric` exports the same OBJ as `obj` but
+at **true scale 1.0** instead of the stock preset's Unreal-oriented
+scale 100), cull polygons, correct colors. Set the `RS_SAVE_PATH`
+environment variable to save the finished project to an explicit path
+(bare `-save` writes back to the project's original location, which a
+scene built interactively and never saved does not have).
+
+Safety property: this workflow **attaches** to the running instance and
+deliberately never calls `startRealityScan.bat` — that script issues
+`-newScene -deleteAutosave` when it finds an instance already running,
+which would destroy the very scene this workflow exists to finish.
+
+Standalone zone alignment (from `modules/realityscan_interface/RS_CLI/Scripts`):
+
+```
+AlignZone.bat "D:\zones\zone_01" "D:\dive\aligned_components\zone_01" "D:\zones\zone_01\flight_log_4Q_UTM.txt" "..\Metadata\FlightLogParams.xml" zone_01 50
+```
+
+Standalone georeferencing:
+
+```
+python geoall.py
+```
+
+All prompts default to your previous answers (see `rs_settings.json`).
+Set `RS_HEADLESS=0` to boot the RealityScan instance with its GUI
+visible; alignment settings always come from
+`modules/realityscan_interface/RS_CLI/Metadata/AlignmentParams.xml`,
+never instance defaults. Design
+rationale for the settings and the merge strategy:
+`docs/settings-evaluation-2026-07.md`.

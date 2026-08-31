@@ -1,0 +1,45 @@
+/.idea
+/__pycache__
+/.vscode
+/.vs
+
+/module_base/__pycache__
+/modules/__pycache__
+/modules/extract_images/__pycache__
+/modules/georeference/__pycache__
+/modules/image_batcher/__pycache__
+/modules/realityscan_interface/__pycache__
+/modules/preprocess_images/__pycache__
+
+# Runtime marker files written by the RealityScan instance / ErrorWriter hook
+# (namespaced per instance, e.g. errors_RS1.txt)
+/modules/realityscan_interface/RS_CLI/Errors/errors*.txt
+/modules/realityscan_interface/RS_CLI/Errors/progress*.txt
+/modules/realityscan_interface/RS_CLI/Errors/results*.log
+/modules/realityscan_interface/RS_CLI/Errors/*.lock
+/modules/realityscan_interface/RS_CLI/Errors/*.dmp
+/modules/realityscan_interface/RS_CLI/Models/
+
+# Per-user persisted prompt defaults (see module_base/settings_store.py)
+/rs_settings.json
+/rs_settings.json.corrupt
+
+main.py.lprof
+/testing/__pycache__
+/modules/realityscan_interface/RS_CLI/Errors/*.dmp.metadata
+/modules/realityscan_interface/RS_CLI/Errors/expected_*.txt
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# publish_cesium.py staging (local-frame mesh copies) and the ion probe
+_cesium_local/
+_probe_cesium/
+
+# Packaging / build artifacts
+*.egg-info/
+build/
+dist/
+.venv/
+venv/

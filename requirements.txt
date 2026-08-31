@@ -1,0 +1,38 @@
+# wildscan pipeline dependencies.
+#
+# `pyproject.toml` is the source of truth; this file is kept in step with it
+# by hand for anyone who prefers `pip install -r requirements.txt`. Prefer:
+#
+#     py -3.13 -m pip install -e ".[dev]"
+#
+# Requires Python 3.12+ (numpy>=2.5 and scipy>=1.18 are 3.12-only). The
+# pipeline is developed and run on `py -3.13`.
+#
+# Floors = the HONEYBADGER box the H2023/H2024/ON2026 deliverables were built
+# on (2026-08-08). RealityScan 2.2 itself is a separate Windows install
+# (Epic Games) and is not a pip dependency; Nira publishing needs the
+# `niraclient` checkout (Enterprise plan) via NIRACLIENT_DIR.
+boto3>=1.40
+geopandas>=1.1
+inquirer>=3.4
+matplotlib>=3.11
+numpy>=2.5
+opencv-python>=5.0
+pandas>=3.0
+Pillow>=12.3
+pyproj>=3.7
+requests>=2.32
+rich>=15.0
+scikit-learn>=1.9
+scipy>=1.18
+seaborn>=0.13
+shapely>=2.1
+textual>=8.2
+tqdm>=4.69
+utm>=0.8
+
+# Test suite (the [dev] extra in pyproject.toml).
+pytest>=9.1
+
+# Reference-only scripts under archive/ (the [archive] extra).
+psutil>=7.0
