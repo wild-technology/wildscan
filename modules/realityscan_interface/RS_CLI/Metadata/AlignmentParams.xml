@@ -1,0 +1,43 @@
+<Configuration id="{E377B69D-FB4B-4833-9CBE-FF747B7AF6D9}">
+  <entry key="s237l" value="0.5"/>
+  <entry key="sfmFeatureDetectionQuality" value="RealityScan.FeatureDetector.RSa1"/>
+  <entry key="s251l" value="0.05"/>
+  <entry key="sfmMaxFeaturesPerImage" value="0xc350"/>
+  <entry key="sfmForceComponentRematch" value="false"/>
+  <!-- Global fallback only: mixed rig, so the real distortion model is
+       per-camera via XMP sidecars (fisheye Port/Starboard: division;
+       rectilinear Cinema/Zeuss: brown3). Division was the NA167
+       fisheye-era global. See docs/settings-evaluation-2026-07.md. -->
+  <entry key="sfmDistortionModel" value="Division"/>
+  <entry key="sfmCameraPriorAccuracyRoll" value="10.0"/>
+  <entry key="sfmMaxFeatureReprojectionError" value="1.29999995"/>
+  <entry key="sfmMaxFeaturesPerMpx" value="0x36b0"/>
+  <entry key="sfmGPUAcceleration" value="true"/>
+  <entry key="sfmBackgroundDetectThreadPriority" value="Low"/>
+  <entry key="sfmCameraPriorWeightOrientation" value="10.0"/>
+  <entry key="s236l" value="5.0"/>
+  <entry key="sfmEnableCameraPrior" value="true"/>
+  <entry key="lisPreferImagesAsFeatureSource" value="false"/>
+  <entry key="sfmCameraPriorWeight" value="10.0"/>
+  <!-- Medium: 2-3 s frame spacing + interleaved cameras + track revisits
+       need the broader pair search for loop closures; Low was legacy. -->
+  <entry key="sfmImagesOverlap" value="Medium"/>
+  <entry key="sfmCameraDepthmapWeight" value="0.05"/>
+  <entry key="sfmControPointImageMeasAccuracy" value="4.0"/>
+  <entry key="sfmPreselectorFeatures" value="0x4e20"/>
+  <entry key="sfmDetectorSensitivity" value="Ultra"/>
+  <entry key="sfmImageDownscaleFactorDraftMode" value="2"/>
+  <entry key="sfmMergeGeoreferencedComponents" value="false"/>
+  <entry key="s252l" value="0.05"/>
+  <entry key="sfmCameraPriorAccuracyPitch" value="10.0"/>
+  <entry key="sfmFinalModelOptimizationDraftMode" value="false"/>
+  <entry key="sfmCameraPriorAccuracyYaw" value="10.0"/>
+  <entry key="sfmImagesOverlapDraftMode" value="Medium"/>
+  <entry key="sfmBackgroundDetectFeatures" value="false"/>
+  <entry key="sfmImageDownscaleFactor" value="1"/>
+  <entry key="s235l" value="5.0"/>
+  <entry key="s253l" value="0.1"/>
+  <entry key="sfmAutoReconRegionAfterAlignment" value="false"/>
+  <entry key="sfmEnableAutoSuggestions" value="true"/>
+  <entry key="s254l" value="0.001"/>
+</Configuration>
