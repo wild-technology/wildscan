@@ -1118,7 +1118,7 @@ not (below) — with merge mode about **25 % faster** than align mode on the D7 
   overlap ⇒ silent no-fuse regardless of flags or logs.** The D7 probe: two components
   sharing *zero* basenames and zero paths but viewing the same wreck strip fused to one
   120-camera component (78+42 exact) both without any flight log in the scene (70 s) and
-  with a union log plus `-update` (57 s) [FINDINGS "D7 RESOLVED", `archive/campaign_drivers/probe_d7.py`,
+  with a union log plus `-update` (57 s) [FINDINGS "D7 RESOLVED", [archive/campaign_drivers/probe_d7.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/probe_d7.py),
   2026-07-24].
 - [VERIFIED — positive proof through shared cameras] A split-zone fixture — one zone divided
   into two 1,000-image halves sharing 390 images, each aligned solo (749 and 342 cameras),
@@ -1207,7 +1207,7 @@ call :run -exportSelectedComponentDir "F:\na156_h2024\merged"
   in current exports and in **attribute** form in older ones. Both forms must be parsed
   [FINDINGS 2026-07-28].
 - [VERIFIED] `xcr:Position` is in a **grid-anchored local frame, not UTM**; fit local→UTM
-  with `poses2flightlog.py`. The exports' lat/long XMP attributes are unusable per that
+  with `poses_to_flight_log.py`. The exports' lat/long XMP attributes are unusable per that
   analysis [NA167, 2026-07-23] [OPEN: cell U13 — re-verify on an *original* georeferenced
   zone scene; if positions are UTM there, manifests could carry true per-camera positions].
 - [VERIFIED] Exported pose sidecars carry `xcr:CalibrationGroup="-1"` /
@@ -1296,7 +1296,7 @@ because merge-scene exports are ordinal [VERIFIED: FINDINGS 2026-07-28].
 ### `-loadColmap`
 
 Takes the path to any of the three COLMAP text files [OFFICIAL]. Repo context:
-`archive/colmap/` holds retired COLMAP scripts and must not be resurrected into the active
+[archive/colmap/](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/colmap/) holds retired COLMAP scripts and must not be resurrected into the active
 pipeline [ARCHITECTURE.md]. Cross-engine fact worth carrying: COLMAP on one zone **registered**
 710 frames of the Zeuss camera family but triangulated **zero** points from them — two
 engines, two failure shapes, one physical camera family
@@ -2471,7 +2471,7 @@ fixture's model and watch for `algId 27` in `-writeProgress`. Until one of those
 ### `-selectAllComponents` — does not exist in RealityScan 2.2
 
 [VERIFIED] Fails as an unknown/invalid command, process result `0x82000060`. It had lived
-unnoticed in a legacy workflow script [NA167 #13 / B2, 2026-07-23; testing/FINDINGS #13].
+unnoticed in a legacy workflow script [NA167 #13 / B2, 2026-07-23; historical FINDINGS log #13].
 
 **Use instead:** `-selectComponent <name>`, `-selectMaximalComponent`, or
 `-selectComponentWithLeastReprojectionError` — those are the only three component-selection
@@ -2961,6 +2961,6 @@ rest are headless and scriptable.
 
 | # | Item |
 |---|---|
-| Q31 | The deterministic standalone-alignment failure `MSS_STR001` (generic `0x8000FFFF`) on one 1,476-image zone with fully exonerated data has **never been reported to Epic**. Forensic log at `testing/results/z14_forensic_rslog.txt`. |
+| Q31 | The deterministic standalone-alignment failure `MSS_STR001` (generic `0x8000FFFF`) on one 1,476-image zone with fully exonerated data has **never been reported to Epic**. Forensic log at `docs/validation/results/z14_forensic_rslog.txt`. |
 | Q32 | `-setMinComponentSize` is deprecated with **no documented replacement** while remaining required. What replaces it in the next release is unknown; nothing in the 2.2 Help says. |
 | Q33 | Whether "no re-optimization" still describes `-mergeComponents` in the current build. The staff claim is from 2021, pre-rename and outside the trust window; the observed 56-minute merge reconstruction argues against it. |

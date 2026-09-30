@@ -4,11 +4,11 @@ COLMAP and RealityScan are COMPLETELY DIFFERENT workflows. This doc
 exists to keep COLMAP material out of the RealityScan fact base while
 tracking the one place the two lines genuinely interact (preprocessing
 scope). Nothing here feeds the active pipeline; ARCHITECTURE.md hard rule:
-do not resurrect `archive/colmap/` into it.
+do not resurrect [archive/colmap/](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/colmap/) into it.
 
-## 1. COLMAP material in this repo (all archived, reference-only)
+## 1. Historical COLMAP material (archived, reference-only)
 
-`archive/colmap/` (see `archive/README.md`):
+[archive/colmap/](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/colmap/) (see [archive/README.md](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/README.md)):
 
 | File | Purpose |
 |---|---|

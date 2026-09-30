@@ -141,22 +141,22 @@ A trajectory file is a plain text / CSV table, one row per image.
 | Encoding | UTF-8 without BOM is safe. A UTF-8 BOM on line 1 is a known hazard for RealityScan list inputs generally (a BOM silently invalidated the first `.complist` entry). Not separately tested on flight logs. | [VERIFIED for `.complist`: FINDINGS 2026-07-27] [INFERRED for logs] |
 
 This repository's canonical log is **13 columns, `;`-separated, one header line**, written by
-`geoall.py::generate_flight_log` and `modules/georeference/georeference_images.py::__generate_flight_log`:
+`georeference_survey.py::generate_flight_log` and `modules/georeference/georeference_images.py::__generate_flight_log`:
 
 ```
 Name;X (East);Y (North);Alt;X Accuracy;Y Accuracy;Alt Accuracy;Yaw;Pitch;Roll;Yaw Accuracy;Pitch Accuracy;Roll Accuracy
 C231C1034_20231104202628_edt.jpg;594701.482174;2345128.905112;-1523.117000;10.000000;10.000000;1.000000;71.418000;135.220000;-1.930000;15.000000;15.000000;15.000000
 ```
 
-[VERIFIED-by-inspection: `geoall.py::generate_flight_log`, lines 715–770, 2026-08-04]
+[VERIFIED-by-inspection: `georeference_survey.py::generate_flight_log`, lines 715–770, 2026-08-04]
 
 Two in-repo producers write **different header text** for the identical column layout —
-`geoall.py` writes `Name;…`, the georeference module writes `filename;…`. Functionally
+`georeference_survey.py` writes `Name;…`, the georeference module writes `filename;…`. Functionally
 irrelevant (the header is skipped via `csvFLIgn=true`), but downstream readers must accept
 both: `modules/image_batcher/batch_directory.py` renames `Name` → `filename` on read.
 [VERIFIED-by-inspection, 2026-08-04]
 
-`geoall.py` additionally prefixes the image name with its camera subfolder
+`georeference_survey.py` additionally prefixes the image name with its camera subfolder
 (`Zeuss/HERC/<file>.jpg`); the module writes the bare basename. Both import correctly —
 see §2.5. [VERIFIED-by-inspection]
 
@@ -425,12 +425,12 @@ right to left." [OFFICIAL: tools/flightlogimport]
 - **Observed:** bare basenames match. On NA167 zone_13, a log whose first column held only
   `<file>.jpg` matched images physically living in `wca/` and `zeuss/` subfolders of the
   scene's added folder — 34 + 904 images, 93.4% subsequently registered. Conversely,
-  `geoall.py` writes `<CameraType>/<file>.jpg` and those logs import too.
+  `georeference_survey.py` writes `<CameraType>/<file>.jpg` and those logs import too.
   [VERIFIED: the NA167 log [NA167 #5], 2026-07-22 — "34 wca + 904 zeuss images in
   subfolders, bare-filename log, 93.4% registered, no err:18002"; and
   the NA167 notes §`-importFlightLog` — "Name matching is by **basename** and
   finds images in subfolders (verified: bare filenames matched images living in `wca/` and
-  `zeuss/`)". Prefixed form: `geoall.py` line 752.]
+  `zeuss/`)". Prefixed form: `georeference_survey.py` line 752.]
 - **Reading:** matching is on the file **basename**, and RealityScan searches the scene's
   images for a basename match regardless of directory depth. A leading path component is
   tolerated and effectively ignored.
@@ -623,7 +623,7 @@ Two consequences worth acting on:
    [INFERRED for the key↔variable pairing; the report variables themselves are [OFFICIAL].]
 
    This pipeline instead bakes the lever arm and mount angles into the flight log upstream
-   (`geoall.py::apply_camera_position_offset` and `convert_to_rc_orientation`, driven by the
+   (`georeference_survey.py::apply_camera_position_offset` and `convert_to_rc_orientation`, driven by the
    `MOUNTS` table in `modules/georeference/georeference_images.py`). Both approaches are
    valid; they must not be applied twice. Since `ifOfsifuUseOffset` is not written by this
    repo's params file, whatever the instance last held governs — another reason to pin every
@@ -791,7 +791,7 @@ timestamp matching + nav interpolation + lever arm + dive-long drift — **not t
 instantaneous sensor spec**. A DVL good to ~1 m and a Paro depth sensor good to ~0.1 m do
 not justify writing `1 / 1 / 0.1`.
 
-Values in force in this repo (`geoall.py` lines 723–729,
+Values in force in this repo (`georeference_survey.py` lines 723–729,
 `georeference_images.py` lines 540–549):
 
 ```python
@@ -935,7 +935,7 @@ params_path = write_flight_log_params(
 ```
 
 **Trap in that key choice.** Because the dedupe key is the whole first field, a log written by
-`geoall.py` (`Zeuss/HERC/<file>.jpg`) and one written by the georeference module
+`georeference_survey.py` (`Zeuss/HERC/<file>.jpg`) and one written by the georeference module
 (`<file>.jpg`) produce **different keys for the same image**: the union would carry both rows,
 and `only_basenames` — which holds bare basenames from the component manifests — would match
 **neither** of the prefixed ones, silently emptying the filtered union. In practice the
@@ -1043,7 +1043,7 @@ This is the documented explanation of the behaviour this repo discovered empiric
 - **`xcr:Position` in an exported XMP sidecar is in a grid-anchored LOCAL frame, not UTM**,
   and the lat/long attributes of those sidecars are garbage.
   [VERIFIED: NA167 §`-exportXMPForSelectedComponent`; confirmed on zone_9 by
-  `poses2flightlog.py`, whose module docstring records "xcr:Position is local, the anchor is
+  `poses_to_flight_log.py`, whose module docstring records "xcr:Position is local, the anchor is
   the grid origin, and the lat/long XMP attributes are garbage"]
   [OPEN] Hardening cell **U13** asks whether the same holds for an XMP exported from an
   *original georeferenced zone scene* (as opposed to a merge scene); the evidence above is
@@ -1056,7 +1056,7 @@ This is the documented explanation of the behaviour this repo discovered empiric
   POS_RE = re.compile(r'<xcr:Position>([^<]+)</xcr:Position>|xcr:Position="([^"]+)"')
   ```
   [VERIFIED: FINDINGS 2026-07-28]
-  **`poses2flightlog.py` does not.** Its `POSITION_RE` is
+  **`poses_to_flight_log.py` does not.** Its `POSITION_RE` is
   `re.compile(r'<xcr:Position>([^<]+)</xcr:Position>')` — element form only — so pointed at
   an older attribute-form export it reads **zero cameras** and fails the `MIN_CAMERAS = 3`
   check rather than mis-fitting. Loud, but it is a real coverage gap in the tool nominated as
@@ -1067,7 +1067,7 @@ This is the documented explanation of the behaviour this repo discovered empiric
   `xcr:Coordinates="absolute"` and `xcr:PosePrior="initial"`.
   [OFFICIAL: tools/xmpalign]
 
-**Converting local → UTM.** `poses2flightlog.py` estimates the rigid local→UTM transform by
+**Converting local → UTM.** `poses_to_flight_log.py` estimates the rigid local→UTM transform by
 least squares (Umeyama) between XMP camera positions and the matching flight-log priors,
 then writes a refined 13-column flight log plus a per-image residual CSV. Two design points
 are load-bearing:
@@ -1081,7 +1081,7 @@ are load-bearing:
   validated against the flight-log convention (§2.9), so yaw/pitch/roll and their accuracies
   are carried over unchanged from the original log.
 
-[VERIFIED-by-inspection + VERIFIED-as-behavior: `poses2flightlog.py`, docstring and
+[VERIFIED-by-inspection + VERIFIED-as-behavior: `poses_to_flight_log.py`, docstring and
 `umeyama_rigid`]
 
 A georeferenced component should fit local→UTM at near identity with residuals on the order
@@ -1157,9 +1157,9 @@ What that Z actually is, in this pipeline:
 | stage | what happens to Z | where |
 |---|---|---|
 | ROV nav | `kalman_depth`, metres **below the sea surface**, positive down | vehicle telemetry |
-| flight-log build | `DEPTH = -abs(kalman_depth)` — sign flipped to negative-down | `geoall.py:320` |
-| camera offset | `adjusted_altitude = altitude - down_m` (mount lever arm) | `geoall.py:161` |
-| written | as the `Alt` column (`ALTITUDE_EST`) | `geoall.py:816` |
+| flight-log build | `DEPTH = -abs(kalman_depth)` — sign flipped to negative-down | `georeference_survey.py:320` |
+| camera offset | `adjusted_altitude = altitude - down_m` (mount lever arm) | `georeference_survey.py:161` |
+| written | as the `Alt` column (`ALTITUDE_EST`) | `georeference_survey.py:816` |
 | imported | Z of a 2D UTM CRS — no vertical datum declared | `FlightLogParams.xml` |
 | exported | unchanged; `MvsExportMoveZ=0.0`, `MvsExportScaleZ=1.0` | every repo preset |
 
@@ -1209,7 +1209,8 @@ sign doubles the error rather than removing it.
   that is not redistributable, and `EPSG:5715` (MSL *depth*) has no
   transformation to any ellipsoidal CRS at all — use it to *label* input data,
   never to route the arithmetic. The EGM2008 grid is `us_nga_egm08_25.tif`
-  (~80 MB, cdn.proj.org), fetched only with `PROJ_NETWORK=ON` or `projsync`.
+  (~80 MB, cdn.proj.org), fetched with `PROJ_NETWORK=ON` or
+  `python -m pyproj sync --file us_nga_egm08_25.tif`.
 
 **Where the error shows up.** Only downstream, and only where something
 interprets the third coordinate against the ellipsoid — Cesium ion being the
@@ -2047,7 +2048,7 @@ The other two U7 proxies, for completeness:
   the input flight log is a direct georeference check. **Blocked**: `-exportRegistration`
   without a params XML blocks forever headless, and no params file has been saved from the
   GUI dialog. [VERIFIED: FINDINGS 2026-07-21]
-- **`poses2flightlog.py` local→UTM fit residuals.** A georeferenced component should fit near
+- **`poses_to_flight_log.py` local→UTM fit residuals.** A georeferenced component should fit near
   identity with residuals on the order of the nav error (§3.3). Already implemented; not yet
   wired into the acceptance path.
 
@@ -2190,7 +2191,7 @@ Each item states the question and the cheapest probe that answers it.
 
 15. **Does an instance-held lever arm double-apply the one already baked into the log?**
     `ifOfsX/Y/Z` + `ifOfsRR/RP/RY` + `ifOfsifuUseOffset` exist in the binary and are not
-    written by this repo's params file, while `geoall.py` bakes the lever arm into the log
+    written by this repo's params file, while `georeference_survey.py` bakes the lever arm into the log
     itself. Probe: after an import, `-exportReport` `$(inputIsInsOffsetValid)` and
     `$(inputInsOfsZ)`. Non-zero means it is being applied twice. One boot, ~1 min.
     (§2.8, §7)

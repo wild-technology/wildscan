@@ -6,6 +6,13 @@ workflow-evaluation queue". Numbering below tracks that queue (Q1–Q10).
 Facts cited are in FINDINGS; nothing here has been implemented except
 where marked DONE.
 
+This is the recommendation record as of 2026-07-24. Its status labels describe
+that investigation. The current [GrowZone workflow](../modules/realityscan_interface/RS_CLI/Scripts/GrowZone.bat)
+re-enables all images before saving; the former always-false
+`try_build_manifests` hook has been removed from [grow_zone.py](../grow_zone.py).
+The original findings below remain historical evidence; consult
+[ARCHITECTURE.md](../ARCHITECTURE.md) for the active implementation.
+
 ## What onboarding established (new, and it changes the plan)
 
 Running `component_analysis.merge_plan` over the twelve H2023 zone

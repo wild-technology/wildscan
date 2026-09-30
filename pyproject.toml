@@ -32,7 +32,7 @@ classifiers = [
 # step - requirements.txt is generated from it by hand and must not drift.
 #
 # NOTE on the Python floor: numpy>=2.5 and scipy>=1.18 are themselves
-# `requires-python >=3.12`, so 3.12 is the real floor for the pinned set.
+# `requires-python >=3.12`, so 3.12 is the real floor for the dependency set.
 # The pipeline is developed and run on `py -3.13`.
 dependencies = [
     "boto3>=1.40",           # publish_cesium.py - S3 upload leg of the ion REST flow
@@ -42,7 +42,7 @@ dependencies = [
     "numpy>=2.5",
     "opencv-python>=5.0",    # extract_images / preprocess_images (CLAHE, WB)
     "pandas>=3.0",
-    "Pillow>=12.3",          # geoall.py, georeference, timestamp_rename (EXIF/JPEG)
+    "Pillow>=12.3",          # georeference_survey.py, georeference, timestamp_rename (EXIF/JPEG)
     "pyproj>=3.7",           # cesium_placement - EGM2008 geoid, CRS transforms
     "requests>=2.32",        # publish_cesium.py - ion REST
     "rich>=15.0",            # wildscan TUI
@@ -52,17 +52,14 @@ dependencies = [
     "shapely>=2.1",
     "textual>=8.2",          # wildscan TUI
     "tqdm>=4.69",
-    "utm>=0.8",              # geoall.py, georeference - UTM <-> WGS84
+    "utm>=0.8",              # georeference_survey.py, georeference - UTM <-> WGS84
 ]
 
 [project.optional-dependencies]
 # Test suite. Windows-only path fixtures mean a subset fails off-Windows.
 dev = ["pytest>=9.1"]
-# The wildscan TUI alone, without the geo/imaging pipeline stack.
+# Compatibility extra; the base project already includes the UI and pipeline.
 tui = ["textual>=8.2", "rich>=15.0"]
-# Reference-only scripts under archive/ (colmap_processor.py polls host
-# CPU/RAM through psutil). Not needed by the active pipeline.
-archive = ["psutil>=7.0"]
 
 [project.urls]
 Homepage = "https://github.com/wild-technology/wildscan"
@@ -100,5 +97,5 @@ include-package-data = true
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["testing"]
+testpaths = ["tests"]
 addopts = "-q"

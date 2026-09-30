@@ -58,6 +58,7 @@ from __future__ import annotations
 import csv
 import io
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -232,6 +233,26 @@ def assert_bat_safe(args, script_name: str = '') -> None:
                 'file or an environment variable (ARCHITECTURE.md hard rule 8).')
 
 
+def assert_instance_name(instance: str, *, attach: bool = False) -> None:
+    """Validate the token expanded unquoted by the workflow scripts."""
+    if attach and instance == '*':
+        return
+    if isinstance(instance, str) and re.fullmatch(r'[A-Za-z0-9_.-]+', instance):
+        device = instance.split('.', 1)[0].upper()
+        if device not in {'CON', 'PRN', 'AUX', 'NUL'} and not re.fullmatch(
+                r'(COM|LPT)[1-9]', device):
+            return
+    mode = 'ATTACH' if attach else 'BOOT'
+    raise RuntimeError(
+        f'Refusing to {mode} RealityScan as instance {instance!r}: '
+        'use a plain token containing only letters, digits, underscores, '
+        'hyphens or periods, avoiding Windows reserved device names. '
+        '"*" means "first available instance" and is '
+        'only allowed in attach mode; boot mode would let -quit and '
+        '-newScene -deleteAutosave destroy its live scene. Set '
+        'realityscan.instance_name (or RS_INSTANCE) to a name such as RS1.')
+
+
 def set_project_save_env(zone_images_root: str, label: str) -> str:
     """Arm the daily project-save schema for the workflow scripts.
 
@@ -260,6 +281,7 @@ class WorkflowResult:
     errors: str = ''
     completed_processes: list[str] = field(default_factory=list)
     duration_seconds: float = 0.0
+    shutdown_verified: bool | None = None
 
 
 class RealityScanCLI:
@@ -462,10 +484,17 @@ class RealityScanCLI:
         except OSError:
             return False
 
-    def _acquire_lock(self, instance: str = None) -> None:
+    def _acquire_lock(self, instance: str = None) -> int:
         inst = instance or self.instance_name
         os.makedirs(ERRORS_DIR, exist_ok=True)
         lock_path = self._lock_path(inst)
+        owner_pid = os.getpid()
+        try:
+            supervisor_pid = int(os.environ.get('RS_WORKFLOW_OWNER_PID', ''))
+        except ValueError:
+            supervisor_pid = 0
+        if supervisor_pid > 0 and self._pid_alive(supervisor_pid):
+            owner_pid = supervisor_pid
 
         if os.path.isfile(lock_path):
             try:
@@ -494,12 +523,18 @@ class RealityScanCLI:
                 'Use a different instance_name to run workflows in parallel.'
             )
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            f.write(str(os.getpid()))
+            f.write(str(owner_pid))
+        return owner_pid
 
-    def _release_lock(self, instance: str = None) -> None:
+    def _release_lock(self, instance: str = None, owner_pid: int = None) -> None:
         try:
-            os.remove(self._lock_path(instance))
-        except OSError:
+            path = self._lock_path(instance)
+            if owner_pid is not None:
+                with open(path, 'r', encoding='utf-8') as f:
+                    if int(f.read().strip()) != owner_pid:
+                        return
+            os.remove(path)
+        except (OSError, ValueError):
             pass
 
     # ------------------------------------------------------------------
@@ -573,35 +608,12 @@ class RealityScanCLI:
         hygiene, GPU pinning, live progress reporting, stall warnings, and
         verified instance shutdown.
         """
+        assert_instance_name(self.instance_name)
         exe = self.find_executable()
         script_path = os.path.join(SCRIPTS_DIR, script_name)
         if not os.path.isfile(script_path):
             raise FileNotFoundError(f'Workflow script not found: {script_path}')
         assert_bat_safe(args, script_name)
-        # BOOT mode owns an instance's whole lifecycle: it -quits any
-        # instance answering that name and startRealityScan.bat's
-        # already-running branch then issues '-newScene -deleteAutosave'.
-        # '*' means "first available instance" and a GUI/Epic-Launcher
-        # RealityScan answers it - so booting against '*' destroys a
-        # multi-hour interactive reconstruction with no prompt (the ON2026
-        # near-miss class, status log 2026-08-07). Attach mode was hardened
-        # against exactly this; the boot path never was (audit 2026-08-07).
-        # It is reachable by typing '*' at the instance_name prompt or by
-        # exporting RS_INSTANCE=*.
-        bad_instance = set(self.instance_name) & set('*?<>:"/\\|')
-        if bad_instance or not self.instance_name.strip():
-            raise RuntimeError(
-                f'Refusing to BOOT RealityScan as instance '
-                f'{self.instance_name!r}: an instance name must be a plain '
-                f'token (no {sorted(bad_instance) or "empty name"}). "*" in '
-                'particular means "first available instance" and would let '
-                'this boot -quit and then -newScene -deleteAutosave a GUI '
-                'session\'s live scene. Set realityscan.instance_name (or '
-                'RS_INSTANCE) to a real name such as RS1; to FINISH a scene '
-                'another session created, use attach mode '
-                '(finish_model.py / RealityScanCLI.run_attach_script), '
-                'which never boots and never resets.')
-
         os.makedirs(log_dir, exist_ok=True)
         stamp = time.strftime('%Y-%m-%d_%H-%M-%S')
         log_path = os.path.join(log_dir, f'output_{stamp}.txt')
@@ -621,8 +633,9 @@ class RealityScanCLI:
             env['RS_GPU_DEVICES'] = str(gpu_devices)
             env['CUDA_VISIBLE_DEVICES'] = str(gpu_devices)
 
-        self._acquire_lock()
+        owner_pid = self._acquire_lock()
         start_time = time.monotonic()
+        shutdown_ok = False
         try:
             # A leftover instance from a crashed run may be hours into an old
             # operation with our marker hooks still armed. Attaching to it
@@ -692,7 +705,8 @@ class RealityScanCLI:
                     'refusing to continue while it may still hold the scene.',
                     self.instance_name)
                 return WorkflowResult(False, return_code, log_path, errors or 'instance did not shut down', results,
-                                      time.monotonic() - start_time)
+                                      time.monotonic() - start_time,
+                                      shutdown_verified=False)
 
             success = return_code == 0 and not errors
             if not success:
@@ -701,9 +715,14 @@ class RealityScanCLI:
                     script_name, return_code, errors or '<none reported>', log_path)
 
             return WorkflowResult(success, return_code, log_path, errors, results,
-                                  time.monotonic() - start_time)
+                                  time.monotonic() - start_time,
+                                  shutdown_verified=True)
         finally:
-            self._release_lock()
+            # A supervisor must keep owning a failed live instance until its
+            # process tree is empty. Verified shutdown permits the next script
+            # in this driver; standalone cleanup keeps its existing semantics.
+            if shutdown_ok or owner_pid == os.getpid():
+                self._release_lock(owner_pid=owner_pid)
 
     def run_attach_script(self, script_name: str, args: list[str],
                           log_dir: str, instance: str = '*') -> WorkflowResult:
@@ -717,6 +736,8 @@ class RealityScanCLI:
         a single instance running). The differences from
         ``run_batch_script`` are each deliberate and commented inline.
         """
+        assert_instance_name(instance, attach=True)
+        assert_instance_name(self.instance_name, attach=True)
         exe = self.find_executable()
         script_path = os.path.join(SCRIPTS_DIR, script_name)
         if not os.path.isfile(script_path):
@@ -765,6 +786,7 @@ class RealityScanCLI:
 
         env = os.environ.copy()
         env['RS_EXECUTABLE'] = exe
+        env['RS_INSTANCE'] = self.instance_name
         # No RS_GPU_DEVICES/CUDA_VISIBLE_DEVICES here: GPU pinning is a
         # boot-time property of the instance, and attach mode never boots.
 

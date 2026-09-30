@@ -15,7 +15,7 @@ docs/settings-evaluation-2026-07.md; facts cited: FINDINGS.
 
 - Start: D:\H2023 raw dumps. Movies (S231C* = Starboard) excluded;
   stills sorted per camera.
-- geoall.py matches every image to the nav table by timestamp (stage-2
+- georeference_survey.py matches every image to the nav table by timestamp (stage-2
   Kalman file *final_datatable.csv), applies each camera's mount
   offset (Port: 1 m fwd + 1 m down; Cinema: 45 deg down, 1 m fwd), and
   writes ONE flight log: image basename -> UTM position + orientation

@@ -21,7 +21,7 @@ the batch layer had ever executed against a real RealityScan install.**
 
 the status log said so explicitly and listed seven things to verify on
 first run. This pass executed that checklist on the dual-5090 Windows
-box using the repo's own harness (`testing/run_zone9_tests.py`), against
+box using the repo's own harness (`scripts/validation/run_zone9_validation.py`), against
 the zone_9 dataset.
 
 The headline result: **the code was correct on paper and wrong in
@@ -271,11 +271,11 @@ Georeference and Batch. It writes processed copies to
 `<output>/preprocessed_images`, mirroring folder structure and
 preserving filenames (flight-log matching is by filename); originals are
 untouched so texturing can still use them. `BatchDirectory` prefers the
-preprocessed folder when present. `testing/preprocess_variants.py` now
+preprocessed folder when present. `scripts/validation/preprocess_variants.py` now
 imports the transforms from the module rather than keeping a second
 copy, per `ARCHITECTURE.md` hard rule 6.
 
-### `poses2flightlog.py` (`d4759d0`)
+### `poses_to_flight_log.py` (`d4759d0`)
 
 The USBL/DVL flight logs are position *estimates*; after alignment the
 bundle-adjusted poses are better relative geometry. The XMP sidecars
@@ -291,7 +291,7 @@ the 10 m accuracy the log claims for itself.
 
 ### Test coverage (`724814a`)
 
-`testing/test_preprocess_module.py` asserts the properties the pipeline
+`scripts/validation/check_preprocessing.py` asserts the properties the pipeline
 depends on: mirrored folders, preserved filenames, **byte parity with
 the canonical transform** (so the harness and the pipeline cannot
 silently diverge), idempotent rerun, and that CLAHE actually altered
@@ -303,7 +303,7 @@ pixels.
 
 Things that look like omissions but are choices:
 
-- **Orientations are not rewritten by `poses2flightlog.py`.** Six
+- **Orientations are not rewritten by `poses_to_flight_log.py`.** Six
   rotation-convention candidates were tested against the flight-log
   yaw/pitch/roll; none matched (best mean error ~77°). Writing
   orientations in an unverified convention would poison future priors,
@@ -367,5 +367,5 @@ Carried forward; do not assume these work:
 | `2b5e0c1` | `modules/preprocess_images/`, wired into `main.py`; transforms deduplicated |
 | `24c0894` | Untrack a `__pycache__` directory |
 | `7e51210` | Flight-log discovery in `raw_images` (defect 9) |
-| `d4759d0` | `poses2flightlog.py` |
+| `d4759d0` | `poses_to_flight_log.py` |
 | `724814a` | Preprocessing module test; dataset seeds moved to `M:` |

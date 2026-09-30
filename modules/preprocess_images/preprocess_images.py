@@ -1,11 +1,11 @@
 """Pre-alignment image preprocessing for underwater imagery.
 
 Canonical implementation of the CLAHE / white-balance transforms; the
-testing variants (testing/preprocess_variants.py) import from here rather
+testing variants (scripts/validation/preprocess_variants.py) import from here rather
 than maintaining their own copy.
 
 Defaults (CLAHE clip 2.0, 8x8 tiles, no white balance) come from the
-2026-07-21 zone_9 A/B iteration (testing/run_zone9_tests.py phase 2):
+2026-07-21 zone_9 A/B iteration (scripts/validation/run_zone9_validation.py phase 2):
 baseline registered 0/400 images (alignment produced no component at
 all), CLAHE 2.0/8x8 registered 59.8%, every neighboring clip/tile setting
 scored lower, and adding gray-world white balance dropped registration to
@@ -13,13 +13,16 @@ scored lower, and adding gray-world white balance dropped registration to
 
 Originals are never modified: processed copies are written to
 <output_dir>/preprocessed_images with the input's folder structure and the
-same filenames (flight-log matching relies on the names). Align on the
-processed copies; keep the originals for texturing.
+same filenames (flight-log matching relies on the names). The current
+pipeline aligns and textures the processed copies; originals are retained.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+import tempfile
 from concurrent.futures import ProcessPoolExecutor
 
 import cv2
@@ -27,9 +30,33 @@ import numpy as np
 
 from module_base.rs_module import RSModule
 from module_base.parameter import Parameter
+from ..harvest_guard import assert_harvestable
+from ..image_exts import ALL_IMAGE_EXTS
 
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png')
 JPEG_QUALITY = 95
+MANIFEST_NAME = 'preprocessed_images.manifest.json'
+
+
+def _file_signature(path: str) -> dict:
+    stat = os.stat(path)
+    with open(path, 'rb') as stream:
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    return {'size': stat.st_size, 'mtime_ns': stat.st_mtime_ns, 'sha256': digest}
+
+
+def _save_manifest(path: str, manifest: dict) -> None:
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
+                                         dir=os.path.dirname(path),
+                                         suffix='.tmp', delete=False) as stream:
+            temp_path = stream.name
+            json.dump(manifest, stream, indent=2)
+        os.replace(temp_path, path)
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 def gray_world_white_balance(img: np.ndarray) -> np.ndarray:
@@ -83,13 +110,25 @@ def _process_one(job: tuple[str, str, float, int, bool]) -> str | None:
     transform = build_transform({'clahe_clip': clahe_clip,
                                  'clahe_tile': clahe_tile,
                                  'white_balance': white_balance})
-    image = cv2.imread(src, cv2.IMREAD_COLOR)
-    if image is None:
+    temp_path = None
+    try:
+        image = cv2.imread(src, cv2.IMREAD_COLOR)
+        if image is None:
+            return src
+        if transform is not None:
+            image = transform(image)
+        with tempfile.NamedTemporaryFile(dir=os.path.dirname(dst),
+                                         suffix=os.path.splitext(dst)[1],
+                                         delete=False) as stream:
+            temp_path = stream.name
+        if not cv2.imwrite(temp_path, image, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]):
+            return src
+        os.replace(temp_path, dst)
+    except (OSError, cv2.error):
         return src
-    if transform is not None:
-        image = transform(image)
-    if not cv2.imwrite(dst, image, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]):
-        return src
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
     return None
 
 
@@ -163,25 +202,36 @@ class PreprocessImages(RSModule):
         return os.path.join(self.params['output_dir'].get_value(), 'preprocessed_images')
 
     def __collect_jobs(self, input_dir: str, output_dir: str,
-                       clip: float, tile: int, wb: bool):
+                       clip: float, tile: int, wb: bool, records: dict):
         """One (src, dst, ...) job per image, mirroring the input's folder
-        structure. Existing outputs are skipped so an interrupted run can
-        resume."""
+        structure. Only outputs with matching source and content provenance
+        are reused."""
         jobs = []
         skipped = 0
+        signatures = {}
         for root, _dirs, files in os.walk(input_dir):
             rel = os.path.relpath(root, input_dir)
             dest_root = output_dir if rel == '.' else os.path.join(output_dir, rel)
             for name in files:
                 if not name.lower().endswith(IMAGE_EXTENSIONS):
                     continue
+                src = os.path.join(root, name)
                 dst = os.path.join(dest_root, name)
-                if os.path.exists(dst):
-                    skipped += 1
-                    continue
+                if os.path.islink(dst) or os.path.isjunction(dst):
+                    raise ValueError(f'Preprocess destination is a file alias: {dst}')
+                key = os.path.relpath(src, input_dir)
+                signature = _file_signature(src)
+                signatures[key] = signature
+                record = records.get(key, {})
+                if not isinstance(record, dict):
+                    record = {}
+                if record.get('source') == signature and os.path.isfile(dst):
+                    if record.get('output') == _file_signature(dst):
+                        skipped += 1
+                        continue
                 os.makedirs(dest_root, exist_ok=True)
-                jobs.append((os.path.join(root, name), dst, clip, tile, wb))
-        return jobs, skipped
+                jobs.append((src, dst, clip, tile, wb))
+        return jobs, skipped, signatures
 
     def run(self):
         input_dir = self.__get_input_dir()
@@ -196,19 +246,96 @@ class PreprocessImages(RSModule):
             self.logger.warning('No preprocessing steps enabled (clip=0, white balance off) - nothing to do')
             return {'Success': False}
 
-        os.makedirs(output_dir, exist_ok=True)
-        jobs, skipped = self.__collect_jobs(input_dir, output_dir, clip, tile, wb)
+        source_root = os.path.normcase(os.path.realpath(input_dir))
+        target_root = os.path.normcase(os.path.realpath(output_dir))
+        try:
+            shared_root = os.path.commonpath((source_root, target_root))
+        except ValueError:
+            shared_root = None
+        if shared_root in (source_root, target_root):
+            return {'Success': False,
+                    'Failure': 'Preprocess input and output trees must not overlap'}
+        if os.path.islink(output_dir) or os.path.isjunction(output_dir):
+            return {'Success': False, 'Failure':
+                    'Preprocess output must be a real directory, without aliases'}
+        try:
+            assert_harvestable(output_dir, self.logger)
+        except RuntimeError as exc:
+            return {'Success': False, 'Failure': f'Unsafe preprocessing output: {exc}'}
+        manifest_path = os.path.join(os.path.dirname(output_dir), MANIFEST_NAME)
+        settings = {'input_dir': source_root, 'clahe_clip': clip,
+                    'clahe_tile': tile, 'white_balance': wb,
+                    'jpeg_quality': JPEG_QUALITY, 'opencv': cv2.__version__}
+        manifest = {'schema': 1, 'status': 'in_progress', 'settings': settings, 'images': {}}
+        try:
+            with open(manifest_path, encoding='utf-8') as stream:
+                previous = json.load(stream)
+            if (previous.get('schema') == 1 and previous.get('settings') == settings
+                    and isinstance(previous.get('images'), dict)):
+                manifest['images'] = previous['images']
+        except (OSError, ValueError, AttributeError):
+            pass
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+            _save_manifest(manifest_path, manifest)
+            jobs, skipped, signatures = self.__collect_jobs(
+                input_dir, output_dir, clip, tile, wb, manifest['images'])
+            # Source removals must not leave old images in the tree handed
+            # to batching. Preserve those copies and require a fresh output.
+            extras = [os.path.relpath(os.path.join(root, name), output_dir)
+                      for root, _dirs, files in os.walk(output_dir)
+                      for name in files if os.path.splitext(name)[1].lower() in ALL_IMAGE_EXTS
+                      and os.path.relpath(os.path.join(root, name), output_dir)
+                      not in signatures]
+            if extras:
+                manifest['status'] = 'failed'
+                _save_manifest(manifest_path, manifest)
+                return {'Success': False, 'Failure': 'Preprocess output contains '
+                        f'{len(extras)} image(s) absent from the input; use a fresh output directory'}
+            manifest['images'] = {key: value for key, value in manifest['images'].items()
+                                  if key in signatures}
+            _save_manifest(manifest_path, manifest)
+        except (OSError, ValueError) as exc:
+            manifest['status'] = 'failed'
+            try:
+                _save_manifest(manifest_path, manifest)
+            except OSError:
+                pass
+            return {'Success': False, 'Failure': f'Cannot prepare preprocessing: {exc}'}
         self.logger.info('Preprocessing %d images (%d already done) with CLAHE clip=%g tile=%dx%d wb=%s',
                          len(jobs), skipped, clip, tile, tile, wb)
 
         failures = []
         if jobs:
             bar = self._initialize_loading_bar(len(jobs), 'Preprocessing Images')
-            with ProcessPoolExecutor(max_workers=workers) as pool:
-                for failed_src in pool.map(_process_one, jobs, chunksize=16):
-                    if failed_src:
-                        failures.append(failed_src)
-                    self._update_loading_bar(bar, 1)
+            try:
+                with ProcessPoolExecutor(max_workers=workers) as pool:
+                    for index, (job, failed_src) in enumerate(zip(
+                            jobs, pool.map(_process_one, jobs, chunksize=16)), 1):
+                        src, dst = job[:2]
+                        if failed_src:
+                            failures.append(failed_src)
+                        else:
+                            key = os.path.relpath(src, input_dir)
+                            manifest['images'][key] = {
+                                'source': signatures[key], 'output': _file_signature(dst)}
+                        if index % 128 == 0:
+                            _save_manifest(manifest_path, manifest)
+                        self._update_loading_bar(bar, 1)
+            except (OSError, ValueError, RuntimeError) as exc:
+                manifest['status'] = 'failed'
+                try:
+                    _save_manifest(manifest_path, manifest)
+                except OSError:
+                    pass
+                return {'Success': False, 'Failure': f'Preprocessing failed: {exc}'}
+
+        success = not failures and len(jobs) + skipped > 0
+        manifest['status'] = 'complete' if success else 'failed'
+        try:
+            _save_manifest(manifest_path, manifest)
+        except OSError as exc:
+            return {'Success': False, 'Failure': f'Cannot record preprocessing result: {exc}'}
 
         for src in failures[:10]:
             self.logger.warning('Unreadable or unwritable image skipped: %s', src)
@@ -216,7 +343,7 @@ class PreprocessImages(RSModule):
             self.logger.warning('...and %d more failures', len(failures) - 10)
 
         return {
-            'Success': True,
+            'Success': success,
             'Processed': len(jobs) - len(failures),
             'Skipped (already done)': skipped,
             'Failed': len(failures),
@@ -249,5 +376,7 @@ class PreprocessImages(RSModule):
         tile = int(self.params['pre_clahe_tile'].get_value())
         if tile < 1:
             return False, 'CLAHE tile size must be >= 1'
+        if int(self.params['pre_workers'].get_value()) < 0:
+            return False, 'Preprocess workers must be >= 0'
 
         return True, None

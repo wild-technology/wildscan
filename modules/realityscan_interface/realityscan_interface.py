@@ -258,9 +258,7 @@ class RealityScanAlignment(RSModule):
         # actually apply (RS_ALIGN_PARAMS override, else the canonical
         # template). Built before the supersede step so a retry can be
         # told apart from a re-run: "same inputs, redoing" vs "inputs
-        # CHANGED, previous components were built differently"
-        # (PRODUCT_READINESS must-fix 2; persona-verified 2026-08-08 that
-        # the two were previously messaged identically).
+        # CHANGED, previous components were built differently".
         current_fp = align_fingerprint.build_fingerprint(
             flight_log_path or None,
             flight_log_params_path or None,
@@ -503,7 +501,7 @@ class RealityScanAlignment(RSModule):
         by AlignZone.bat's in-session identity loop.
 
         Public because drivers that invoke AlignZone.bat directly (the
-        testing/ PD cells) must reuse THIS implementation - a component
+        tests/ PD cells) must reuse THIS implementation - a component
         without a manifest is refused by the feature-aware merge.
 
         Naming rule (FINDINGS 2026-07-23, four consistent datapoints):

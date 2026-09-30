@@ -12,7 +12,7 @@ It fuses two sources that do not otherwise exist in one place:
 2. **The project's empirical record** — two years of production use driving RealityScan
    headless over ROV underwater photogrammetry at 8,000+ camera scale: the engineering log
    (cited as `FINDINGS <date>`, and `NA167 B<n>` / `NA167 #<n>` for the NA167 campaign's
-   numbered bugs and findings), the test plans in `testing/`, `docs/*.md`, and the working
+   numbered bugs and findings), the test plans in `docs/validation/`, `docs/*.md`, and the working
    code in `modules/realityscan_interface/`. The engineering log is kept outside this
    repository; this reference is its distilled, self-contained form, so every citation
    states the fact it supports.
@@ -93,8 +93,8 @@ the thing in column 1.
 
 | If you are about to… | Read | Do NOT | Tag |
 |---|---|---|---|
-| Publish a georeferenced mesh to Cesium ion | `10-reconstruction-texturing-export.md` §17.2.1 | Do not hand Cesium the exported Z. It is a depth below the **sea surface** (`geoall.py` writes `-abs(kalman_depth)`), while Cesium reads every height as above the **WGS84 ellipsoid**, and the project CRS is 2D so nothing declares which. The asset sinks or floats by the geoid undulation — **+72.69 m** at NA168 H2080, +70.4 m Solomon Sea, −27.1 m Gulf of Mexico. Convert with `h = −depth + N` (`modules/cesium_placement.py`) and confirm by decoding the finished tileset, never by the upload's exit status. ion itself is blameless: it honours a negative height to **−0.000 m** | `[VERIFIED: probe asset 5171554, FINDINGS 2026-08-31]` |
-| Compute a geoid correction with PROJ | `10-…` §17.2.1 | Never call `Transformer.from_crs` without `allow_ballpark=False`. With the grid absent PROJ **succeeds and returns Z unchanged**, having silently chosen a "ballpark vertical transformation" — the correction reads as applied and is zero. The EGM2008 grid (`us_nga_egm08_25.tif`, ~80 MB) needs `PROJ_NETWORK=ON` or a local `projsync` | `[VERIFIED: FINDINGS 2026-08-31]` |
+| Publish a georeferenced mesh to Cesium ion | `10-reconstruction-texturing-export.md` §17.2.1 | Do not hand Cesium the exported Z. It is a depth below the **sea surface** (`georeference_survey.py` writes `-abs(kalman_depth)`), while Cesium reads every height as above the **WGS84 ellipsoid**, and the project CRS is 2D so nothing declares which. The asset sinks or floats by the geoid undulation — **+72.69 m** at NA168 H2080, +70.4 m Solomon Sea, −27.1 m Gulf of Mexico. Convert with `h = −depth + N` (`modules/cesium_placement.py`) and confirm by decoding the finished tileset, never by the upload's exit status. ion itself is blameless: it honours a negative height to **−0.000 m** | `[VERIFIED: probe asset 5171554, FINDINGS 2026-08-31]` |
+| Compute a geoid correction with PROJ | `10-…` §17.2.1 | Never call `Transformer.from_crs` without `allow_ballpark=False`. With the grid absent PROJ **succeeds and returns Z unchanged**, having silently chosen a "ballpark vertical transformation" — the correction reads as applied and is zero. The EGM2008 grid (`us_nga_egm08_25.tif`, ~80 MB) needs `PROJ_NETWORK=ON` or a local grid installed with `python -m pyproj sync --file us_nga_egm08_25.tif` | `[VERIFIED: FINDINGS 2026-08-31]` |
 | Conclude that a merge worked | `08-components-and-merge.md` §6; `12-failure-modes-and-race-conditions.md` §1 | Do not read exit status, `errors.txt` emptiness, or "completed" as evidence. `-mergeComponents` exits **SUCCESS** and leaves the components separate under every flag combination when nothing can fuse. The verdict is a **camera census** of the resulting component, never the status | `[VERIFIED: NA167 #23/#26; FINDINGS 2026-07-23/24]` |
 | Plan which components will fuse | `08-components-and-merge.md` §5.2 | Do not assume georeference or flags can fuse components with **zero image-content overlap** — nothing does, silently. The governing rule is **content overlap**, not path identity: shared camera paths are *sufficient but not necessary* (probe D7 fused two components with zero shared basenames and zero shared paths). The older "components fuse only through shared image identity" rule is retained as `[SUPERSEDED]`, not deleted. `sfmMergeGeoreferencedComponents=true`, whose documented purpose is exactly overlap-free merging, has **never** been observed to work headless | `[VERIFIED: D7 probe wave 2026-07-24]` + `[CONTRADICTED: NA167 D1/D2]` |
 | Run `-importComponent` | `08-components-and-merge.md` §3.3; `12-…` `F-36` | Never import a `.rsalign` from anywhere except its **original export location**. A relocated copy does not fail — it hangs the instance permanently in `#timeout` (≥6 h observed, no error, no minidump). Pass a `.complist` of in-place paths | `[VERIFIED: NA167 B1]` `[UNDOCUMENTED]` |
@@ -158,10 +158,17 @@ accordingly.
 | Dated fact log | engineering log (external), cited as `FINDINGS <date>` |
 | Dated project status and decisions | status log (external), cited as `status log <date>` |
 | Numbered bugs B1–B11 and findings #1–31 | NA167 campaign notes (external), cited as `NA167 B<n>` / `NA167 #<n>` |
-| Test matrices | `testing/MERGE_TEST_PLAN.md`, `testing/ALIGN_MERGE_HARDENING_PLAN.md`, `testing/PRIORS_DISTORTION_TEST_PLAN.md`, `testing/MERGE_STRATEGY_REPORT.md` |
+| Test matrices | `docs/validation/merge_test_plan.md`, `docs/validation/alignment_merge_hardening_plan.md`, `docs/validation/priors_distortion_test_plan.md`, `docs/validation/merge_strategy_report.md` |
 | Decision records | `docs/settings-evaluation-2026-07.md`, `docs/merge-growth-strategy-2026-07.md`, `docs/MERGE_REWORK_RECOMMENDATIONS.md`, `docs/WORKFLOW_WALKTHROUGH.md`, `docs/code-review-2026-07.md` |
-| Working code | `modules/realityscan_interface/realityscan_cli.py`, `modules/realityscan_interface/RS_CLI/Scripts/*.bat`, `RS_CLI/Metadata/*.xml`, `modules/camera_registry.py`, `modules/flight_logs.py`, `merge_zones.py`, `geoall.py`, `poses2flightlog.py` |
+| Working code | `modules/realityscan_interface/realityscan_cli.py`, `modules/realityscan_interface/RS_CLI/Scripts/*.bat`, `RS_CLI/Metadata/*.xml`, `modules/camera_registry.py`, `modules/flight_logs.py`, `merge_zones.py`, `georeference_survey.py`, `poses_to_flight_log.py` |
 | Architecture, hard rules, operating practices | `ARCHITECTURE.md` |
+
+Current Python checks live in `tests/`; runnable campaigns, validation tools
+and analysis commands live under `scripts/`. Dated plans and result files
+are preserved under `docs/validation/`. Their original command paths and
+source line numbers describe the recorded snapshots. Retired code citations
+link to the [original archive snapshot](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive),
+which is excluded from the current published tree.
 
 ---
 

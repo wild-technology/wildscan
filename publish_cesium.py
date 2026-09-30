@@ -55,15 +55,18 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import time
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from modules.cesium_placement import (  # noqa: E402
-    PlacementError, enable_geoid_network, nav_envelope_from_flight_log,
+    PlacementError, enable_geoid_network, find_rsinfo, nav_envelope_from_flight_log,
     plan_placement, rewrite_obj_local,
 )
+from modules.publish_fingerprint import STAGING_MARKER  # noqa: E402
 
 logger = logging.getLogger('publish_cesium')
 
@@ -112,7 +115,8 @@ def select_objs(directory: Path, mode: str) -> list[Path]:
     Uploading both would submit the geometry twice, so one set must win and
     the choice is logged rather than made silently.
     """
-    objs = sorted(p for p in directory.glob('*.obj') if p.is_file())
+    objs = sorted(p for p in directory.iterdir()
+                  if p.is_file() and p.suffix.lower() == '.obj')
     if not objs:
         raise SystemExit(f'no .obj files in {directory}')
 
@@ -155,7 +159,8 @@ def select_objs(directory: Path, mode: str) -> list[Path]:
 # Planning
 # --------------------------------------------------------------------------
 
-def referenced_companions(objs: list[Path]) -> list[Path]:
+def referenced_companions(objs: list[Path],
+                          texture_extensions: set[str] | None = None) -> list[Path]:
     """The .mtl files an OBJ names, and the textures those .mtl files name.
 
     Following the references matters when a by-parts export sits in the same
@@ -165,6 +170,7 @@ def referenced_companions(objs: list[Path]) -> list[Path]:
     """
     wanted: list[Path] = []
     seen: set[Path] = set()
+    texture_extensions = texture_extensions or TEXTURE_EXTENSIONS
 
     def add(path: Path) -> bool:
         resolved = path.resolve()
@@ -177,10 +183,18 @@ def referenced_companions(objs: list[Path]) -> list[Path]:
     for obj in objs:
         with obj.open('r', encoding='utf-8', errors='replace') as handle:
             for line in handle:
-                if not line.lower().startswith('mtllib'):
+                fields = line.strip().split(maxsplit=1)
+                if len(fields) < 2 or fields[0].lower() != 'mtllib':
                     continue
-                for name in line.split()[1:]:
+                names = ([fields[1]] if (obj.parent / fields[1]).is_file()
+                         else fields[1].split())
+                for name in names:
+                    if Path(name).is_absolute():
+                        raise PlacementError(f'{obj}: material reference must '
+                                             'be relative to the export')
                     mtl = obj.parent / name
+                    if not mtl.is_file():
+                        raise PlacementError(f'{obj}: material not found: {mtl}')
                     if not add(mtl):
                         continue
                     with mtl.open('r', encoding='utf-8',
@@ -190,33 +204,102 @@ def referenced_companions(objs: list[Path]) -> list[Path]:
                             if len(token) < 2 or not token[0].lower().startswith(
                                     'map_'):
                                 continue
-                            texture = obj.parent / token[-1]
-                            if texture.suffix.lower() in TEXTURE_EXTENSIONS:
+                            names = [' '.join(token[i:])
+                                     for i in range(1, len(token))]
+                            name = next((n for n in names
+                                         if (mtl.parent / n).is_file()), token[-1])
+                            if Path(name).is_absolute():
+                                raise PlacementError(f'{mtl}: texture reference '
+                                                     'must be relative to the export')
+                            texture = mtl.parent / name
+                            if texture.suffix.lower() in texture_extensions:
+                                if not texture.is_file():
+                                    raise PlacementError(
+                                        f'{mtl}: texture not found: {texture}')
                                 add(texture)
     return wanted
 
 
 def stage(localised, staging: Path, sources: list[Path]) -> list[Path]:
-    """Write local-frame OBJs plus the materials and textures they name."""
-    if staging.exists():
-        shutil.rmtree(staging)
-    staging.mkdir(parents=True)
-
-    staged: list[Path] = []
-    for obj, local_points in localised:
-        target = staging / obj.name
-        rewrite_obj_local(obj, target, local_points)
-        staged.append(target)
-
+    """Prepare a complete local-frame copy before replacing prior staging."""
+    localised = list(localised)
+    if not sources or not localised:
+        raise PlacementError('no source meshes to stage')
     companions = referenced_companions(sources)
+    destination = staging.resolve()
+    inputs = {p.resolve() for p in sources + companions}
+    inputs.update(obj.resolve() for obj, _ in localised)
+    inputs.update(info.resolve() for obj in sources
+                  if (info := find_rsinfo(obj)) is not None)
+    if any(p.is_relative_to(destination) for p in inputs):
+        raise PlacementError(
+            f'staging directory {staging} contains a source mesh, material '
+            'or texture; choose a separate directory')
+    if any(p.is_symlink() or p.is_junction()
+           for p in (staging.absolute(), *staging.absolute().parents)):
+        raise PlacementError(f'staging path passes through an alias: {staging}')
+    if staging.exists() and not staging.is_dir():
+        raise PlacementError(f'staging path is not a directory: {staging}')
+    if staging.is_dir() and any(staging.iterdir()):
+        try:
+            marker = json.loads((staging / STAGING_MARKER).read_text(
+                encoding='utf-8'))
+            managed = isinstance(marker, dict) and marker.get('schema') == 1
+        except (OSError, ValueError):
+            managed = False
+        if not managed:
+            raise PlacementError(
+                f'staging directory {staging} is nonempty and unmarked; '
+                'choose a new staging directory to preserve its files')
+
+    source_root = Path(os.path.commonpath(
+        [os.path.abspath(obj.parent) for obj in sources]))
+    if any(not p.is_relative_to(source_root.resolve()) for p in inputs):
+        raise PlacementError(
+            'a referenced material or texture is outside the mesh directory; '
+            'place the complete export under one directory before staging')
+
     if not companions:
         logger.warning(
             'no .mtl was referenced by %s; uploading untextured geometry',
             ', '.join(p.name for p in sources))
-    for companion in companions:
-        shutil.copy2(companion, staging / companion.name)
-        staged.append(staging / companion.name)
-    return sorted(set(staged))
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    prepared = Path(tempfile.mkdtemp(
+        prefix=f'.{destination.name}-', dir=destination.parent))
+    backup = destination.with_name(
+        f'.{destination.name}-previous-{uuid.uuid4().hex}')
+    relative_paths: list[Path] = []
+    try:
+        (prepared / STAGING_MARKER).write_text(
+            json.dumps({'schema': 1, 'source': str(source_root)}),
+            encoding='utf-8')
+        for obj, local_points in localised:
+            relative = Path(os.path.abspath(obj)).relative_to(source_root)
+            target = prepared / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            rewrite_obj_local(obj, target, local_points)
+            relative_paths.append(relative)
+        for companion in companions:
+            relative = Path(os.path.abspath(companion)).relative_to(source_root)
+            target = prepared / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(companion, target)
+            relative_paths.append(relative)
+        if destination.exists():
+            destination.rename(backup)
+        try:
+            prepared.rename(destination)
+        except OSError:
+            if backup.exists():
+                backup.rename(destination)
+            raise
+    finally:
+        if prepared.exists():
+            shutil.rmtree(prepared)
+    if backup.exists():
+        shutil.rmtree(backup)
+    return sorted({staging / p for p in relative_paths})
 
 
 # --------------------------------------------------------------------------

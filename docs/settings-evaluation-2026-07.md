@@ -5,7 +5,7 @@ alignment/merge settings should be handled for the NA156 H2023 Widefield
 Camera Array dataset (and rigs like it), plus the component-merge
 architecture. Sources: RealityScan 2.2 local Help (authoritative for this
 build: allcommands.htm, alignsettings.htm, setkeyvaluetable.htm,
-settings_distortion_models.htm), `testing/MERGE_TEST_PLAN.md` results,
+settings_distortion_models.htm), `docs/validation/merge_test_plan.md` results,
 the NA167 notes (B1-B9), and inspection of the actual
 image EXIF.
 

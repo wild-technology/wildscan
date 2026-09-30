@@ -136,8 +136,7 @@ def build_arg_parser(params) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "environment variables (persona audit 2026-08-08 - these were "
-            "undiscoverable from help):\n"
+            "environment variables:\n"
             "  RS_MODULES         comma-separated module names to enable "
             "non-interactively\n"
             "                     (module-specific flags appear in --help "

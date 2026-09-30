@@ -9,7 +9,7 @@ peel harvest cannot cross a directory junction (2026-07-27)".
 
 `assert_harvestable` was born in archive/campaign_drivers/run_h2024_v2.py (which retains its
 own historical copy) and is promoted here so every live driver shares ONE
-implementation. Tests: testing/test_harvest_guard.py.
+implementation. Tests: tests/test_harvest_guard.py.
 """
 from __future__ import annotations
 

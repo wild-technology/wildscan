@@ -149,7 +149,7 @@ reports for the running operation, and come from the Help's table, not from meas
 ### 2.1 `-selectAllComponents` DOES NOT EXIST
 
 `-selectAllComponents` fails as an unknown/invalid command, result code `0x82000060`. It had
-lived unnoticed in `archive/legacy_scripts/AlignZonesSequentially.bat`
+lived unnoticed in [archive/legacy_scripts/AlignZonesSequentially.bat](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/legacy_scripts/AlignZonesSequentially.bat)
 [VERIFIED: NA167 #13 / B2, FINDINGS 2026-07-23]. The Help's master command table lists exactly
 three component-selection commands: `selectComponent`, `selectMaximalComponent`,
 `selectComponentWithLeastReprojectionError` [OFFICIAL: appbasics/allcommands].
@@ -429,7 +429,7 @@ GUI dialog. `-editControlPointSelection "key=value"`, `-selectControlPoint`, `-r
 > **Content overlap ⇒ fusable by either mechanism, with or without scene georeferencing
 > constraints. Zero content overlap ⇒ silent no-fuse, regardless of flags, mechanism or path
 > form.**
-> [VERIFIED: D7 probe wave, `archive/campaign_drivers/probe_d7.py`, FINDINGS "D7 RESOLVED", 2026-07-24]
+> [VERIFIED: D7 probe wave, [archive/campaign_drivers/probe_d7.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/probe_d7.py), FINDINGS "D7 RESOLVED", 2026-07-24]
 
 The evidence, in the order it was obtained:
 
@@ -466,7 +466,7 @@ paths** — that nonetheless view the same wreck strip:
 
 **(d) The reconciliation.** D1–D3 never fused because those pairs had zero *content* overlap.
 They are consistent with the rule, not contradictory
-[VERIFIED: D7 probe wave, testing/probe_d7.py, FINDINGS "D7 RESOLVED" 2026-07-24]. The union flight log remains **required to georeference the merged
+[VERIFIED: D7 probe wave, [archive/campaign_drivers/probe_d7.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/probe_d7.py), FINDINGS "D7 RESOLVED" 2026-07-24]. The union flight log remains **required to georeference the merged
 result** but plays no role in fusion — the earlier "union log + `-update` is what enabled the
 duplicate-path merges" hypothesis is **refuted**
 [SUPERSEDED: candidate discriminator recorded 2026-07-24 morning, refuted the same day].
@@ -1017,7 +1017,7 @@ rather than assumed [VERIFIED-by-inspection: merge_zones.py lines 257–279, 344
 **The margin is applied to BOTH bboxes**, so a 10 m margin treats components up to **20 m** apart
 as bordering. Every description of it as a "10 m-expanded bbox", including several in the findings
 log, understates the reach by 2× [VERIFIED: FINDINGS 2026-07-27, pinned by
-`testing/test_merge_scope.py`].
+`tests/test_merge_scope.py`].
 
 **Measured effect of the gate rework:** under the new gate the 8 non-hull H2024 components
 partition into **5 clusters** (versus **ONE** under the border gate), and both resulting fusions
@@ -1173,7 +1173,7 @@ time — the only moment per-camera XMP identity still exists — and persisted 
 | `images` | pose-bearing stem sidecars between two sanitize passes (successive difference) | [VERIFIED: component_manifest.py] |
 | `bbox_utm` | the **zone flight log** rows of the member images (`name;X;Y;Alt;…`), matched by basename **and** stem, case-insensitively | [VERIFIED-by-inspection: component_manifest.py module docstring + `bbox_from_flight_log`] |
 | **Not** `bbox_utm` | exported XMP `xcr:Position` — those are **grid-anchored local-frame** values, not UTM | [VERIFIED: B10 context, 2026-07-23] |
-| `history` | audit trail for every accept/rollback/twin-drop | [VERIFIED-by-inspection: component_manifest.py `append_history`] |
+| `history` | component-origin and growth events | [VERIFIED-by-inspection: component_manifest.py `build_manifest`, grow_zone.py `new_history_entry`] |
 
 `component_analysis._validate` refuses duplicate component identities (`zone/component`), which is
 what caught the two-fusions-in-one-cluster naming collision

@@ -3,7 +3,7 @@ setlocal
 :: DEPRECATED (2026-07-23): production zone alignment now uses
 :: AlignZone.bat (exports ALL components, applies AlignmentParams.xml)
 :: and model generation moved to GenerateModel.bat. This script remains
-:: only for testing/run_zone9_tests.py; do not build new workflows on it.
+:: only for scripts/validation/run_zone9_validation.py; do not build new workflows on it.
 ::
 :: Align a folder of images in RealityScan and optionally generate, cull,
 :: texture, and simplify the model.

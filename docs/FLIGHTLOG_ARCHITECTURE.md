@@ -75,7 +75,7 @@ Three load-bearing roles (full inventory with file:line refs in the
       `-exportXMP` successive-difference is the ONLY way the CLI
       reveals registration counts and component membership. Manifests,
       merge attribution, never-shrink invariants, the scale oracle,
-      and poses2flightlog (refined flight logs are DERIVED from these
+      and poses_to_flight_log (refined flight logs are DERIVED from these
       reads) all sit on it. NOT purgeable without losing the
       measurement system; flight logs and settings are inputs and
       cannot replace an output oracle. Candidate future replacement:
@@ -147,7 +147,7 @@ row-driven, not key-driven.
      - merge_zones.build_union_flight_log: dedupe by FULL PATH (today
        by basename), rows carry full paths.
   2. Always-generate: master + zone logs generated for BOTH nav
-     sources (COLMAP bridge; ROVDataConcat/geoall) through ONE writer
+     sources (COLMAP bridge; ROVDataConcat/georeference_survey) through ONE writer
      so header/columns/CRLF/paths cannot diverge (today three writers
      disagree on header case and newlines). CONSTRAINT (2026-08-09):
      both params templates set csvFLIgn=true, so RS IGNORES the header
@@ -174,9 +174,12 @@ row-driven, not key-driven.
   - P3 CLOSED: path rows match EXACT-PATH (no basename fallback, loud
     per-row failure on mismatch); bare rows match basename. Pool
     layout's semantics are confirmed safe.
-  - P1 CLOSED: the params' gpsLogFileFormat GUID is decorative on 2.2
-    (random-GUID import applies priors); no flightlogs.xml patching
-    needed on customer installs.
+  - P1 SUPERSEDED: the early random-GUID test verified positions but did
+    not establish orientation or accuracy import. The 2026-08-23
+    saved-project comparison showed that an absent format imports positions
+    only. Customer installs must match the params' gpsLogFileFormat GUID
+    to the custom format in the installed flightlogs.xml; see the
+    flight-log reference §2.3 and SETUP-AND-RUN.md §2.1.
   - P4 CLOSED: re-import + `-update` re-places ALIGNED components onto
     new priors without re-align. Per-step flight-log loading is now a
     verified refresh mechanism, not just hygiene. §1b's caveat is
@@ -201,6 +204,6 @@ row-driven, not key-driven.
     loadColmap) provides an alternative separator for EXIF-identical
     cameras. The WCA sidecar path is therefore mothballed, not
     deleted.
-  - Re-import-refreshes-priors is UNVERIFIED (P4) — the per-step-load
-    rationale is hygiene + new-align correctness, not yet a proven
-    stale-state purge.
+  - Re-import plus `-update` refreshed aligned-component placement in P4.
+    That result does not establish that every cached alignment input is
+    invalidated; retain saved-project checks when changing prior formats.

@@ -66,10 +66,6 @@ from modules.realityscan_interface.realityscan_cli import (
 # twin/orphan analysis). Import-guarded so this driver runs - degraded
 # but safely - until they land.
 try:
-    from modules import component_manifest  # type: ignore
-except Exception:  # pragma: no cover - module still in development
-    component_manifest = None
-try:
     from modules import component_analysis  # type: ignore
 except Exception:  # pragma: no cover - module still in development
     component_analysis = None
@@ -184,17 +180,6 @@ def load_contract_manifests(directory: str, logger) -> dict[str, dict]:
     if manifests:
         logger.info('loaded %d component manifests from %s', len(manifests), directory)
     return manifests
-
-
-def try_build_manifests(export_dir: str, zone: str, logger) -> bool:
-    """Growth exports CANNOT rebuild identity manifests: stem-named
-    per-component membership only exists via AlignZone.bat's in-session
-    successive-difference harvest (-exportXMPForSelectedComponent is
-    always ordinal - FINDINGS B10 FINAL FORM). This is an honest no-op
-    kept as the single place that documents WHY refresh is impossible
-    here; post-growth manifests stay approximate until an AlignZone
-    identity pass re-runs on the grown scene."""
-    return False
 
 
 def write_manifest(manifest: dict, directory: str) -> str:
@@ -606,9 +591,9 @@ def main() -> int:
         if accepted:
             baseline = after
             note_exports(export_dir)
-            # Refresh per-component composition from this full export.
-            if try_build_manifests(export_dir, zone, logger):
-                pass
+            # Growth exports cannot rebuild stem identity: it requires
+            # AlignZone's successive-difference harvest. Only manifests
+            # already written beside this export can replace approximations.
             fresh = load_contract_manifests(export_dir, logger)
             if fresh:
                 manifests = fresh
@@ -725,8 +710,6 @@ def main() -> int:
             if accepted:
                 sweep_gain += max(gain, 0)
                 note_exports(export_dir)
-                if try_build_manifests(export_dir, zone, logger):
-                    pass
                 fresh = load_contract_manifests(export_dir, logger)
                 if fresh:
                     # Authoritative composition for the components this
@@ -776,7 +759,6 @@ def main() -> int:
         if final_census:
             final_entry['registered'] = len(final_census)
             baseline |= final_census
-        try_build_manifests(final_dir, zone, logger)
     record(final_entry)
 
     # Component table: every tracked component at its LATEST export

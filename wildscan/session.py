@@ -27,7 +27,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .workspace import Workspace, _find_flight_logs
+from .workspace import StageStatus, Workspace, _find_flight_logs, _load_json
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -213,6 +213,8 @@ class RawDataScan:
 def scan_raw_data(location: str | Path) -> RawDataScan:
     """Read-only census of a cruise data folder (bounded depth, cheap)."""
     scan = RawDataScan()
+    if not location or isinstance(location, str) and not location.strip():
+        return scan
     root = Path(location)
     if not root.is_dir():
         return scan
@@ -339,13 +341,18 @@ def default_session() -> Session:
     return s
 
 
-def default_enabled(ws: Workspace) -> list[str]:
+def default_enabled(ws: Workspace,
+                    statuses: dict[str, StageStatus] | None = None) -> list[str]:
     """Resume-aware pre-selection: stages already DONE are unticked, the
     rest ticked - RC_Main pre-selected everything; a resumable portal
     pre-selects what remains."""
-    statuses = ws.detect()
+    if statuses is None:
+        statuses = ws.detect()
+    interrupted = _load_json(ws.root / "interrupted_stage.json").get("stages", [])
+    if not isinstance(interrupted, list):
+        interrupted = []
     return [k for k in ALL_STAGES
-            if statuses.get(k) is None or statuses[k].status != "done"]
+            if k in interrupted or statuses.get(k) is None or statuses[k].status != "done"]
 
 
 # ---------------------------------------------------------------- questions
@@ -580,6 +587,8 @@ class StageCommand:
     argv: list[str]
     env: dict[str, str]
     needs_realityscan: bool = False
+    workspace: str | None = None
+    stages: tuple[str, ...] = ()
 
     @property
     def display(self) -> str:
@@ -639,7 +648,7 @@ def build_commands(session: Session) -> list[StageCommand]:
             env.update(rs_env)
         commands.append(StageCommand(
             stage=" + ".join(MODULE_DISPLAY[k] for k in chain),
-            argv=argv, env=env, needs_realityscan=needs_rs))
+            argv=argv, env=env, needs_realityscan=needs_rs, stages=tuple(chain)))
 
     if "merge" in session.enabled:
         argv = [sys.executable, str(REPO / "merge_zones.py"),
@@ -669,7 +678,7 @@ def build_commands(session: Session) -> list[StageCommand]:
         commands.append(StageCommand(
             stage="Merge Components", argv=argv,
             env={"PYTHONIOENCODING": "utf-8", **rs_env},
-            needs_realityscan=True))
+            needs_realityscan=True, stages=("merge",)))
 
     if "model" in session.enabled:
         commands.append(StageCommand(
@@ -677,7 +686,7 @@ def build_commands(session: Session) -> list[StageCommand]:
             argv=[sys.executable, str(REPO / "run_models.py"),
                   "--workspace", session.results_root],
             env={"PYTHONIOENCODING": "utf-8", **rs_env},
-            needs_realityscan=True))
+            needs_realityscan=True, stages=("model",)))
 
     if "export" in session.enabled:
         # Through the python driver -> RealityScanCLI.run_batch_script,
@@ -700,7 +709,7 @@ def build_commands(session: Session) -> list[StageCommand]:
                   "--names", str(names_file),
                   "--log_dir", str(ws.root / "logs")],
             env={"PYTHONIOENCODING": "utf-8", **rs_env},
-            needs_realityscan=True))
+            needs_realityscan=True, stages=("export",)))
 
     if "publish" in session.enabled:
         argv = [sys.executable, str(REPO / "publish_batch.py"),
@@ -722,8 +731,10 @@ def build_commands(session: Session) -> list[StageCommand]:
             argv.append("--dry-run")
         commands.append(StageCommand(
             stage="Publish (Cesium / Nira)", argv=argv,
-            env={"PYTHONIOENCODING": "utf-8"}))
+            env={"PYTHONIOENCODING": "utf-8"}, stages=("publish",)))
 
+    for command in commands:
+        command.workspace = str(ws.root)
     return commands
 
 
