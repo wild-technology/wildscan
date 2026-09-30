@@ -27,13 +27,16 @@ Baseline, with the environment active:
 python -m pytest
 ```
 
-560 tests, ~30 s on the Windows processing machine. A clean checkout that
-does not pass is a broken tree; do not build on it.
+Pytest collects the offline suite from `tests/`; its output is authoritative
+for the current count and skips. Investigate failures before processing data.
+Some path, process and NTFS checks require Windows; pure calculation checks
+are useful elsewhere too. The processing target is native Windows 11 Pro,
+and offline passing tests do not establish native RealityScan acceptance.
 
-**Off-Windows caveat:** 22 of those tests pin Windows absolute paths
-(`M:\pool\...`) and fail on macOS/Linux, where `os.path.basename` does not
-split backslashes. That is an environment artifact, not a defect — 534 pass.
-Windows is the only platform where a green run means anything.
+Manual validation lives in `scripts/validation/`, separate from pytest.
+`check_preprocessing.py` checks copies of a small image sample;
+`run_zone9_validation.py` and its `.bat` launcher run native alignment.
+`probe_cesium_depth.py` creates a real remote probe asset.
 
 For any RealityScan CLI question, start at `docs/rs-reference/README.md`,
 the routing index of the RealityScan manual.
@@ -91,9 +94,9 @@ becoming load-bearing for a conclusion.
 - Windows 11, native. **No WSL** — cmd, `.bat`, PowerShell, VBS are the
   substrate. `.bat` and `.vbs` must be CRLF (`.gitattributes` pins it);
   LF breaks cmd's byte-offset label search nondeterministically.
-- Python is `py -3.13`; **3.12 is the hard floor** (`numpy>=2.5` and
-  `scipy>=1.18` are 3.12-only, so an older interpreter cannot even resolve
-  the install). `ruff` is not installed on the processing machine.
+- Use Python 3.13+ for development and native validation. The package's
+  declared installation floor is 3.12, matching the dependency floor.
+  Use the activated environment's `python` for commands.
 - ASCII-only console output; the cp1252 console crashes on non-ASCII. Set
   `PYTHONIOENCODING=utf-8` when parsing UTF-8 sources.
 - Data lives on large local/NAS volumes with user-specific paths. Never
@@ -154,6 +157,17 @@ project status and decisions. The distilled, self-contained counterpart is
 
 ## Naming
 
+Python files, functions and variables use `snake_case`; class names retain
+their established `PascalCase`. Names describe the operation:
+`georeference_survey.py`, `decimate_images.py`, `poses_to_flight_log.py`,
+`run_calibration_ladder.py`, and `score_yellow_pixels.py`.
+
+Preserve existing native commands, workflow filenames, public framework
+methods, environment variables, and serialized/settings keys. The former
+root filenames `geoall.py`, `decimator.py`, and `poses2flightlog.py` are
+compatibility aliases for commands and imports; the corresponding
+`SettingsStore` sections keep their existing keys.
+
 Everything in this repo says **RealityScan** (`RS`), never RealityCapture.
 Exceptions that must NOT be renamed:
 
@@ -169,6 +183,15 @@ Exceptions that must NOT be renamed:
 
 **Entry points**
 
+- `tests/` — offline pytest tests and fixtures; no campaign launchers.
+- `scripts/campaigns/` — ON2026 run2/run3/union, workbench-night, and
+  calibration-ladder drivers. These are dataset-specific workflows.
+- `scripts/validation/` — explicit manual validations and their
+  preprocessing variant grid.
+- `scripts/analysis/` — reusable image-analysis commands.
+- `docs/validation/` — historical experiment plans;
+  `docs/validation/results/` preserves their result evidence. Dated plans
+  retain their original command paths; use the current script locations above.
 - `main.py` — interactive orchestrator over the `RSModule` framework
   (`module_base/rs_module.py`): Extract Images → Georeference → Preprocess
   Images → Batch Directory → RealityScan Alignment. `RS_MODULES` /
@@ -200,7 +223,7 @@ Exceptions that must NOT be renamed:
 - `RS_CLI/Scripts/*.bat` — workflow definitions. Every operation runs
   through the shared `:run` subroutine: `-delegateTo %RS_INSTANCE%` →
   double `-waitCompleted` with a grace period → abort if
-  `RS_CLI/Errors/errors.txt` is non-empty.
+  `RS_CLI/Errors/errors_<instance>.txt` is non-empty.
   - Production: `AlignZone` (canonical per-zone align — applies
     `AlignmentParams.xml`, saves the scene, then runs the destructive
     in-session identity loop: per lap `-exportXMP` stems are harvested to
@@ -218,7 +241,7 @@ Exceptions that must NOT be renamed:
     `%1` = target instance), `GuiWorkbench`, `ComputeModel`,
     `CalibCellAlign`, `FlushCache` (sets retention 0 during the clear —
     the 7-day default kept 918 GB), and `AlignImagesFromFolder`
-    (DEPRECATED; kept only because `testing/run_zone9_tests.py` drives it).
+    (DEPRECATED; kept only because `scripts/validation/run_zone9_validation.py` drives it).
     The one-off investigation probes and the superseded workflows were
     removed at the wildscan release; they survive in the predecessor
     repositories.
@@ -238,7 +261,8 @@ Exceptions that must NOT be renamed:
     instance and computes the mesh itself.
 - `RS_CLI/Errors/ErrorWriter.bat` — invoked by RealityScan itself
   (`appProcessAction=ExecuteProgram`); appends every completion to
-  `results.log`, failures to `errors.txt`. `ErrorWriterLaunch.vbs` is the
+  `results_<instance>.log`, failures to `errors_<instance>.txt`.
+  `ErrorWriterLaunch.vbs` is the
   GUI-subsystem launcher that keeps console windows from popping.
 - `RS_CLI/Metadata/*.xml` — parameter presets passed to CLI commands.
   Documented profile by profile in
@@ -264,14 +288,14 @@ Exceptions that must NOT be renamed:
 - `modules/preprocess_images/` — canonical CLAHE / white-balance transforms
   + the pre-alignment preprocessing module (default CLAHE 2.0/8×8,
   validated on zone_9 — baseline aligns to nothing on this imagery).
-  `testing/preprocess_variants.py` imports the transforms from here; keep
+  `scripts/validation/preprocess_variants.py` imports the transforms from here; keep
   it that way (no second implementation).
 - `modules/image_batcher/batch_directory.py` — zone batching. Note the
   duplicate-path identity problem: copying overlap images into two zones
   gives one trajectory row two physical files.
 - `modules/scale_oracle.py` — metric-scale measurement and the 0.90–1.10
   acceptance band. Fused components need the correspondence-free method
-  (`archive/campaign_drivers/run_h2024_fused_models.py`), since merge-scene
+  ([archive/campaign_drivers/run_h2024_fused_models.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/run_h2024_fused_models.py)), since merge-scene
   XMP exports are ordinal.
 - `modules/component_analysis.py`, `modules/component_manifest.py` —
   component census, membership, and border logic.
@@ -280,8 +304,11 @@ Exceptions that must NOT be renamed:
   persisted at capture time.
 - `modules/feature_merge.py` — 3D extents, feature-box assignment, and
   merge planning that reports what it can and cannot glue.
-- `modules/align_fingerprint.py` — align-input fingerprinting, so retries,
-  resumes and merges are nav-aware.
+- `modules/align_fingerprint.py` — alignment and model input fingerprints,
+  with saved-project state for safe retries, resumes and census checks.
+- `modules/publish_fingerprint.py` — selected publication payload hashes
+  and source inventories. Census checks file size and modification time
+  without hashing large assets on every refresh.
 - `modules/export_deliverables.py` — the Python side of the export stage.
 - `modules/cesium_placement.py` — where a mesh belongs on the WGS84 globe.
   Reads the export's `.rsInfo` for the CRS and `transformToModel`, DERIVES
@@ -289,7 +316,7 @@ Exceptions that must NOT be renamed:
   use, the dive's nav envelope, and a determinant test that rules out
   mirrored readings), then converts the anchor's SEA-SURFACE depth to an
   ELLIPSOIDAL height through EGM2008 and localises the mesh into East-North-Up
-  metres. **The vertical is the whole point:** `geoall.py` writes
+  metres. **The vertical is the whole point:** `georeference_survey.py` writes
   `-abs(kalman_depth)`, i.e. a depth below the sea surface, and Cesium reads
   every height as above the ellipsoid — the gap is the geoid undulation, up to
   +72.7 m on this repo's own data. PROJ silently applies a ZERO correction
@@ -302,16 +329,18 @@ Exceptions that must NOT be renamed:
 
 **Standalone / retired**
 
-- `geoall.py`, `poses2flightlog.py`, `decimator.py`, `timestamp_rename.py`,
+- `georeference_survey.py`, `poses_to_flight_log.py`, `decimate_images.py`, `timestamp_rename.py`,
   `organize_by_date.py` — data prep; they do not invoke RealityScan.
-- `archive/colmap/` — retired COLMAP scripts; do not resurrect into the
+- [archive/colmap/](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/colmap/) — retired COLMAP scripts; do not resurrect into the
   active pipeline. The live COLMAP work is the separate `colmap_studio`
   project, whose fact base is frozen at `docs/COLMAP_FINDINGS_UNIFIED.md`
   and whose crossover with this pipeline is tracked in
   `docs/COLMAP_CROSSOVER.md`.
-- `archive/campaign_drivers/`, `archive/legacy_scripts/` — finished
-  campaign drivers and superseded workflows, kept as citation targets for
-  the engineering log. Read for provenance; do not wire back in.
+- [Archived campaign drivers](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/)
+  and [superseded workflows](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/legacy_scripts/)
+  remain citation targets in the original Git snapshot. Retired files are
+  excluded from the published tree and retained locally under ignored
+  `archive/`. Read historical code for provenance; do not wire it back in.
 
 ---
 
@@ -332,7 +361,7 @@ Exceptions that must NOT be renamed:
 5. Data lives on large local/NAS volumes with user-specific paths — never
    hardcode them. Use `SettingsStore` prompts with the previous value as
    default.
-6. `geoall.py` is the canonical georeferencing implementation; port
+6. `georeference_survey.py` is the canonical georeferencing implementation; port
    improvements from it into `modules/georeference/` rather than letting
    the two diverge further.
 7. Import components (`-importComponent`) ONLY from their original export
@@ -344,9 +373,9 @@ Exceptions that must NOT be renamed:
    `key:value` (converted inside the workflow).
 9. `docs/rs-reference/` is the RealityScan documentation of record —
    consult it before writing any new workflow. The historical test matrices
-   (`testing/MERGE_TEST_PLAN.md`,
-   `testing/ALIGN_MERGE_HARDENING_PLAN.md`,
-   `testing/PRIORS_DISTORTION_TEST_PLAN.md`) track design assumptions not
+   (`docs/validation/merge_test_plan.md`,
+   `docs/validation/alignment_merge_hardening_plan.md`,
+   `docs/validation/priors_distortion_test_plan.md`) track design assumptions not
    settled by documentation; cells graduate into the engineering log with
    results.
 

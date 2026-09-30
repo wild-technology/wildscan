@@ -1174,7 +1174,7 @@ The two are distinct template variables and must not be confused.
 
 ### 6.6 The empirical checks — one that was run, two that are cheap
 
-**Run (and it failed).** `poses2flightlog.py` fits the local→UTM rigid transform between
+**Run (and it failed).** `poses_to_flight_log.py` fits the local→UTM rigid transform between
 XMP camera positions and flight-log priors. Orientations are deliberately **not** rewritten:
 *"Six rotation-convention candidates were tested against the flight-log yaw/pitch/roll; none
 matched (best mean error ~77°)."* Writing orientations in an unverified convention would
@@ -1409,7 +1409,7 @@ re-alignment of all five H2024 zones (one variable: the 7-column format
 zone_2 1.014, zone_4 0.904 (3 vs 5) — but **zone_3 and zone_5 registered NOTHING AT ALL**:
 zero components, empty harvest, "Identity capture finished after 0 component(s)" after 12.7
 and 32.4 minutes. **Orientation priors are load-bearing for registration on this data, not
-harmful.** [VERIFIED: status log 2026-07-27; driver `archive/campaign_drivers/ab_orientation_priors.py`;
+harmful.** [VERIFIED: status log 2026-07-27; driver [archive/campaign_drivers/ab_orientation_priors.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/ab_orientation_priors.py);
 results at `F:/na156_h2024/ab_position_only/ab_results.json`]
 
 **CONTAMINATION FLAG on every orientation conclusion.** Imported YPR is read in NED with a
@@ -1467,7 +1467,7 @@ Facts about the frames established here:
 - **`xcr:Position` in exported XMPs is in a GRID-ANCHORED LOCAL frame, not UTM.** Verified
   on zone_9: the values are small and local, the anchor is the grid origin, and the
   lat/long XMP attributes are **garbage** (e.g. `179.98N`). Fit local→UTM with
-  `poses2flightlog.py`. [VERIFIED: NA167 B10-adjacent, 2026-07-23; docs/code-review-2026-07]
+  `poses_to_flight_log.py`. [VERIFIED: NA167 B10-adjacent, 2026-07-23; docs/code-review-2026-07]
   [OPEN: cell U13 — re-verify on an **original** georeferenced zone scene; if positions are
   UTM there, manifests could carry true per-camera positions and better bboxes. Open since
   2026-07-23.]
@@ -1502,7 +1502,7 @@ Facts about the frames established here:
 ### 8.3 The local→UTM fit that the pipeline actually uses
 
 Because `xcr:Position` is local, refining a flight log from solved poses needs an explicit
-fit. `poses2flightlog.py` does a Umeyama least-squares fit with **scale locked at 1**:
+fit. `poses_to_flight_log.py` does a Umeyama least-squares fit with **scale locked at 1**:
 
 ```python
 def umeyama_rigid(src, dst, with_scale=False):
@@ -1537,7 +1537,7 @@ is a usable estimate of USBL/DVL navigation error.
 **Georeferencing of a merged/assembled scene is verified ONLY in the GUI today.** Hardening
 cell U7 (a CLI-observable georeference check) is the longest-standing open item in this
 repo. Candidate proxies: `-exportReport` with a components params XML;
-`poses2flightlog.py` local→UTM fit residuals (a georeferenced component should fit near
+`poses_to_flight_log.py` local→UTM fit residuals (a georeferenced component should fit near
 identity); or an exported flight-log round trip.
 [OPEN: U7, open since 2026-07-23; the interim proxy is GUI screenshot verification]
 
@@ -1882,7 +1882,7 @@ _LEGACY_FAMILY = (('camupper', 'legacy_camupper'),
 | `legacy_camupper` | `camupper*` | starboard |
 | `zeuss` | delimiter-bounded `zeuss` or `herc` | zeuss |
 
-Two regression-pinned traps [VERIFIED: `testing/test_rig_mounts.py`]:
+Two regression-pinned traps [VERIFIED: `tests/test_rig_mounts.py`]:
 
 - **Cruise digits must not decide the family.** Literal `p231c`/`c231c` tests meant the next
   cruise's `C245C0007_*.jpg` fell through to a **zero lever arm and 0° pitch offset** —
@@ -1896,7 +1896,7 @@ Two regression-pinned traps [VERIFIED: `testing/test_rig_mounts.py`]:
 The same Cinema unit sits **10° down** under legacy `camlower` names and **45° down** under
 WCA `C###C` names. Keying geometry off the physical camera would silently rewrite every
 legacy dataset by tens of degrees. `MOUNTS` in
-`modules/georeference/georeference_images.py`, imported unchanged by `geoall.py`:
+`modules/georeference/georeference_images.py`, imported unchanged by `georeference_survey.py`:
 
 | Family | fwd (m) | lat (m) | down (m) | pitch (° down from vehicle forward axis) | pitch accuracy (°) |
 |---|---:|---:|---:|---:|---:|
@@ -1908,7 +1908,7 @@ legacy dataset by tens of degrees. `MOUNTS` in
 | `wca_cinema` | 1.0 | 0.0 | 0.0 | 45.0 | 15.0 |
 | `wca_starboard` | **`None`** — never measured | | | | |
 
-[VERIFIED-by-inspection + pinned by `testing/test_rig_mounts.py`, values in force 2026-07-26]
+[VERIFIED-by-inspection + pinned by `tests/test_rig_mounts.py`, values in force 2026-07-26]
 
 **The fallback for a family with no measured mount (2026-08-31, adopted).**
 A family that resolves to `None` above no longer writes an empty pitch. It takes
@@ -1921,7 +1921,7 @@ always **wins**; the fallback is reached only where there is none.
 |---|---|
 | Source of truth | `ASSUMED_MOUNT_DEFAULTS` + `assumed_pitch_prior()` in `modules/georeference/georeference_images.py`, consumed by **both** implementations |
 | Config record | `modules/cameras.json` → `defaults.assumed_mount` |
-| Knobs | `--assumed-pitch` / `--assumed-pitch-accuracy` (`geoall.py`); `--g_assumed_pitch` / `--g_assumed_pitch_accuracy` (module) |
+| Knobs | `--assumed-pitch` / `--assumed-pitch-accuracy` (`georeference_survey.py`); `--g_assumed_pitch` / `--g_assumed_pitch_accuracy` (module) |
 | Opt-out | a **negative** assumed pitch restores the 2026-08-07 behaviour (no pitch prior at all) |
 | Never applies to | `voyis_*` — poses come from the COLMAP bridge, so a vehicle-nav prior is the **wrong pipeline**, not a missing measurement, and a fallback would mask that |
 | Applies to | `wca_starboard` and any unrecognised family. The unknown-camera warning still fires, so the run still SAYS the mount was never measured |
@@ -2301,7 +2301,7 @@ Every [OPEN] in this document, with the cheapest probe that answers it.
 | **Q7** | **LARGELY RESOLVED.** `ifKGrp` = *Automatically group camera calibration*; `ifKmode` **does not exist** (the real key is `ifKModel` = *Internal calibration* trust); Euler order and Camera mount are `gpsLogEulerAnglesOrderYPR` / `gpsLogEulerAnglesOrderOPK` / `gpsLogMount` / `gpsLogCameraAxes`, defaults `EULER_ROT_ZYX` / `EULER_ROT_XYZ` / `MOUNT_DOWNWARD_X_EASTWARD` / `CAMERA_AXES_PHOTOGRAMMETRIC` (§9.3). Residual: (a) does an *unpinned* import really get the binary default, or a persisted last-used GUI value? (b) which of the four "Nadir-facing, X-axis to …" combo entries is `MOUNT_DOWNWARD_X_EASTWARD`? (c) are `ifOfs*` lever-arm/boresight offsets honoured headless? | (a) import the smoke fixture twice — once with `gpsLogEulerAnglesOrderYPR` pinned to `EULER_ROT_ZYX`, once with the key absent — and diff the solved attitudes. (b) GUI save-and-diff of the params XML at each of the four mount entries. (c) set `ifOfsZ` to a large value on the smoke fixture and check whether the prior positions shift by that amount. Each ~2 min. |
 | **Q8** | Does the hand-merged 13-column format `{B438A617-…}` survive a RealityScan update? | After any update, `grep B438A617 "C:\Program Files\Epic Games\RealityScan_2.2\flightlogs.xml"`. Zero cost; must become part of the post-update checklist. |
 | **Q9** | Is `xcr:Position` UTM (not grid-local) in an **original** georeferenced zone scene, as opposed to the imported-component scenes where local was observed? | Hardening cell U13: `-exportXMP` in the original zone_2 scene and compare positions against the flight-log UTM. If they are UTM, manifests can carry true per-camera positions. Open since 2026-07-23. |
-| **Q10** | How do I verify georeferencing of a merged/assembled scene **from the CLI**? | Hardening cell U7. Candidates: `-exportReport` with a components params XML; `poses2flightlog.py` residuals (a georeferenced component should fit local→UTM near identity); an exported flight-log round trip. Longest-standing open item in the repo. |
+| **Q10** | How do I verify georeferencing of a merged/assembled scene **from the CLI**? | Hardening cell U7. Candidates: `-exportReport` with a components params XML; `poses_to_flight_log.py` residuals (a georeferenced component should fit local→UTM near identity); an exported flight-log round trip. Longest-standing open item in the repo. |
 | **Q11** | Is the ~45° bow tilt caused by `-update` fitting mis-converted orientation priors? | Re-run the assembly `-update` with a **position-only** union log and re-measure the bow's attitude. ~2 minutes. Queued as probe (h), never run. **Blocked upstream by the fact that assemble mode exports no poses** — port the successive-difference harvest to a dated copy of the assembly first. |
 | **Q12** | What is the optimal position-accuracy setting between the proven-loose 10/10/1 and the proven-harmful 1/1/0.1? | The queued intermediate ladder (3/3/0.5, then 5/5/1) on the 665-image bow fixture, judged by the scale oracle and component count, not by registration count. ~15 min/cell on that fixture. |
 | **Q13** | Does `Brown3` + explicitly-loose accuracies alone repair the hull scale, i.e. was PD-6's repair really Division? | The isolating cell on zone_1: Brown3 + 10/10/1 + intact sidecars, position-only. ~70 minutes. Never run; the corrected config was adopted either way. |

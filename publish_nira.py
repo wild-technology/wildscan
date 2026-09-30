@@ -34,20 +34,58 @@ import subprocess
 import sys
 from pathlib import Path
 
+from publish_cesium import (PART_RE, STAGING_MARKER, referenced_companions, select_objs)
+from modules.publish_fingerprint import GEOMETRY, POINTCLOUD, SIDECAR, source_files
+
 logger = logging.getLogger('publish_nira')
 
-GEOMETRY = {'.obj', '.fbx', '.dae', '.gltf', '.glb'}
 MATERIAL = {'.mtl'}
 TEXTURE = {'.jpg', '.jpeg', '.png', '.tiff', '.tif', '.bmp'}
-SIDECAR = {'.rcinfo'}
-POINTCLOUD = {'.las', '.laz', '.e57'}
 
 
-def build_file_list(directory: Path) -> list[dict]:
+def build_file_list(directory: Path, parts: str = 'split',
+                    geometry: str | None = None) -> list[dict]:
+    """Select one mesh representation, excluding local Cesium derivatives."""
+    if directory.name.lower() == '_cesium_local' or \
+            (directory / STAGING_MARKER).is_file():
+        raise SystemExit(f'Cesium staging is not a source export: {directory}')
+    try:
+        files = source_files(directory)
+    except (OSError, ValueError) as exc:
+        raise SystemExit(str(exc)) from None
+
+    meshes = [p for p in files if p.suffix.lower() in GEOMETRY]
+    formats = {p.suffix.lower()[1:] for p in meshes}
+    if geometry is None:
+        if len(formats) > 1:
+            raise SystemExit(
+                f'multiple mesh formats under {directory}: '
+                f'{", ".join(sorted(formats))}; select one with --geometry')
+        geometry = next(iter(formats), None)
+    chosen = {p for p in meshes if p.suffix.lower() == f'.{geometry}'}
+    if geometry == 'obj':
+        chosen = {obj for parent in sorted({p.parent for p in chosen})
+                  for obj in select_objs(parent, parts)}
+        chosen.intersection_update(files)
+        companions = set(referenced_companions(sorted(chosen), TEXTURE))
+        if companions - set(files):
+            raise SystemExit('a material or texture is outside the source '
+                             'export or inside excluded Cesium staging')
+    else:
+        companions = {p for p in files if p.suffix.lower() in MATERIAL | TEXTURE}
+
+    if geometry is not None and not chosen:
+        raise SystemExit(f'no {geometry} geometry found under {directory}')
+    clouds = {p for p in files if p.suffix.lower() in POINTCLOUD}
+    model_names = {p.name.lower() for p in chosen | clouds}
+    model_names.update((match.group('stem') + p.suffix).lower()
+                       for p in chosen if p.suffix.lower() == '.obj'
+                       and (match := PART_RE.match(p.stem)))
+    sidecar_names = {name + ext for name in model_names for ext in SIDECAR}
+    sidecars = {p for p in files if p.name.lower() in sidecar_names}
+    included = chosen | companions | sidecars | clouds
     entries: list[dict] = []
-    for path in sorted(directory.rglob('*')):
-        if not path.is_file():
-            continue
+    for path in sorted(included):
         ext = path.suffix.lower()
         if ext in GEOMETRY or ext in MATERIAL or ext in SIDECAR:
             entries.append({'path': str(path)})
@@ -69,6 +107,12 @@ def main() -> int:
                         help='export directory (obj/ from ExportDeliverables)')
     parser.add_argument('--niraclient', required=True,
                         help='path to a checkout of NiraOfficial/niraclient')
+    parser.add_argument('--parts', choices=('whole', 'split'), default='split',
+                        help='OBJ representation when whole and by-parts '
+                             'copies coexist (default: split)')
+    parser.add_argument('--geometry', choices=('obj', 'fbx', 'dae', 'gltf', 'glb'),
+                        help='mesh format to upload (required when several '
+                             'formats coexist)')
     parser.add_argument('--wait', type=int, default=0,
                         help='seconds to wait for server-side processing '
                              '(0 = do not wait)')
@@ -87,7 +131,7 @@ def main() -> int:
     if not directory.is_dir():
         raise SystemExit(f'not a directory: {directory}')
 
-    entries = build_file_list(directory)
+    entries = build_file_list(directory, args.parts, args.geometry)
     payload = json.dumps(entries, indent=2)
     logger.info('%d file(s) for asset %r', len(entries), args.name)
 

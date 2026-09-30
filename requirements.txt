@@ -34,6 +34,3 @@ utm>=0.8
 
 # Test suite (the [dev] extra in pyproject.toml).
 pytest>=9.1
-
-# Reference-only scripts under archive/ (the [archive] extra).
-psutil>=7.0

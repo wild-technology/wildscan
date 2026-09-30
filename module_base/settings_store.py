@@ -182,7 +182,7 @@ class SettingsStore:
         isatty()=True with an EOF stdin - Windows trap registry), and a
         bare input() then aborts the driver with an EOFError traceback.
         ``ask()`` has always guarded this; ``prompt``/``prompt_bool`` did
-        not, so geoall.py and organize_by_date.py could not run unattended
+        not, so georeference_survey.py and organize_by_date.py could not run unattended
         at all (audit 2026-08-07). Returns ``default`` on EOF; raises a
         NAMED error when there is no default to fall back to.
         """

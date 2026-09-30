@@ -72,6 +72,24 @@ Contents:
 
    `py --list` should show 3.13 (or 3.12).
 
+### 2.1 Flight log import format
+
+Close RealityScan before editing its installation dictionary. Back up
+`flightlogs.xml` beside `RealityScan.exe`, then copy the custom `<format>`
+element from the repository's root `flightlogs.xml`, with ID
+`{B438A617-2434-5A24-C1B7-58980F28345A}`, inside
+the installed `<FlightLogs>` element. Preserve the other installed formats;
+do not replace the installation dictionary with the repository's older copy.
+Editing a file under Program Files may require administrator access.
+
+The ID must match `gpsLogFileFormat` in both
+`modules/realityscan_interface/RS_CLI/Metadata/FlightLogParams.xml` and
+`FlightLogParamsLocal.xml`. A missing or mismatched format can import positions
+while dropping orientation and accuracy without an error. Before processing
+a dive on a new installation, import a small flight-log fixture and inspect
+the saved project for the intended position, orientation and accuracy priors.
+See [the flight-log reference](rs-reference/06-georeferencing-flightlogs-and-scale.md#resolved-2026-08-23--side-a-holds-what-an-unresolvable-format-guid-actually-does).
+
 ---
 
 ## 3. Get the code
@@ -89,7 +107,7 @@ cd wildscan
 
 ## 4. Create the environment and install
 
-Install into a virtual environment, so wildscan's pinned dependencies stay
+Install into a virtual environment, so wildscan's processing dependencies stay
 separate from the rest of the machine.
 
 ```powershell
@@ -126,9 +144,12 @@ and the RealityScan `.bat` workflows out of the checkout itself.
 python -m pytest
 ```
 
-Expect **560 tests, all passing, in about 30 s**. One geoid test skips on a
-machine that cannot reach the internet. Any failure on a clean checkout
-means the install is wrong — fix it before processing a dive.
+Pytest collects the offline suite from `tests/` and reports its current count
+and skips. The geoid check skips when the EGM2008 grid is unavailable.
+Investigate failures before processing a dive; a failure can concern the
+environment, a fixture, or the code. Offline tests do not establish native
+RealityScan acceptance. Manual validation commands live in
+`scripts/validation/`, with historical plans under `docs/validation/`.
 
 ---
 
@@ -171,6 +192,7 @@ Set these only when you need them. In PowerShell: `$env:NAME = "value"`.
 | `RS_INSTANCE` | Name of the RealityScan instance to own (default `RS1`). Give each parallel run its own name. |
 | `RS_GPU_DEVICES` | GPUs for this instance, e.g. `0` — exported as `CUDA_VISIBLE_DEVICES`. |
 | `RS_CACHE_DIR` | Move RealityScan's cache to a large drive. |
+| `RS_ALIGN_PARAMS` | Alignment parameter XML to apply instead of the repository's `AlignmentParams.xml`; its content is recorded in each alignment fingerprint. |
 | `RS_HEADLESS` | `0` launches a visible RealityScan instead of headless. |
 | `CESIUM_ION_TOKEN` | Cesium ion access token, used by the publishers. |
 | `NIRACLIENT_DIR` | Path to your `niraclient` checkout, for Nira publishing. |
@@ -187,11 +209,17 @@ immediately rather than corrupt both runs.
 Cesium publishing converts depths below the sea surface into ellipsoidal
 heights using the EGM2008 geoid grid (~80 MB). `publish_cesium.py`
 downloads it from `cdn.proj.org` the first time it runs. On a machine with
-no internet, install it beforehand:
+no internet, download it on an online machine beforehand:
 
 ```powershell
-projsync --file us_nga_egm08_25.tif
+python -m pyproj sync --file us_nga_egm08_25.tif
 ```
+
+For a separate offline machine, locate the online machine's grid directory
+with `python -c "from pyproj.datadir import get_user_data_dir; print(get_user_data_dir())"`.
+Transfer `us_nga_egm08_25.tif` into the same user data directory reported by
+that command on the offline machine. Use `--no-proj-network` when publishing
+there so a missing local grid is reported immediately.
 
 This matters: without the grid, PROJ would silently apply a zero correction
 and your model would sit at sea level. The code refuses to continue rather
@@ -236,8 +264,9 @@ marked done, partial or pending:
 Pick a stage and WildScan shows the exact command, settings and estimate
 before anything runs, then streams progress as it goes. It always launches
 the same drivers described below, so you can move between the two freely. It
-is resume-aware: reopen the workspace later and finished stages stay marked
-done.
+is resume-aware: reopen the workspace later and stages with valid reports and
+matching inputs stay marked done. Changed inputs or interrupted work require
+a retry.
 
 RealityScan stages need Windows. On macOS or Linux the app still opens a
 workspace for inspection, exports review and publishing.
@@ -267,10 +296,15 @@ python main.py
 
 `python main.py --help` lists the flags for the enabled modules.
 
-**Georeferencing on its own**, which is the newer and faster
-implementation, is `python geoall.py`. It asks for the image folder, the ROV
-data folder and an output folder, or takes `--image-base-dir`,
+**Georeferencing on its own** uses `python georeference_survey.py`, whose
+standalone workflow includes multiprocessing image copying. It asks for the image
+folder, the ROV data folder and an output folder, or takes `--image-base-dir`,
 `--rov-data-dir` and `--output-dir`.
+
+Image-copy retries check existing destination content before reuse. A stale
+destination is preserved and rejected. If any image copy fails for a dive,
+the standalone command withholds that dive's new flight log and returns a
+failed result; validated outputs for successful dives remain available.
 
 **Merge the per-zone components, then model the merged result:**
 
@@ -281,14 +315,22 @@ python run_models.py --workspace F:\na156_h2024
 
 `run_models.py` models every final component, smallest first, and is
 scale-gated: a component whose measured metric scale falls outside the
-accepted band is not modelled. It is resumable — rerun it and it picks up
-where it stopped.
+accepted band is not modelled. Saved bands and measured values must be valid
+finite numbers; malformed saved verdicts require remeasurement. Reruns reuse
+successes only when the saved assembly, source components, navigation and
+model recipe still match.
 
 **Export deliverables** (OBJ by parts, FBX by parts, and an ultra-dense
 coloured PLY):
 
 ```powershell
-modules\realityscan_interface\RS_CLI\Scripts\ExportDeliverables.bat "F:\na156_h2024\final_assembly\assembly\Assembly.rsproj" "F:\na156_h2024\exports" "F:\na156_h2024\exports\components.names"
+$workspace = 'F:\na156_h2024'
+$report = Get-Content -Raw -LiteralPath "$workspace\merged\merge_report.json" | ConvertFrom-Json
+$names = @($report.clusters.final_components | ForEach-Object { ($_.key -split '/')[-1] })
+if ($names.Count -eq 0) { throw 'The merge report has no final components.' }
+New-Item -ItemType Directory -Path "$workspace\exports" -Force | Out-Null
+[System.IO.File]::WriteAllLines("$workspace\exports\components.names", [string[]]$names, [System.Text.UTF8Encoding]::new($false))
+python modules/export_deliverables.py --project "$workspace\merged\assembly\Merged.rsproj" --exports "$workspace\exports" --names "$workspace\exports\components.names"
 ```
 
 ---
@@ -309,12 +351,22 @@ named components.
 One export at a time:
 
 ```powershell
-python publish_cesium.py --name "IN-401 hull" --dir F:\na156_h2024\exports\<comp>\obj --input-crs EPSG:32604 --verify
-python publish_nira.py --name "IN-401 hull" --dir F:\na156_h2024\exports\<comp>\obj --niraclient C:\tools\niraclient
+python publish_cesium.py --name "IN-401 hull" --dir "F:\na156_h2024\exports\COMPONENT\obj" --verify
+python publish_nira.py --name "IN-401 hull" --dir "F:\na156_h2024\exports\COMPONENT\obj" --niraclient C:\tools\niraclient
 ```
+
+Replace `COMPONENT` with an exported component name. Cesium reads the CRS and
+transform from the mesh's `.rsInfo` sidecar; pass `--flight-log` to add an
+independent navigation-envelope check.
 
 Notes:
 
+- Cesium prepares local copies under `_cesium_local`. A nonempty folder
+  without its `.cesium-stage.json` marker is preserved; pass `--staging`
+  with a new directory in that case. Nira excludes these generated copies.
+- Cesium defaults to the whole OBJ, and Nira defaults to its by-parts copy.
+  Use `--parts whole` or `--parts split` on the single-service publishers to
+  choose explicitly; Nira requires `--geometry` if the directory mixes mesh formats.
 - Both services want the OBJ. Nira rejects PLY point clouds — LAS, LAZ or
   E57 only — and scripted upload needs an Enterprise API key.
 - Always pass `--verify` on a real Cesium publish. It is not on by default,
@@ -337,6 +389,13 @@ read to resume:
 | `grow_report.json` | `grow_zone.py` |
 | `models_report.json` | `run_models.py` |
 | `publish_report.json` | `publish_batch.py` |
+| `publish_plan.json` | `publish_batch.py --dry-run` (preserves publication evidence) |
+| `preprocessed_images.manifest.json` | Preprocess Images (settings, completion and source/output integrity) |
+| `interrupted_stage.json` | Console runner after Stop; cleared by a successful retry of the affected stages |
+
+Preprocessing verifies image contents before reusing existing output. This
+adds reads of the source and processed images, which can take time on large
+network drives. Changed sources or settings require regeneration.
 
 Settings you typed live in `rs_settings.json` in the checkout root.
 
@@ -350,12 +409,13 @@ Settings you typed live in `rs_settings.json` in the checkout root.
 | Packages installed but Python cannot import them | A `py -3.13` command was used inside the active environment, which installed into the global interpreter. Reinstall with `python -m pip install -e ".[dev]"`. |
 | `Activate.ps1` cannot be loaded | PowerShell execution policy. Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then activate again. |
 | `RealityScan.exe not found` | Non-standard install. Set `realityscan.executable` in `rs_settings.json` or `RS_EXECUTABLE`. |
-| Tests fail on a clean checkout | A broken install. Recreate `.venv` and reinstall before running data. |
+| Tests fail on a clean checkout | Inspect the failure and confirm the selected interpreter and dependencies. A code or fixture failure also needs fixing before running data. |
 | A stage "succeeds" but produces nothing | RealityScan exits SUCCESS while doing nothing. Check the stage's census and report rather than the exit code; `docs/rs-reference/12-failure-modes-and-race-conditions.md` catalogues every known silent-success mode. |
 | A run fails saying the geoid grid is missing | See [5.4](#54-cesium-publishing-the-geoid-grid). Do not work around it — a missing grid means a wrong depth. |
 | Two runs interfere with each other | Both used the same instance name. Give each its own `RS_INSTANCE` and `RS_GPU_DEVICES`. |
 | Disk fills mid-run | RealityScan's cache. Point `RS_CACHE_DIR` at a large drive and flush between runs with the `FlushCache` workflow. |
 | A run stops with "not found" for an input folder | The path prompt was accepted while empty or stale. Rerun and enter the real folder, or pass it as a flag. |
+| A copy stage refuses an existing image | The destination content differs from its source. Preserve and inspect the previous output, or select a fresh output folder. |
 
 ---
 

@@ -97,7 +97,7 @@ complete; none is [VERIFIED]. [OFFICIAL: appbasics/allcommands]
 | Command | Params | Official description (compressed) | Note |
 |---|---|---|---|
 | `-loadBundler` | `filePath` `[params.xml]` | Import a Bundler project; optional config file defines scene transformation / coordinate system on import. | An **alternative to running `-align`**: an externally-solved SfM result can be brought in instead of solving here. [OPEN: never tried.] |
-| `-loadColmap` | `filePath` `[params.xml]` | Import a COLMAP project (path to any of the three text files); same optional transform config. | Same. Note `archive/colmap/` in this repo is retired and must not be resurrected (ARCHITECTURE.md). |
+| `-loadColmap` | `filePath` `[params.xml]` | Import a COLMAP project (path to any of the three text files); same optional transform config. | Same. Note [archive/colmap/](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/colmap/) in the historical snapshot is retired and must not be resurrected (ARCHITECTURE.md). |
 | `-exportSparsePointCloud` | `fileName` `[params.xml]` | Export the 3D tie points (sparse cloud) to a file; settings exportable from the Export Point Cloud dialog. | The only CLI route to the alignment's own point cloud; relevant to §10. |
 | `-exportRegistration` | `fileName` `[params.xml]` | Export registration using current settings or a params XML. | [VERIFIED: **blocks forever headless when the params XML is omitted** — FINDINGS 2026-07-21.] |
 | `-exportUndistortedImages` | `folderName` `[params.xml]` | Export undistorted images. | Consumes the solved distortion model (§3.9). |
@@ -117,7 +117,7 @@ complete; none is [VERIFIED]. [OFFICIAL: appbasics/allcommands]
 - **It runs feature detection itself** when features are not already cached. The
   RealityScan log of a bare `-align` shows `Detected N features in image '<file>'` lines
   for every input, then a matching phase, then reconstruction
-  [VERIFIED-by-inspection: `testing/results/z14_forensic_rslog.txt`, a 1,476-image align
+  [VERIFIED-by-inspection: `docs/validation/results/z14_forensic_rslog.txt`, a 1,476-image align
   captured end to end]. `-detectFeatures` exists to do only that step and cache the
   result [OFFICIAL: appbasics/allcommands]; the repo has never used it
   [VERIFIED-by-inspection: no `-detectFeatures` in `RS_CLI/Scripts/*.bat`].
@@ -250,7 +250,7 @@ SECONDS, not milliseconds** ("during a defined period of time (timeout in second
 [OFFICIAL: appbasics/allcommands, tutorials/commandline_5]. `startRealityScan.bat` passes
 `600` [VERIFIED-by-inspection], and the value `600` is echoed back in the app log line
 `Executing command 'writeProgress' with parameters '…\progress_RS1.txt 600'`
-[VERIFIED-by-inspection: `testing/results/z14_forensic_rslog.txt` line 8].
+[VERIFIED-by-inspection: `docs/validation/results/z14_forensic_rslog.txt` line 8].
 
 The file has **five** whitespace-separated columns [OFFICIAL: tutorials/commandline_5]:
 
@@ -425,7 +425,7 @@ what every production align has run with since 2026-07-25.
 |---|---|---|---|---|---|
 | `sfmFeatureDetectionQuality` | enum | `High` | `High` `Normal` | `RealityScan.FeatureDetector.RSa1` | "Choose the quality level for detecting features in images. Setting it to High improves feature detection, resulting in a more precise alignment process, but increases processing time and RAM usage." [OFFICIAL: appbasics/alignsettings]. See the contradiction in §3.7. |
 | `sfmMaxFeaturesPerMpx` | int | `10000` | any positive int | `0x36b0` (14000) | "Set the maximum number of features per megapixel … Using more features may slow processing but can result in less components." [OFFICIAL] Raised for low-texture seabed [VERIFIED-as-decision: docs/settings-evaluation-2026-07 §4]. |
-| `sfmMaxFeaturesPerImage` | int | `40000` | any positive int | `0xc350` (50000) | Same idea, per image. The default is directly observable: an align run **without** the settings replay logged `Detected 40000 features in image '…'` for every one of 1,476 inputs [VERIFIED-by-inspection: `testing/results/z14_forensic_rslog.txt`]. |
+| `sfmMaxFeaturesPerImage` | int | `40000` | any positive int | `0xc350` (50000) | Same idea, per image. The default is directly observable: an align run **without** the settings replay logged `Detected 40000 features in image '…'` for every one of 1,476 inputs [VERIFIED-by-inspection: `docs/validation/results/z14_forensic_rslog.txt`]. |
 | `sfmImagesOverlap` | enum | `Medium` | `Low` `Medium` `High` | `Medium` | See §3.6 — the direction of this control is genuinely unsettled. |
 | `sfmImageDownscaleFactor` | int | `1` | `1`,`2`,`4`,… | `1` | "A multiplier by which the size of an image is reduced before feature detection. In order to get the best precision, use full image resolution (downscale factor 1)." [OFFICIAL] Never varied here [OPEN]. |
 | `sfmMaxFeatureReprojectionError` | float | `2.0` | Epic: ≤ `3` px | `1.29999995` | "Internal precision level used during alignment. We recommend you to set it maximum to 3px." [OFFICIAL] Never A/B'd here. |
@@ -558,7 +558,7 @@ toggle the GUI dropdown, re-export the Alignment Settings panel, read the value.
 - Governing rule established later and independently: **fusion is content-driven.**
   Content overlap ⇒ fusable by either mechanism, with or without scene georeferencing
   constraints; zero content overlap ⇒ silent no-fuse regardless of flags
-  [VERIFIED: probe D7, `archive/campaign_drivers/probe_d7.py`, 2026-07-24]. D1–D3 are consistent with that
+  [VERIFIED: probe D7, [archive/campaign_drivers/probe_d7.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/probe_d7.py), 2026-07-24]. D1–D3 are consistent with that
   rule rather than contradictory — those pairs never saw the same seafloor.
 - `sfmEnableCameraPrior` and `sfmMergeGeoreferencedComponents` are different scopes and
   compose: (a) is per-camera during alignment and makes components georeferenced; (b) is
@@ -1046,7 +1046,7 @@ not proven optimal. Each cell is a ~70 min zone_1 re-align.]
 
 [VERIFIED: PRIORS_DISTORTION_TEST_PLAN cells; status log 2026-07-27; raw results at
 `F:/na156_h2024/ab_position_only/ab_results.json`; driver
-`archive/campaign_drivers/ab_orientation_priors.py`]
+[archive/campaign_drivers/ab_orientation_priors.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/ab_orientation_priors.py)]
 
 **Dose-response is the pattern: 5° fragments, 15° gains, absent can be catastrophic.**
 
@@ -1252,7 +1252,7 @@ Processing failed: Unexpected program state.
   [\0x13011\0x13010\0x10001\0x4999\0x10001]
 ```
 
-[VERIFIED: `testing/results/z14_forensic_rslog.txt`; NA167 #17/#18/#27 / B8, 2026-07-23/24]
+[VERIFIED: `docs/validation/results/z14_forensic_rslog.txt`; NA167 #17/#18/#27 / B8, 2026-07-23/24]
 
 **Data exonerated**: full-pixel decode of all 1,476 frames, zero MD5 duplicates, zero
 near-black or featureless frames (Laplacian), clean nav, normal motion profile, bracketed
@@ -1276,7 +1276,7 @@ call :run -align
 exit /b 0
 ```
 
-[VERIFIED-by-inspection: `archive/legacy_scripts/SequentialAlignGrow.bat`]
+[VERIFIED-by-inspection: [archive/legacy_scripts/SequentialAlignGrow.bat](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/legacy_scripts/SequentialAlignGrow.bat)]
 
 **But verify camera counts after every grow step** — growth is state-sensitive and can
 degrade existing structure (§1.3). [VERIFIED: NA167 #29]
@@ -1966,7 +1966,7 @@ echo ERROR: grow failed
 "%RS%" -delegateTo %INST% -quit
 ```
 
-[VERIFIED-by-inspection: `archive/legacy_scripts/SequentialAlignGrow.bat`; the 6→14→4 grow is the
+[VERIFIED-by-inspection: [archive/legacy_scripts/SequentialAlignGrow.bat](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/legacy_scripts/SequentialAlignGrow.bat); the 6→14→4 grow is the
 run that reached 94.6 % including all of solver-bug zone_14. The real script routes every
 operation through its `:run` subroutine — the double `-waitCompleted` plus an
 `errors_<instance>.txt` size check — instead of inlining the waits as above.]
@@ -2078,7 +2078,7 @@ point here.
 16. **`-selectImage` regexp dialect** (§5.3) — the Help documents a regexp form; only
     literal full paths select anything. Standing forum-mine item since 2026-07-23; a staff
     reply may explain the discrepancy without any RealityScan time.
-17. **Report `MSS_STR001` to Epic** (§8.1) — never done; `testing/results/z14_forensic_rslog.txt`
+17. **Report `MSS_STR001` to Epic** (§8.1) — never done; `docs/validation/results/z14_forensic_rslog.txt`
     is the artifact. No probe needed, only a submission.
 18. **Multi-GPU parallel aligns** — single-instance GPU pinning is exercised; two concurrent
     instances on different GPUs is untested. *Probe:* boot RS1 on GPU 0 and RS2 on GPU 1,

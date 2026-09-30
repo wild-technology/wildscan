@@ -234,11 +234,11 @@ the alternation used in `modules/scale_oracle.py`:
 POS_RE = re.compile(r'<xcr:Position>([^<]+)</xcr:Position>|xcr:Position="([^"]+)"')
 ```
 
-`poses2flightlog.py` has **not** been given the alternation — its
+`poses_to_flight_log.py` has **not** been given the alternation — its
 `POSITION_RE = re.compile(r'<xcr:Position>([^<]+)</xcr:Position>')` matches element form
 only, so it silently sees zero cameras in a directory of legacy attribute-form sidecars
 and exits on the `MIN_CAMERAS = 3` guard.
-[VERIFIED-by-inspection: poses2flightlog.py, 2026-08-04]
+[VERIFIED-by-inspection: poses_to_flight_log.py, 2026-08-04]
 
 #### [CONTRADICTED 2026-08-23] RealityScan 2.2 writes `xcr:Rotation` as an ELEMENT too
 
@@ -258,7 +258,7 @@ Sidecars produced by `-exportXMP` in 15 arms of a 2026-08-23 session are
 
 A parser that expects `xcr:Rotation="..."` as an attribute therefore reads **zero
 rotations** from current sidecars, the same class of silent-zero bug §2.3 already records
-for `Position` in `poses2flightlog.py`. The safe alternation for both:
+for `Position` in `poses_to_flight_log.py`. The safe alternation for both:
 
 ```python
 POS_RE = re.compile(r'<xcr:Position>([^<]+)</xcr:Position>|xcr:Position="([^"]+)"')
@@ -346,7 +346,7 @@ project-XML serializer's pool (§4.1). [UNDOCUMENTED: RealityScan.exe string poo
 | `xcr:PosePrior` | attr | enum `initial` \| `exact` \| `locked` | How hard the pose in this file constrains alignment. See §4.1 and §6. | [OFFICIAL: sample value `initial`]; enum [INFERRED] |
 | `xcr:Coordinates` | attr | enum `absolute` \| `relative` \| `rigid` | Whether `Position`/`Rotation` are in the scene's absolute (project/geo) frame or in a rig-relative frame. | `absolute` [OFFICIAL: sample]; `relative`/`rigid` [UNDOCUMENTED: binary value pool] |
 | `xcr:Rotation` | attr | 9 space-separated floats — 3×3 matrix | Camera orientation. Row-major, world→camera by strong analogy with the shipped export templates; see §5.1. | [OFFICIAL: sample]; convention [INFERRED], §5.1 |
-| `xcr:Position` | **element** (attr in legacy files) | 3 space-separated floats | Camera position. In exports from this pipeline it is a **grid-anchored local Euclidean frame, not UTM**. See §5.2. | [OFFICIAL: sample]; frame [VERIFIED: NA167 notes §1, poses2flightlog.py] |
+| `xcr:Position` | **element** (attr in legacy files) | 3 space-separated floats | Camera position. In exports from this pipeline it is a **grid-anchored local Euclidean frame, not UTM**. See §5.2. | [OFFICIAL: sample]; frame [VERIFIED: NA167 notes §1, poses_to_flight_log.py] |
 | `xcr:DistortionModel` | attr | enum, lowercase; 8 tokens: `perspective` `division` `brown3` `brown3t2` `brown4` `brown4t2` `rationalP2D1` `rationalP2D1T2` | Lens distortion model for this camera. **In practice the global `sfmDistortionModel` key owns the model — see §7.5.** | `division` [OFFICIAL: sample]; full token set [UNDOCUMENTED: binary value pool]; override [CONTRADICTED], §7.5 |
 | `xcr:DistortionCoeficients` | attr | 6 space-separated floats | Distortion coefficients. **Note Epic's misspelling — one `f`. Reproduce it exactly** (the correctly spelled `DistortionCoefficients` occurs nowhere in the binary). Slot order almost certainly `k1 k2 k3 k4 t1 t2`; see §4.3a. | [OFFICIAL: sample]; order [INFERRED from shipped `calibration.xml`], §4.3a |
 | `xcr:FocalLength35mm` | attr | float, mm | 35 mm-equivalent focal length prior. | [OFFICIAL: sample] |
@@ -367,7 +367,7 @@ project-XML serializer's pool (§4.1). [UNDOCUMENTED: RealityScan.exe string poo
 | `xcr:ComponentId` | attr | id/GUID | Which component the exported pose belongs to. Not in Epic's sample. | [UNDOCUMENTED: binary] |
 | `xcr:ExportCoordinateSystemType` | attr | string | CRS label the export was written in (mirrors the export dialog's "Coordinate system"). Not in Epic's sample. | [UNDOCUMENTED: binary] |
 | `xcr:Gravity` | attr | 3 floats (vector) | Gravity direction. **Consumed by `-setCamerasGravityDirection [componentID]`: the component is rotated so the `-z` vector follows the gravity vector. Sparse cloud only — the mesh is not affected.** | [OFFICIAL: appbasics/allcommands, tutorials/commandline_1] |
-| `xcr:latitude`, `xcr:longitude`, `xcr:altitude` | attr | — | Geographic position fields. **Observed to be garbage in this pipeline's exports** — the useful position is `xcr:Position` in the local frame. | [UNDOCUMENTED: binary]; garbage [VERIFIED: poses2flightlog.py docstring, zone_9] |
+| `xcr:latitude`, `xcr:longitude`, `xcr:altitude` | attr | — | Geographic position fields. **Observed to be garbage in this pipeline's exports** — the useful position is `xcr:Position` in the local frame. | [UNDOCUMENTED: binary]; garbage [VERIFIED: poses_to_flight_log.py docstring, zone_9] |
 | `xcr:Cert` | **element** | `<xcr:Cert id="%s">…</xcr:Cert>` | **Nothing to do with image sidecars.** It is the licence-certificate element: the binary carries the writer strings `<certificates>`, `xmlns:xcr`, `<xcr:Cert id="%s">`, `</xcr:Cert>`, `</certificates>`, adjacent to `importLicense` / `exportLicense` / `"certificate file"` / `certificates\`. Never write it into an image XMP. | [UNDOCUMENTED: RealityScan.exe string pool, resolved 2026-08-04] |
 
 ### 3.1 Names that are NOT in the schema
@@ -599,12 +599,12 @@ What can be said with a source:
 - **Nothing states that `xcr:Rotation` uses the same convention as the export variables
   `R00…R22`.** They are different serialisers. [OPEN — Q9]
 
-**This repo has never validated the XMP rotation convention.** `poses2flightlog.py` says
+**This repo has never validated the XMP rotation convention.** `poses_to_flight_log.py` says
 so in its own docstring and deliberately refuses to rewrite orientations for that reason:
 registered images get transformed positions, while "yaw/pitch/roll and their accuracies
 are carried over from the original log (the XMP rotation convention has not been validated
 against the flight-log convention, so orientations are deliberately NOT rewritten)".
-[VERIFIED-as-practice: poses2flightlog.py]
+[VERIFIED-as-practice: poses_to_flight_log.py]
 
 Treat "row-major 3×3, world→camera" as [INFERRED] and do not build orientation-critical
 logic on it without running the probe in Q9.
@@ -614,16 +614,16 @@ logic on it without running the probe in Q9.
 `xcr:Position` in this pipeline's exports is in a **grid-anchored local Euclidean frame,
 not UTM**. The anchor is the project's grid origin. The `xcr:latitude` / `xcr:longitude`
 attributes in the same files are garbage.
-[VERIFIED: NA167 notes §1 and poses2flightlog.py, on zone_9]
+[VERIFIED: NA167 notes §1 and poses_to_flight_log.py, on zone_9]
 
-The consequence is the whole reason `poses2flightlog.py` exists: to recover UTM you must
+The consequence is the whole reason `poses_to_flight_log.py` exists: to recover UTM you must
 fit a rigid local→UTM transform (Umeyama, **scale locked at 1**) between the XMP positions
 and the matching flight-log rows, then apply it. Fitting scale as well collapses it toward
 zero against noise-dominated nav data (0.5 observed on zone_9), so `--allow-scale` is a
-diagnostics-only flag. [VERIFIED: poses2flightlog.py, zone_9]
+diagnostics-only flag. [VERIFIED: poses_to_flight_log.py, zone_9]
 
 ```bat
-py -3 C:\Users\jonat\Desktop\CoyoteThings\wildscan\poses2flightlog.py ^
+py -3 C:\Users\jonat\Desktop\CoyoteThings\wildscan\poses_to_flight_log.py ^
    --images-dir "F:\na156_h2024\batched_images_by_zone\zone_1\cinema" ^
    --flight-log "F:\na156_h2024\batched_images_by_zone\zone_1\flight_log_4Q_UTM.txt" ^
    --position-accuracy 1.0 --registered-only
@@ -1567,7 +1567,7 @@ alignment-computed coordinates instead of the EXIF ones.** [OFFICIAL: tools/xmpa
 The repo's (unused) preset sets it `true`. Note that in this pipeline the exported
 `xcr:latitude`/`longitude`/`altitude` were observed to be garbage while `xcr:Position` in
 the local frame was correct (§5.2) — so do not trust the geographic fields on this
-evidence. [VERIFIED: poses2flightlog.py, zone_9]
+evidence. [VERIFIED: poses_to_flight_log.py, zone_9]
 
 ### 12.4 EXIF vs XMP precedence
 

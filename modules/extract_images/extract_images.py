@@ -85,7 +85,7 @@ class ExtractImages(RSModule):
         return video_timestamp
 
     def __extract_video_cv2(self, video_path, output_folder, output_fpm, output_mpx,
-                            start_offset_sec: float = 0.0) -> dict[str, any]:
+                            start_offset_sec: float = 0.0) -> dict[str, object]:
         """Extract frames at output_fpm, timestamping each output image with
         the wall-clock time of the frame it actually contains.
 
@@ -110,23 +110,33 @@ class ExtractImages(RSModule):
             return output_data
 
         # Get the video's timestamp
-        video_timestamp_str = self.__get_video_timestamp_str(video_path)
-        video_timestamp = self.__get_video_timestamp(video_path) + timedelta(seconds=start_offset_sec)
+        try:
+            video_timestamp_str = self.__get_video_timestamp_str(video_path)
+            video_timestamp = self.__get_video_timestamp(video_path) + timedelta(seconds=start_offset_sec)
+        except ValueError as exc:
+            cap.release()
+            self.logger.error('Invalid video timestamp for %s: %s', video_path, exc)
+            return {'Success': False, 'Failure': str(exc)}
 
         # Parse the metadata from the video filename
         video_filename = os.path.splitext(os.path.basename(video_path))[0]
 
         # Video's original frame count and FPS
-        video_frame_count = round(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        raw_frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
         video_fps = cap.get(cv2.CAP_PROP_FPS)
 
-        if video_fps <= 0 or video_frame_count <= 0:
+        if (not np.isfinite(video_fps) or not np.isfinite(raw_frame_count)
+                or video_fps <= 0 or raw_frame_count <= 0):
             self.logger.error(
                 f"Video file {video_path} reports no usable FPS/frame count "
-                f"(fps={video_fps}, frames={video_frame_count})")
+                f"(fps={video_fps}, frames={raw_frame_count})")
             cap.release()
             output_data['Success'] = False
             return output_data
+        video_frame_count = round(raw_frame_count)
+        if video_frame_count <= 0:
+            cap.release()
+            return {'Success': False, 'Failure': 'Video reports fewer than one frame'}
 
         # Calculate how many source frames to skip between extractions
         output_fps = output_fpm / 60
@@ -134,6 +144,9 @@ class ExtractImages(RSModule):
 
         # Frame 0 is included: extraction starts at the video's own timestamp
         frame_numbers = range(0, video_frame_count, skip_frames)
+        fps_int = max(1, round(video_fps))
+        raw_ts_match = _TIMESTAMP_REGEX.search(video_filename)
+        raw_ts = raw_ts_match.group(1) if raw_ts_match else video_timestamp_str
 
         extracted_count = 0
         bar = self._initialize_loading_bar(len(frame_numbers), "Extracting Frames from Video")
@@ -142,6 +155,7 @@ class ExtractImages(RSModule):
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
             ret, frame = cap.read()
             if not ret:
+                self.logger.error('Could not decode frame %s of %s', frame_number, video_path)
                 break
 
             # Timestamp of the frame just read (seconds from video start)
@@ -150,7 +164,6 @@ class ExtractImages(RSModule):
 
             # Index of this extracted frame within its second - nonzero only
             # when extracting more than one frame per second
-            fps_int = max(1, round(video_fps))
             frame_index_in_second = int((frame_number % fps_int) // skip_frames)
 
             # Generate the filename for the current frame by replacing the
@@ -160,8 +173,6 @@ class ExtractImages(RSModule):
             # 20231104020854_...) the normalized "...T...Z" form never
             # matches, the replace was a no-op, and every frame of the video
             # overwrote the same output file.
-            raw_ts_match = _TIMESTAMP_REGEX.search(video_filename)
-            raw_ts = raw_ts_match.group(1) if raw_ts_match else video_timestamp_str
             image_name = video_filename.replace(raw_ts,
                                                 new_timestamp_str) + f"_frame{frame_index_in_second}.jpg"
             image_path = os.path.join(output_folder, image_name)
@@ -176,7 +187,14 @@ class ExtractImages(RSModule):
                 frame = cv2.resize(frame, (output_width, output_height), interpolation=cv2.INTER_AREA)
 
             # Save the frame as an image
-            cv2.imwrite(image_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            try:
+                written = cv2.imwrite(image_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            except (cv2.error, OSError) as exc:
+                self.logger.error('Could not write %s: %s', image_path, exc)
+                written = False
+            if not written:
+                self.logger.error('Frame was not written: %s', image_path)
+                break
             extracted_count += 1
 
             self._update_loading_bar(bar, 1)
@@ -185,9 +203,10 @@ class ExtractImages(RSModule):
 
         cap.release()
 
-        output_data['Success'] = True
+        output_data['Success'] = extracted_count == len(frame_numbers) and extracted_count > 0
         output_data['Input Frame Count'] = video_frame_count
         output_data['Extracted Frame Count'] = extracted_count
+        output_data['Expected Frame Count'] = len(frame_numbers)
         output_data['Input FPM'] = round(video_fps * 60, 1)
 
         return output_data
@@ -200,9 +219,11 @@ class ExtractImages(RSModule):
                 return None
             frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
             fps = cap.get(cv2.CAP_PROP_FPS)
-            if fps <= 0 or frame_count <= 0:
+            if (not np.isfinite(fps) or not np.isfinite(frame_count)
+                    or fps <= 0 or frame_count <= 0):
                 return None
-            return frame_count / fps
+            duration = frame_count / fps
+            return duration if np.isfinite(duration) and duration > 0 else None
         finally:
             cap.release()
 
@@ -223,17 +244,18 @@ class ExtractImages(RSModule):
 
         offsets = {filename: 0.0 for filename in video_files}
         for key, parts in groups.items():
-            if len(parts) < 2:
-                continue
             parts.sort()
             cumulative = 0.0
             broken = False
+            expected_part = 1
             for index, (part_no, filename) in enumerate(parts):
+                if part_no != expected_part:
+                    broken = True
                 if broken:
                     self.logger.error(
                         f"Skipping {filename}: cannot determine its true start "
                         "time because an earlier part of the same recording "
-                        "has unreadable duration metadata")
+                        "is missing or has unreadable duration metadata")
                     offsets.pop(filename, None)
                     continue
                 offsets[filename] = cumulative
@@ -246,6 +268,7 @@ class ExtractImages(RSModule):
                     broken = True
                 else:
                     cumulative += duration
+                expected_part = part_no + 1
         return offsets
 
     def run(self):
@@ -271,7 +294,12 @@ class ExtractImages(RSModule):
                          os.path.splitext(filename)[1].lower() in VIDEO_EXTENSIONS]
 
         # True start offsets for continuation parts of split recordings
-        part_offsets = self.__compute_part_offsets(input_path, mov_files)
+        # A selected continuation file can use its predecessors' metadata
+        # without extracting those other files.
+        sibling_files = [filename for filename in os.listdir(input_path) if
+                         os.path.splitext(filename)[1].lower() in VIDEO_EXTENSIONS]
+        part_offsets = self.__compute_part_offsets(input_path, sibling_files)
+        skipped_videos = [f for f in mov_files if f not in part_offsets]
         mov_files = [f for f in mov_files if f in part_offsets]
 
         bar = self._initialize_loading_bar(len(mov_files), "Extracting Videos")
@@ -281,7 +309,8 @@ class ExtractImages(RSModule):
         overall_output_data['Total Input Frame Count'] = 0
         overall_output_data['Total Extracted Frame Count'] = 0
         overall_output_data['Output FPM'] = output_fpm
-        overall_output_data['Number of Videos'] = len(mov_files)
+        overall_output_data['Number of Videos'] = len(mov_files) + len(skipped_videos)
+        overall_output_data['Failed Videos'] = len(skipped_videos)
         overall_output_data['Videos'] = {}
 
         for mov_file in mov_files:
@@ -289,6 +318,7 @@ class ExtractImages(RSModule):
             file_extension = os.path.splitext(mov_path)[1].lower()
 
             if not os.path.isfile(mov_path) or file_extension not in VIDEO_EXTENSIONS:
+                overall_output_data['Failed Videos'] += 1
                 continue
 
             individual_output_data = self.__extract_video_cv2(
@@ -296,14 +326,15 @@ class ExtractImages(RSModule):
                 start_offset_sec=part_offsets.get(mov_file, 0.0))
             self._update_loading_bar(bar, 1)
 
-            if individual_output_data is not None and individual_output_data.get('Success') == True:
-                overall_output_data['Success'] = True
-                overall_output_data['Total Input Frame Count'] += individual_output_data['Input Frame Count']
-                overall_output_data['Total Extracted Frame Count'] += individual_output_data['Extracted Frame Count']
+            if individual_output_data is not None:
+                overall_output_data['Total Input Frame Count'] += individual_output_data.get('Input Frame Count', 0)
+                overall_output_data['Total Extracted Frame Count'] += individual_output_data.get('Extracted Frame Count', 0)
                 overall_output_data['Videos'][mov_path] = individual_output_data
-            else:
+            if not individual_output_data or not individual_output_data.get('Success'):
+                overall_output_data['Failed Videos'] += 1
                 self.logger.error(f'Failed to extract video: {mov_path}')
 
+        overall_output_data['Success'] = bool(mov_files) and overall_output_data['Failed Videos'] == 0
         return overall_output_data
 
     def validate_parameters(self) -> tuple[bool, str | None]:

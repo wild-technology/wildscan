@@ -23,7 +23,7 @@ setlocal
 ::                             (-addImageWithCalibration, whole paths,
 ::                             xmps in a SEPARATE directory) by executing
 ::                             the .rscmd file RS_CALIB_XMP_RSCMD built
-::                             by testing/run_calib_ladder.py
+::                             by scripts/campaigns/run_calibration_ladder.py
 ::
 ::
 :: Arguments (same as AlignZone.bat):

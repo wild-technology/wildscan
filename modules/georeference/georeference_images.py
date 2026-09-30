@@ -30,7 +30,7 @@ from module_base.parameter import Parameter
 #   p_acc: claimed accuracy of that pitch prior (deg)
 #
 # These are the values in force on 2026-07-26, pinned by
-# testing/test_rig_mounts.py so the table cannot drift unnoticed.
+# tests/test_rig_mounts.py so the table cannot drift unnoticed.
 # superseded-by modules/cameras.json families[].mount - pending migration step (c+)
 MOUNTS: dict[str, dict | None] = {
     'zeuss': {'fwd': 0.5, 'lat': 0.0, 'down': 0.5, 'pitch': 30.0, 'p_acc': 30.0},
@@ -70,7 +70,7 @@ MOUNTS: dict[str, dict | None] = {
 # FRAGMENTS solves: on the known-good bow fixture, loose gave ONE
 # component at scale ~1.0 under both distortion models, while tight split
 # it into 2-3 and pushed the maximal component's scale further from truth
-# (0.886 / 0.826). See testing/PRIORS_DISTORTION_TEST_PLAN.md "bow 2x2".
+# (0.886 / 0.826). See docs/validation/priors_distortion_test_plan.md "bow 2x2".
 # An intermediate ladder (3/3/0.5 etc.) is untested - queued, and now
 # REACHABLE: these are the defaults of real parameters/flags rather than
 # function locals in two files (audit 2026-08-07 - step 6 of the operator's
@@ -82,7 +82,7 @@ MOUNTS: dict[str, dict | None] = {
 # PRIORS_DISTORTION_TEST_PLAN orientation-frame caveat). Pitch accuracy is
 # per-mount (MOUNTS[...]['p_acc']) and is deliberately NOT listed here.
 #
-# ONE table, shared by modules/georeference and geoall.py (which already
+# ONE table, shared by modules/georeference and georeference_survey.py (which already
 # imports MOUNTS from here) so the two implementations cannot drift apart
 # again the way the 3-vs-15 orientation accuracy did.
 # superseded-by modules/cameras.json defaults - pending migration step (c+)
@@ -151,8 +151,6 @@ def assumed_pitch_prior(family: str | None, enabled: bool = True,
 class GeoreferenceImages(RSModule):
     TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
     # superseded-by modules/cameras.json families[].timestamp_formats - pending migration step (c+)
-    WCA_FILENAME_TIMESTAMP_FORMAT = "%Y%m%d%H%M%S"
-    ZEUSS_FILENAME_TIMESTAMP_FORMAT = "%Y%m%d%H%M%S"
     WCA2025_FILENAME_TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
 
     def __init__(self, logger):
@@ -519,7 +517,7 @@ class GeoreferenceImages(RSModule):
                 header = next(reader)
                 idx_map = {name: index for index, name in enumerate(header)}
                 for row in reader:
-                    data_rows.append({
+                    data_row = {
                         "TIME": datetime.strptime(row[idx_map['Timestamp']], self.TIMESTAMP_FORMAT),
                         "LAT": float(row[idx_map['kalman_lat']]) if row[idx_map['kalman_lat']] else None,
                         "LONG": float(row[idx_map['kalman_long']]) if row[idx_map['kalman_long']] else None,
@@ -528,7 +526,12 @@ class GeoreferenceImages(RSModule):
                             idx_map['kalman_yaw_deg']] else None,
                         "PITCH": float(row[idx_map['kalman_pitch_deg']]) if row[idx_map['kalman_pitch_deg']] else None,
                         "ROLL": float(row[idx_map['kalman_roll_deg']]) if row[idx_map['kalman_roll_deg']] else None
-                    })
+                    }
+                    for field in ('LAT', 'LONG', 'DEPTH', 'HEADING_MAG', 'PITCH', 'ROLL'):
+                        value = data_row[field]
+                        if value is not None and not math.isfinite(value):
+                            data_row[field] = None
+                    data_rows.append(data_row)
             self.stats['csv_rows'] = len(data_rows)
         except Exception as e:
             self.logger.error(f"Error processing CSV file: {e}")
@@ -786,7 +789,8 @@ class GeoreferenceImages(RSModule):
         self.stats['unknown_camera_images'] = self._unknown_camera_count
         total_rejected = rejected_time + rejected_no_csv
         self.stats['total_rejected'] = total_rejected
-        self.stats['accept_rate_pct'] = (100.0 * matches_made / len(image_data)) if image_data else 0.0
+        listed = int(self.stats.get('files_listed', len(image_data)))
+        self.stats['accept_rate_pct'] = (100.0 * matches_made / listed) if listed else 0.0
 
         print("Matching summary:")
         print(f"  Examined images: {self.stats['examined_images']}")
@@ -849,7 +853,7 @@ class GeoreferenceImages(RSModule):
         # Uncertainty knobs (provenance + defaults: PRIOR_ACCURACY_DEFAULTS
         # at module scope). Operator-settable via --g_pos_accuracy /
         # --g_alt_accuracy / --g_orientation_accuracy since 2026-08-07;
-        # before that they were literals here and in geoall.py.
+        # before that they were literals here and in georeference_survey.py.
         pos_x_acc = pos_y_acc = self._accuracy('geo_pos_accuracy_m', 'pos_xy')
         alt_acc = self._accuracy('geo_alt_accuracy_m', 'alt')
         yaw_acc = self._accuracy('geo_orientation_accuracy_deg', 'yaw')

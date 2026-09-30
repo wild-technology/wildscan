@@ -125,7 +125,7 @@ Three consequences, all observed together:
    were declared void and re-run.
 
 [VERIFIED: NA167 B5; FINDINGS 2026-07-23; the NA167 log item 15;
-testing/MERGE_TEST_PLAN §5 item 7 — the two log lines above are quoted from
+docs/validation/merge_test_plan.md §5 item 7 — the two log lines above are quoted from
 the NA167 log item 15]
 
 Two mandatory mitigations, both in force in this repo:
@@ -252,7 +252,7 @@ set "RS_CACHE_ARGS=-set "appCacheLocation=Custom" -set "appCacheCustomLocation=%
 | Question | Answer | Source |
 |---|---|---|
 | Does a `-set` value survive `-newScene`? | Yes. The namespace is application-global, not per-scene. | [INFERRED from global storage + persistence across restarts; no cell isolated it] |
-| Does a `-set` value survive an instance restart? | **Yes.** `testing/MERGE_TEST_PLAN` §3 lists "swept `-set` keys are pinned in every cell (values persist across instance restarts)" as a standing contamination control, i.e. the persistence was treated as established and designed around. Corroborated independently below: the settings live in a **registry** blob, not in process memory. | [VERIFIED-as-control-in-force: testing/MERGE_TEST_PLAN §3, 2026-07-23 — no cell isolated persistence as its measured variable] + [VERIFIED: registry read, below] |
+| Does a `-set` value survive an instance restart? | **Yes.** `docs/validation/merge_test_plan.md` §3 lists "swept `-set` keys are pinned in every cell (values persist across instance restarts)" as a standing contamination control, i.e. the persistence was treated as established and designed around. Corroborated independently below: the settings live in a **registry** blob, not in process memory. | [VERIFIED-as-control-in-force: docs/validation/merge_test_plan.md §3, 2026-07-23 — no cell isolated persistence as its measured variable] + [VERIFIED: registry read, below] |
 | Where is the state stored? | `HKCU\Software\EpicGames.RealityScan\RealityScan\Workspace`, values `appConfig` (REG_BINARY, 33,325 bytes on this machine) and `appSharedConfig` (REG_BINARY, 158 bytes). **`appConfig` is a UTF-16LE key/value serialisation and the key names ARE readable** — decoding it yields `appCacheLocation`, `appQuitOnError`, `appProcessAction`, `appProcessActionTime`, `appProcessExecCmd`, `appCacheCustomLocation`, `appCacheImageMetadata`, `appQuitOnReset`, `s235l`/`s236l`/`s237l`/`s250`…, `ifCSopt`, `ifuuInh`, `ifuuInhEn`, `ifKmode`, `mvsFlt*`, `reprojectionTool_*`, `gpsLogFileFormat`, `csvFLSep`, and ~460 more tokens. `appSharedConfig` holds only `appVersion` / `appSubVersion` / `appMinorVersion` / `appBuildVersion`. | [UNDOCUMENTED: read-only registry read + UTF-16LE decode of the blob, this build] — **corrects an earlier claim in this document that the blobs were opaque** |
 | How do I wipe it? | `-reset cfg` (settings), `-reset ui`, `-reset cfgui`, `-reset all` (clean-install equivalent). **Works only from a batch file and never with delegation.** | [OFFICIAL: appbasics/allcommands, tutorials/commandline_4] |
 | Do two concurrent instances share settings? | Unknown. Never exercised — multi-instance parallelism has never been run here. | [OPEN] |
@@ -1130,7 +1130,7 @@ Binary-only siblings [UNDOCUMENTED]: `gpsLogFileName`, `gpsLogFolder`, `gpsLogCu
 `ifKModel`, `ifDistortionmode`, `ifRmode`, `ifTmode`, `ifOfsX`, `ifOfsY`, `ifOfsZ`,
 `ifOfsRR`, `ifOfsRP`, `ifOfsRY`, `ifOfsifuUseOffset`.
 The `ifOfs*` set is the **lever-arm / mount-angle offset** block applied at import; this
-repo instead applies those offsets upstream in `geoall.py` and the georeference module.
+repo instead applies those offsets upstream in `georeference_survey.py` and the georeference module.
 [INFERRED from the names + repo architecture]
 
 Other CSV import families [UNDOCUMENTED: binary]: `csvGCSep` / `csvGCIgn` (ground control),
@@ -1409,7 +1409,7 @@ per-key read-back command. An instance therefore carries whatever the last sessi
 or CLI, yours or someone else's — left in it. Defaults are also undocumented for a large
 part of the namespace and have changed across builds. Consequently: **every run pins every
 key it depends on, and never relies on a default.**
-[VERIFIED: testing/MERGE_TEST_PLAN §3 contamination controls, 2026-07-23; repo policy
+[VERIFIED: docs/validation/merge_test_plan.md §3 contamination controls, 2026-07-23; repo policy
 "never align on instance defaults", `AlignZone.bat` header]
 
 ### 10.1 At instance boot
@@ -1454,7 +1454,7 @@ call :run -addFolder "%input_dir%"
 ```
 
 Present in `AlignZone.bat` (line 72), `AlignImagesFromFolder.bat` (line 133) and the
-legacy `archive/legacy_scripts/AlignZonesSequentially.bat` (line 108). Rationale in §13.1.
+legacy [archive/legacy_scripts/AlignZonesSequentially.bat](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/legacy_scripts/AlignZonesSequentially.bat) (line 108). Rationale in §13.1.
 
 ### 10.3 Before every `-align`
 
@@ -1634,7 +1634,7 @@ path currently known. [VERIFIED: registry read + binary scan]
 
 | Key | Claim | What was observed |
 |---|---|---|
-| `sfmMergeGeoreferencedComponents=true` | [OFFICIAL: appbasics/alignsettings] "When multiple components are created and each is georeferenced, enabling this setting allows them to be merged even without visual overlap" | **The documented "without visual overlap" behaviour has never been observed headless.** Cell D1 (`-mergeComponents`, flag on, zone_6+zone_4, no shared content) → no fuse; the result count `1,533` was zone_6 alone. Cell D2 (`-align`, georef `true` + rematch `true`, same pair) → no fuse, `1,533`. Cell D3 (shared-path pair, both flags pinned `false`) → no fuse, `1,534`. In each case the workflow exits SUCCESS and the components stay separate, silently. See the correction immediately below for what this does **not** mean. [CONTRADICTED: NA167 wave-2 cells D1/D2/D3, 2026-07-24, testing/MERGE_TEST_PLAN §4 "Wave 2"] |
+| `sfmMergeGeoreferencedComponents=true` | [OFFICIAL: appbasics/alignsettings] "When multiple components are created and each is georeferenced, enabling this setting allows them to be merged even without visual overlap" | **The documented "without visual overlap" behaviour has never been observed headless.** Cell D1 (`-mergeComponents`, flag on, zone_6+zone_4, no shared content) → no fuse; the result count `1,533` was zone_6 alone. Cell D2 (`-align`, georef `true` + rematch `true`, same pair) → no fuse, `1,533`. Cell D3 (shared-path pair, both flags pinned `false`) → no fuse, `1,534`. In each case the workflow exits SUCCESS and the components stay separate, silently. See the correction immediately below for what this does **not** mean. [CONTRADICTED: NA167 wave-2 cells D1/D2/D3, 2026-07-24, docs/validation/merge_test_plan.md §4 "Wave 2"] |
 | `sfmBackgroundDetectThreadPriority` | — | Inert **by composition** whenever `sfmBackgroundDetectFeatures=false`, which is the production setting [INFERRED] |
 | `sfmEnableAutoSuggestions` | measurement suggestions in the 3Ds view | GUI-only effect; no headless consequence [INFERRED from the Help's description] |
 | `sfmMergeGeoreferencedComponents` without `sfmEnableCameraPrior` | — | Inert by composition: (a) `sfmEnableCameraPrior` is per-camera during alignment and is what makes components georeferenced; (b) `sfmMergeGeoreferencedComponents` is per-component and post-solve. (b) without (a) has nothing to act on [INFERRED from Help prose + design reasoning, docs/settings-evaluation-2026-07 §5; **not isolated by a cell**] |
@@ -1642,7 +1642,7 @@ path currently known. [VERIFIED: registry read + binary scan]
 **CORRECTION — fusion is CONTENT-driven, not identity-driven.** An earlier version of this
 document (and of the surveys behind it) concluded from D1–D3 that "`-mergeComponents` fuses
 only through cameras shared by identity (the same image path in more than one component)".
-**That conclusion is refuted.** The D7 probe wave (2026-07-24, `archive/campaign_drivers/probe_d7.py`, smoke
+**That conclusion is refuted.** The D7 probe wave (2026-07-24, [archive/campaign_drivers/probe_d7.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/probe_d7.py), smoke
 fixture) fused `zone_c` (78 cams) + `zone_d_c0` (42 cams) — **zero shared basenames, zero
 shared paths** — into one 120-camera component ("Finalizing 1 component", 70 s), both with
 no flight log in the merge scene (`D7b`) and with union log + `-update` (`D7a`); `-align` +
@@ -1657,7 +1657,7 @@ zero path overlap. One rule explains every observation to date:
 Corollaries recorded with it: the union flight log is still **required** to georeference the
 merged result but plays no part in fusion; bbox border gating is the correct candidate
 filter, since content overlap requires spatial adjacency.
-[VERIFIED: FINDINGS 2026-07-24 "D7 RESOLVED"; testing/MERGE_TEST_PLAN "D7 probe wave"]
+[VERIFIED: FINDINGS 2026-07-24 "D7 RESOLVED"; docs/validation/merge_test_plan.md "D7 probe wave"]
 [SUPERSEDED: the identity-only reading]
 
 **Do not close the `sfmMergeGeoreferencedComponents` question yet.** A superseded-risk flag
@@ -1710,7 +1710,7 @@ observed, and how.
   `NA167 notes` records "subfolders were included WITHOUT setting the key", while
   `FINDINGS` records the opposite for H2023. Reconciliation adopted: **the flag, not the
   build, was the variable** — the NA167 run had `appIncSubdirs` set by the fixed workflow.
-  `testing/MERGE_TEST_PLAN.md` line 26 preserves the superseded observation.
+  `docs/validation/merge_test_plan.md` line 26 preserves the superseded observation.
 - **Resolution:** `-set "appIncSubdirs=true"` before **every** `-addFolder`, no exceptions.
   [VERIFIED: FINDINGS 2026-07-23]
 

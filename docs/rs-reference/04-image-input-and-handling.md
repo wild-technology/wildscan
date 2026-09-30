@@ -681,7 +681,7 @@ This is the most consequential and most expensively-learned section in this docu
   shared-camera set is the **deterministic** route `-mergeComponents` fuses through:
   cell D6 merged two zone_6 halves (749 + 342 cameras, **390 shared images**) in 56 min
   of real reconstruction ending "Finalizing 1 component".
-  [VERIFIED: NA167 D6 / testing/MERGE_TEST_PLAN.md, 2026-07-24]
+  [VERIFIED: NA167 D6 / docs/validation/merge_test_plan.md, 2026-07-24]
   It is **not the only** route — content overlap alone also fuses; see §12.5, which
   supersedes the "shared cameras are the ONLY mechanism" reading.
 - **Basename, not path, is what the flight-log importer matches on** — bare filenames
@@ -759,7 +759,7 @@ fsutil hardlink list "F:\pool\zone_1\cinema\C231C4652_20231104213612_edt.jpg"
 **Never** `mklink /J` (junction) or `mklink /D` for an image tree RealityScan will write
 sidecars into.
 
-Machine guard used here: `testing/run_h2024_v2.py :: assert_harvestable`, which walks the
+Machine guard used here: [archive/campaign_drivers/run_h2024_v2.py :: assert_harvestable](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/run_h2024_v2.py), which walks the
 image root recursively (a junction one level down blinds the harvest as completely as a
 top-level one) and tests `st_reparse_tag`, because `os.path.islink()` is **False** for
 Windows junctions on some Python builds. Reproduced in full in `F-57` of
@@ -796,7 +796,7 @@ basenames and zero paths** but viewing the same wreck strip — `-mergeComponent
 one 120-camera component (78 + 42 exact, "Finalizing 1 component") both without any flight
 log in the merge scene (70 s) and with a union log + `-update` (57 s).
 Zero *content* overlap ⇒ silent no-fuse regardless of flags or logs.
-[VERIFIED: FINDINGS "D7 RESOLVED", `archive/campaign_drivers/probe_d7.py`, 2026-07-24]
+[VERIFIED: FINDINGS "D7 RESOLVED", [archive/campaign_drivers/probe_d7.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/probe_d7.py), 2026-07-24]
 [SUPERSEDED: the earlier "shared cameras are the ONLY merge mechanism" and "camera
 identity is path identity" conclusions — both were the correct reading of the pre-D7
 evidence and are now known to be sufficient-but-not-necessary. Retained because the
@@ -1813,7 +1813,7 @@ subsets, one variant per row, scored on registered cameras:**
 | `clahe_c2_t4` | 124 / 400 | 31.0 % |
 | **`baseline`** (no preprocessing) | **0 / 400** | **failed to form any component** |
 
-[VERIFIED: 2026-07-21 zone_9 A/B, `testing/run_zone9_tests.py` phase 2; table reproduced
+[VERIFIED: 2026-07-21 zone_9 A/B, `scripts/validation/run_zone9_validation.py` phase 2; table reproduced
 from `docs/code-review-2026-07.md` §"Preprocessing, measured then baked in"; defaults
 recorded in `modules/preprocess_images/preprocess_images.py`]
 
@@ -1827,7 +1827,7 @@ Three things the full grid says that the headline does not:
    16×16 → 41.8 %. Neither neighbour is a safe substitute.
    Gray-world white balance **actively hurts** (33.8 % vs 59.8 % at the same clip/tile).
 
-The variant grid (`testing/preprocess_variants.py`): round 1 = `baseline`, `clahe_c2_t8`,
+The variant grid (`scripts/validation/preprocess_variants.py`): round 1 = `baseline`, `clahe_c2_t8`,
 `clahe_c4_t8`, `wb_clahe_c2_t8`; refinement around the winner = clip/2, clip×1.5, tile 4,
 tile 16, white-balance flip. Scoring metric: **registered / total images**, read from the
 pose-XMP sidecar count, with component count and runtime as tiebreakers — never keypoint
@@ -1935,7 +1935,7 @@ Everything below is a measurement made through this CLI, not an estimate.
 | Hardlinked image pool | 9,835 files | 35.8 GB logical, **0.05 GB actual** |
 | Image decode census (full decode, not verify) | 8,197 JPGs | zero corruption, `camera_registry.identify` classified all (cinema 4,100 + port 4,097, zero unknown) |
 
-[VERIFIED: FINDINGS / status log / testing/MERGE_TEST_PLAN.md cells B and C_joint,
+[VERIFIED: FINDINGS / status log / docs/validation/merge_test_plan.md cells B and C_joint,
 2026-07-21 … 2026-07-28]
 
 **Memory note that belongs here:** joint alignment extrapolates to **~700 GB for a

@@ -21,7 +21,7 @@ the last run becomes the next run's defaults.
 """
 from __future__ import annotations
 
-import sys
+import argparse
 from pathlib import Path
 
 from rich.text import Text
@@ -29,6 +29,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
+from textual.timer import Timer
 from textual.widgets import (Button, DataTable, Footer, Input, Label,
                              ProgressBar, RichLog, SelectionList, Static)
 from textual.widgets.selection_list import Selection
@@ -37,11 +38,11 @@ from . import APP_NAME, ORG, TAGLINE, __version__
 from .branding import (CSS, MIST, OK, SAND, STATUS_COLOR, STATUS_GLYPH, TEAL,
                        WARN, WORDMARK)
 from .runner import CommandRunner, LogLine, ProgressUpdate, RunFinished
-from .session import (ALL_STAGES, Session, build_commands, build_questions,
+from .session import (ALL_STAGES, RawDataScan, Session, build_commands, build_questions,
                       default_enabled, default_session, export_names_file,
                       prepare_results_root, save_last_run, scan_raw_data,
                       write_camera_records)
-from .workspace import STAGE_TITLES, Workspace
+from .workspace import STAGE_TITLES, StageStatus, Workspace
 
 
 def status_text(status: str, text: str) -> Text:
@@ -54,6 +55,11 @@ class SessionScreen(Screen):
     where, before anything else."""
 
     BINDINGS = [Binding("q", "quit", "Quit")]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._detection_cache: dict[str, tuple[str, object]] = {}
+        self._detection_timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(WORDMARK, id="wordmark")
@@ -104,27 +110,44 @@ class SessionScreen(Screen):
         s.processed_data = self.query_one("#s-processed", Input).value.strip()
         s.results_root = self.query_one("#s-results", Input).value.strip()
 
-    def _refresh_detection(self) -> None:
+    def _refresh_detection(self, *, force: bool = False) -> None:
         from .session import scan_cameras, scan_processed_data
         app: WildScanApp = self.app  # type: ignore[assignment]
+        self._detection_timer = None
         self._pull()
         s = app.session
+
+        def scanned(key, path, scanner):
+            previous = self._detection_cache.get(key)
+            if force or previous is None or previous[0] != path:
+                previous = (path, scanner(path))
+                self._detection_cache[key] = previous
+            return previous[1]
+
+        if s.cruise_folder:
+            app.scan = scanned('cruise', s.cruise_folder, scan_raw_data)
+        else:
+            self._detection_cache.pop('cruise', None)
+            app.scan = RawDataScan()
+        for key, path in (('raw_images', s.raw_images_dir),
+                          ('processed', s.processed_data)):
+            if not path:
+                self._detection_cache.pop(key, None)
         text = Text()
         if s.cruise_folder:
-            app.scan = scan_raw_data(s.cruise_folder)
             text.append("Cruise folder:\n", style=SAND)
             for line in app.scan.summary_lines():
                 text.append("  · ", style=TEAL)
                 text.append(line + "\n")
         if s.raw_images_dir:
-            cams = scan_cameras(s.raw_images_dir)
+            cams = scanned('raw_images', s.raw_images_dir, scan_cameras)
             text.append("Raw images — camera identification:\n", style=SAND)
             for line in cams.summary_lines() or ["no imagery found there"]:
                 style = WARN if line.startswith("UNRECOGNISED") else TEAL
                 text.append("  · ", style=style)
                 text.append(line + "\n")
         if s.processed_data:
-            processed = scan_processed_data(s.processed_data)
+            processed = scanned('processed', s.processed_data, scan_processed_data)
             text.append("Processed data:\n", style=SAND)
             if processed["datatables"]:
                 text.append("  · ", style=TEAL)
@@ -150,15 +173,20 @@ class SessionScreen(Screen):
         self.query_one("#s-detect", Static).update(text)
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        if event.input.id in ("s-cruise", "s-rawimages", "s-processed",
-                              "s-video"):
-            self._refresh_detection()
+        if event.input.id in ("s-cruise", "s-rawimages", "s-processed"):
+            if self._detection_timer is not None:
+                self._detection_timer.stop()
+            self._detection_timer = self.set_timer(0.3, self._refresh_detection)
         elif event.input.id in ("s-expedition", "s-dive"):
             app: WildScanApp = self.app  # type: ignore[assignment]
             self._pull()
             results = self.query_one("#s-results", Input)
             if app.session.label and not results.value.strip():
                 results.value = app.session.suggested_results_root(None)
+
+    def on_unmount(self) -> None:
+        if self._detection_timer is not None:
+            self._detection_timer.stop()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id != "s-continue":
@@ -170,9 +198,15 @@ class SessionScreen(Screen):
             self.query_one("#s-detect", Static).update(
                 Text("a results root is required", style=WARN))
             return
+        if self._detection_timer is not None:
+            self._detection_timer.stop()
+        # Preview caches never supply the plan's source identity.
+        self._refresh_detection(force=True)
         prepare_results_root(s)
-        s.enabled = default_enabled(s.workspace())
-        app.push_screen(StagePickScreen())
+        ws = s.workspace()
+        statuses = ws.detect()
+        s.enabled = default_enabled(ws, statuses)
+        app.push_screen(StagePickScreen(statuses))
 
 
 class StagePickScreen(Screen):
@@ -183,6 +217,10 @@ class StagePickScreen(Screen):
         Binding("escape", "back", "Back"),
         Binding("enter", "confirm", "Confirm", priority=True),
     ]
+
+    def __init__(self, statuses: dict[str, StageStatus] | None = None) -> None:
+        super().__init__()
+        self._initial_statuses = statuses
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="panel"):
@@ -195,7 +233,9 @@ class StagePickScreen(Screen):
     def on_mount(self) -> None:
         app: WildScanApp = self.app  # type: ignore[assignment]
         ws = app.session.workspace()
-        statuses = ws.detect()
+        statuses = (ws.detect() if self._initial_statuses is None
+                    else self._initial_statuses)
+        self._initial_statuses = None
         picker = self.query_one("#stage-pick", SelectionList)
         for key in ALL_STAGES:
             st = statuses.get(key)
@@ -222,6 +262,8 @@ class StagePickScreen(Screen):
             self.query_one("#pick-note", Static).update(
                 Text("select at least one stage", style=WARN))
             return
+        app.scan = (scan_raw_data(app.session.cruise_folder)
+                    if app.session.cruise_folder else RawDataScan())
         app.questions = build_questions(app.session, app.scan)
         if app.questions:
             app.push_screen(WizardScreen())
@@ -372,6 +414,7 @@ class RunScreen(Screen):
         self.commands = []
         self.current = -1
         self.waiting_gate = False
+        self.retry_current = False
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="panel"):
@@ -435,6 +478,13 @@ class RunScreen(Screen):
             self.runner.start(cmd)
         except (OSError, RuntimeError) as exc:
             log.write(Text(f"launch failed: {exc}", style="bold red"))
+            self.retry_current = True
+            self.waiting_gate = True
+            self.query_one("#r-stop", Button).disabled = True
+            self.query_one("#r-continue", Button).disabled = False
+            self.query_one("#r-gate", Static).update(
+                Text("Launch failed. Fix the problem, then press Continue "
+                     "to retry this stage, or Esc for status.", style=WARN))
             return
         self.query_one("#r-stop", Button).disabled = False
         self.query_one("#r-continue", Button).disabled = True
@@ -458,9 +508,12 @@ class RunScreen(Screen):
                        style=OK if ok else "bold red"))
         self.query_one("#r-stop", Button).disabled = True
         if not ok:
+            self.retry_current = True
             self.query_one("#r-gate", Static).update(
-                Text("Stage failed - fix and press Continue to retry the "
-                     "NEXT stage, or Esc for status.", style=WARN))
+                Text(("Stage cancelled. Review outputs, then press Continue "
+                      "to retry this stage, or Esc for status." if message.cancelled
+                      else "Stage failed. Fix the problem, then press Continue "
+                      "to retry this stage, or Esc for status."), style=WARN))
             self.query_one("#r-continue", Button).disabled = False
             self.waiting_gate = True
             return
@@ -477,6 +530,9 @@ class RunScreen(Screen):
     def action_gate(self) -> None:
         if self.waiting_gate and not self.runner.running:
             self.waiting_gate = False
+            if self.retry_current:
+                self.current -= 1
+                self.retry_current = False
             self._advance()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -542,8 +598,7 @@ class WildScanApp(App):
         self.session: Session = default_session()
         if workspace:
             self.session.results_root = workspace
-        self.scan = scan_raw_data(self.session.cruise_folder) \
-            if self.session.cruise_folder else scan_raw_data("")
+        self.scan = RawDataScan()
         self.questions = []
 
     @property
@@ -556,6 +611,10 @@ class WildScanApp(App):
 
 
 def main() -> int:
-    workspace = sys.argv[1] if len(sys.argv) > 1 else None
-    WildScanApp(workspace).run()
+    parser = argparse.ArgumentParser(prog='wildscan', description=TAGLINE)
+    parser.add_argument('workspace', nargs='?', help='workspace to open')
+    parser.add_argument('--version', action='version',
+                        version=f'{APP_NAME} {__version__}')
+    args = parser.parse_args()
+    WildScanApp(args.workspace).run()
     return 0
