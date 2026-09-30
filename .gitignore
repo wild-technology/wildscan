@@ -3,6 +3,9 @@
 /.vscode
 /.vs
 
+# Local historical code is retained outside the published source tree.
+/archive/
+
 /module_base/__pycache__
 /modules/__pycache__
 /modules/extract_images/__pycache__
