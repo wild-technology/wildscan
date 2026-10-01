@@ -37,13 +37,14 @@ same time - the two are alternative strategies, not complements.
 Auth: an ion token with assets:write + assets:read, via --token or
 CESIUM_ION_TOKEN.
 
-Dependencies: requests, boto3, pyproj
-    py -3.13 -m pip install requests boto3 pyproj
+Dependencies: requests, boto3, pyproj (installed with the project).
+PowerShell, from the Git checkout:
+    & "./.venv/Scripts/python.exe" -m pip install -e .
 
-Example:
-    py -3.13 publish_cesium.py --name "H2080 wreck" \
-        --dir F:/NA168/Zeuss_NA168_H2080/NewModels \
-        --flight-log F:/NA168/Zeuss_NA168_H2080/raw_images/flight_log_53N_UTM.txt \
+Example (PowerShell, from the Git checkout):
+    & "./.venv/Scripts/python.exe" publish_cesium.py --name "H2080 wreck" `
+        --dir "F:/NA168/Zeuss_NA168_H2080/NewModels" `
+        --flight-log "F:/NA168/Zeuss_NA168_H2080/raw_images/flight_log_53N_UTM.txt" `
         --poll --verify
 """
 from __future__ import annotations
@@ -98,8 +99,9 @@ def require_deps() -> None:
             missing.append(name)
     if missing:
         raise SystemExit(
-            f'missing dependencies: {", ".join(missing)}. Install with:\n'
-            f'    py -3.13 -m pip install {" ".join(missing)}')
+            f'missing dependencies: {", ".join(missing)}. '
+            'Install from the checkout with this interpreter (PowerShell):\n'
+            f'    & "{sys.executable}" -m pip install -e .')
 
 
 # --------------------------------------------------------------------------

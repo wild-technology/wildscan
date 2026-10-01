@@ -118,6 +118,15 @@ SetVariables.bat's dead XMPMetadata var.
 
 ## 4. Format-ID portability (SHIPPING landmine)
 
+**Historical conclusion, superseded on 2026-08-23.** The passage below records
+the earlier position-only observation and the hypothesis it produced. The saved
+project comparison established that an unresolvable GUID drops orientation and
+accuracy; it did not establish header-driven import of those priors. Current
+installations must match the complete format GUID in the installed dictionary
+and both parameter templates. See
+[the resolved comparison](rs-reference/06-georeferencing-flightlogs-and-scale.md#resolved-2026-08-23--side-a-holds-what-an-unresolvable-format-guid-actually-does)
+and [installation verification](SETUP-AND-RUN.md#54-flight-log-import-format).
+
 {B438A617-2434-5A24-C1B7-58980F28345A} (our 13-column format) is NOT a
 factory format: it exists only in the hand-patched RS 2.0
 flightlogs.xml and the repo copy. Stock 2.2 ships 12 fixed formats
@@ -179,7 +188,8 @@ row-driven, not key-driven.
     saved-project comparison showed that an absent format imports positions
     only. Customer installs must match the params' gpsLogFileFormat GUID
     to the custom format in the installed flightlogs.xml; see the
-    flight-log reference §2.3 and SETUP-AND-RUN.md §2.1.
+    flight-log reference §2.3 and
+    [SETUP-AND-RUN.md §5.4](SETUP-AND-RUN.md#54-flight-log-import-format).
   - P4 CLOSED: re-import + `-update` re-places ALIGNED components onto
     new priors without re-align. Per-step flight-log loading is now a
     verified refresh mechanism, not just hygiene. §1b's caveat is

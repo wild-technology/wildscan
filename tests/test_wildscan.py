@@ -322,7 +322,7 @@ def test_chain_runs_as_one_invocation_preserving_handoff(tmp_path):
         "chained modules MUST share one main.py process - the in-process "
         "hand-off is the pipeline's current data handling")
     argv = " ".join(chain.argv)
-    assert "--g_input D:/x" in argv
+    assert chain.argv[chain.argv.index('--g_input') + 1] == os.path.abspath('D:/x')
     assert "--r_model_generate false" in argv, "model flags forced off"
     assert chain.needs_realityscan
 
@@ -464,6 +464,44 @@ def test_portal_walks_session_to_stage_pick(tmp_path, store):
             picker = app.screen.query_one("#stage-pick")
             assert picker.option_count == 9
             assert results.is_dir(), "the results root must be auto-created"
+    asyncio.run(drive())
+
+
+def test_run_persists_anchored_source_paths_before_launch(tmp_path, store, monkeypatch):
+    import wildscan.app as app_mod
+    monkeypatch.chdir(tmp_path)
+    launches = []
+
+    class FakeRunner:
+        running = False
+
+        def __init__(self, screen):
+            pass
+
+        def start(self, command):
+            launches.append(command)
+
+    monkeypatch.setattr(app_mod, 'CommandRunner', FakeRunner)
+
+    async def drive():
+        app = app_mod.WildScanApp()
+        async with app.run_test(size=(120, 50)) as pilot:
+            await pilot.pause()
+            app.session.results_root = 'results'
+            app.session.raw_images_dir = 'raw'
+            app.session.video_path = 'raw/clip.mov'
+            app.session.enabled = ['extract']
+            app.session.answers = {'i_input': 'raw/clip.mov',
+                                   'r_input': 'zones', 'r_flight_log': 'nav.csv'}
+            app.push_screen(app_mod.RunScreen())
+            await pilot.pause()
+            assert len(launches) == 1
+            assert store.data['wildscan']['raw_images_dir'] == str(tmp_path / 'raw')
+            assert store.data['wildscan']['video_path'] == str(tmp_path / 'raw' / 'clip.mov')
+            assert store.data['wildscan']['answers']['i_input'] == str(tmp_path / 'raw' / 'clip.mov')
+            assert store.data['wildscan']['answers']['r_input'] == str(tmp_path / 'zones')
+            assert store.data['wildscan']['answers']['r_flight_log'] == str(tmp_path / 'nav.csv')
+            assert store.data['wildscan']['results_base'] == str(tmp_path)
     asyncio.run(drive())
 
 

@@ -30,12 +30,14 @@ images absent from those components, so the round trip would silently
 lose every orphan image - the precious missing-link candidates this
 stage exists to register. It remains a manual fallback only.
 
-Usage:
-    py -3.13 grow_zone.py --scene <zone .rsproj> --images_root <zone images>
-        [--components_dir <AlignZone exports with manifests>]
-        [--output <dir>] [--min_size 50] [--max_passes 8]
-        [--feature_source 1] [--selection_cmds editsel|legacy]
-        [--lock_anchor] [--skip_global] [--project_label NA156_H2023]
+Example (PowerShell, from the Git checkout):
+    & "./.venv/Scripts/python.exe" grow_zone.py `
+        --scene "D:/dive/aligned_components/zone_1/zone_1.rsproj" `
+        --images_root "D:/dive/batched_images_by_zone/zone_1" `
+        --components_dir "D:/dive/aligned_components/zone_1" `
+        --output "D:/dive/grown/zone_1" --min_size 50 --max_passes 8
+
+See --help for feature-source, selection and checkpoint options.
 
 All prompts default to the previous run's answers (rs_settings.json).
 RS_HEADLESS resolves through the settings store's 'realityscan' section

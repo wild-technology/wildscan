@@ -28,8 +28,11 @@ the mesh's axes it treated as up. A Y-up misreading permutes them visibly.
 Everything is read back from the asset's own tileset.json - never from the
 upload's exit status.
 
-    py -3.13 scripts/validation/probe_cesium_depth.py --token <ion token>
-    py -3.13 scripts/validation/probe_cesium_depth.py --keep     # do not delete after
+Examples (PowerShell, from the Git checkout; CESIUM_ION_TOKEN set):
+    & "./.venv/Scripts/python.exe" scripts/validation/probe_cesium_depth.py
+    & "./.venv/Scripts/python.exe" scripts/validation/probe_cesium_depth.py --keep
+
+The first command deletes the remote probe asset afterwards; --keep retains it.
 """
 from __future__ import annotations
 

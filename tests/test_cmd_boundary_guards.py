@@ -289,6 +289,69 @@ def test_verified_shutdown_allows_sequential_supervised_scripts(
         assert not os.path.exists(cli._lock_path())
 
 
+@pytest.mark.parametrize('mode', ['boot', 'attach'])
+def test_native_environment_paths_are_anchored_to_the_caller(
+        tmp_path, monkeypatch, mode):
+    cli = _cli(tmp_path)
+    caller = tmp_path / 'intake with spaces'
+    caller.mkdir()
+    monkeypatch.chdir(caller)
+    monkeypatch.setattr(cli_mod, 'ERRORS_DIR', str(tmp_path / 'errors'))
+    monkeypatch.setattr(cli, 'is_instance_running', lambda: False)
+    monkeypatch.setattr(cli, 'wait_for_instance_shutdown', lambda: True)
+    monkeypatch.setattr(cli, 'get_instance_status', lambda instance: {'lastError': 0})
+    monkeypatch.setattr(cli, '_monitor_until_exit', lambda *a, **k: None)
+    monkeypatch.delenv('RS_WORKFLOW_OWNER_PID', raising=False)
+    paths = {'RS_ALIGN_PARAMS': 'params.xml', 'RS_ALIGN_POOL_DIR': 'pool',
+             'RS_CACHE_DIR': 'cache', 'RS_PROJECTS_DIR': 'projects',
+             'RS_SAVE_PATH': 'saved/scene.rsproj'}
+    for key, value in paths.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv('RS_PROJECT_LABEL', 'ordinary_label')
+    calls = []
+
+    def capture(command, **kwargs):
+        calls.append(command)
+        assert kwargs['cwd'] == cli_mod.SCRIPTS_DIR
+        assert {key: kwargs['env'][key] for key in paths} == {
+            key: os.path.abspath(value) for key, value in paths.items()}
+        assert kwargs['env']['RS_PROJECT_LABEL'] == 'ordinary_label'
+        assert kwargs['env']['RS_EXECUTABLE'] == str(tmp_path / 'RealityScan.exe')
+        return SimpleNamespace(returncode=1)
+
+    monkeypatch.setattr(cli_mod.subprocess, 'Popen', capture)
+    if mode == 'boot':
+        result = cli.run_batch_script('AlignZone.bat', [], str(tmp_path / 'logs'))
+    else:
+        result = cli.run_attach_script('ModelToFinal.bat', [],
+                                       str(tmp_path / 'logs'), instance='TARGET')
+    assert len(calls) == 1 and not result.success
+    assert {key: os.environ[key] for key in paths} == paths
+
+
+@pytest.mark.parametrize('source', ['settings', 'environment'])
+def test_relative_executable_is_resolved_before_switching_cwd(
+        tmp_path, monkeypatch, source):
+    cli = _cli(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    if source == 'settings':
+        cli.settings.data['realityscan']['executable'] = 'RealityScan.exe'
+    else:
+        cli.settings.data['realityscan'].pop('executable')
+        monkeypatch.setenv('RS_EXECUTABLE', 'RealityScan.exe')
+    assert cli.find_executable() == str(tmp_path / 'RealityScan.exe')
+
+
+def test_project_save_paths_use_the_callers_folder(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    for key in ('RS_PROJECTS_DIR', 'RS_PROJECT_LABEL', 'RS_PROJECT_DATE'):
+        monkeypatch.setenv(key, '')
+    projects = cli_mod.set_project_save_env('images/zone', 'ordinary_label')
+    assert projects == str(tmp_path / 'images' / 'RC_projects')
+    assert os.environ['RS_PROJECTS_DIR'] == projects
+    assert os.environ['RS_PROJECT_LABEL'] == 'ordinary_label'
+
+
 # ------------------------------------------------- workflow-script guards
 # Structural properties of the .bat files, checked as text (the same
 # no-real-tool philosophy as test_attach_mode's forbidden-token list). No

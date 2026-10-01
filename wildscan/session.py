@@ -397,6 +397,7 @@ _KIND_BY_NAME = {
     "batch_flight_log_path": "file",
     "rs_input_image_dir": "path",
     "rs_flight_log_path": "file",
+    "rs_flight_log_params": "file",
 }
 # geo_input_type is REQUIRED (audit 2026-08-07): it has default_value None,
 # so a blank answer used to be accepted, dropped from argv, and only
@@ -589,6 +590,7 @@ class StageCommand:
     needs_realityscan: bool = False
     workspace: str | None = None
     stages: tuple[str, ...] = ()
+    cwd: str | None = None
 
     @property
     def display(self) -> str:
@@ -600,7 +602,23 @@ def build_commands(session: Session) -> list[StageCommand]:
     (in-process hand-off preserved - portal only), then each post stage as
     its own command with a gate between them."""
     commands: list[StageCommand] = []
+    caller_cwd = Path.cwd()
+    # Absolute paths survive the native workflow's separate working directory.
+    # abspath preserves aliases so downstream alias guards can still inspect them.
+    for name in ('cruise_folder', 'raw_images_dir', 'video_path',
+                 'processed_data', 'results_root'):
+        value = getattr(session, name).strip()
+        if value:
+            setattr(session, name, os.path.abspath(os.path.join(caller_cwd, value)))
     chain = [k for k in CHAIN_STAGES if k in session.enabled]
+    path_args = {'output_dir'}
+    for module in _module_registry().values():
+        for name, parameter in module.get_parameters().items():
+            if _KIND_BY_NAME.get(name) in ('path', 'file'):
+                path_args.add(parameter.cli_long)
+    for arg, value in session.answers.items():
+        if arg in path_args and value.strip():
+            session.answers[arg] = os.path.abspath(os.path.join(caller_cwd, value.strip()))
     ws = session.workspace()
 
     # RealityScan machine constants (RS_INSTANCE / RS_CACHE_DIR /
@@ -734,7 +752,8 @@ def build_commands(session: Session) -> list[StageCommand]:
             env={"PYTHONIOENCODING": "utf-8"}, stages=("publish",)))
 
     for command in commands:
-        command.workspace = str(ws.root)
+        command.cwd = str(caller_cwd)
+        command.workspace = os.path.abspath(ws.root)
     return commands
 
 

@@ -403,6 +403,177 @@ def test_a_stale_folder_without_deliverables_is_still_cleared(tmp_path,
 
 # ------------------------------------------------------------ rollback safety
 
+
+def test_relative_alignment_paths_survive_the_native_script_cwd(tmp_path, monkeypatch):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from modules.realityscan_interface import realityscan_cli as cli_mod
+
+    caller = tmp_path / 'intake with spaces'
+    images = caller / 'images'
+    images.mkdir(parents=True)
+    (images / 'image.jpg').write_bytes(b'fixture')
+    nav = caller / 'nav.txt'
+    nav.write_text(LOG_HEADER, encoding='utf-8')
+    params = caller / 'params.xml'
+    shutil.copyfile(Path(cli_mod.METADATA_DIR) / 'FlightLogParamsLocal.xml', params)
+    alignment_params = caller / 'alignment.xml'
+    shutil.copyfile(Path(cli_mod.METADATA_DIR) / 'AlignmentParams.xml', alignment_params)
+    module = RealityScanAlignment(QUIET)
+    module.params = {}
+    monkeypatch.chdir(caller)
+    monkeypatch.setenv('RS_ALIGN_PARAMS', 'alignment.xml')
+    monkeypatch.setenv('RS_ALIGN_POOL_DIR', 'images')
+    monkeypatch.setattr(cli_mod, 'ERRORS_DIR', str(tmp_path / 'errors'))
+    monkeypatch.setattr(module.cli, 'find_executable', lambda: 'unused.exe')
+    monkeypatch.setattr(module.cli, 'is_instance_running', lambda: False)
+    monkeypatch.setattr(module.cli, 'wait_for_instance_shutdown', lambda: True)
+    monkeypatch.setattr(module.cli, '_monitor_until_exit', lambda *a, **k: None)
+    monkeypatch.setattr('modules.align_fingerprint._repo_sha', lambda: None)
+    monkeypatch.delenv('RS_WORKFLOW_OWNER_PID', raising=False)
+    calls = []
+    fingerprints = []
+    build_fingerprint = sys.modules['modules.align_fingerprint'].build_fingerprint
+
+    def capture_fingerprint(*args, **kwargs):
+        fingerprints.append(args)
+        return build_fingerprint(*args, **kwargs)
+
+    monkeypatch.setattr('modules.align_fingerprint.build_fingerprint', capture_fingerprint)
+
+    def capture(command, **kwargs):
+        calls.append((command, kwargs))
+        assert kwargs['cwd'] == cli_mod.SCRIPTS_DIR
+        assert command[1:5] == [str(images), str(caller / 'results' / 'zone'),
+                                str(nav), str(params)]
+        assert all(Path(value).is_absolute() for value in command[1:5])
+        assert command[5:] == ['ordinary_zone_name', '50']
+        assert kwargs['env']['RS_ALIGN_PARAMS'] == str(alignment_params)
+        assert kwargs['env']['RS_ALIGN_POOL_DIR'] == str(images)
+        return SimpleNamespace(returncode=1)
+
+    monkeypatch.setattr(cli_mod.subprocess, 'Popen', capture)
+    result, _ = module._RealityScanAlignment__align_zone(
+        'images', 'results/zone', 'ordinary_zone_name', 'nav.txt', 'params.xml')
+    assert len(calls) == 1
+    assert fingerprints[0][2] == str(alignment_params)
+    assert result['Success'] is False
+    assert (caller / 'results' / 'zone').is_dir()
+
+
+@pytest.mark.parametrize('output_folder', [None, '', ' ', '\t'])
+def test_alignment_refuses_missing_output_before_cleanup_or_native_calls(
+        tmp_path, monkeypatch, output_folder):
+    images = tmp_path / 'images'
+    images.mkdir()
+    sentinel = tmp_path / 'preserved.txt'
+    sentinel.write_text('preserve', encoding='utf-8')
+    module = RealityScanAlignment(QUIET)
+    monkeypatch.chdir(tmp_path)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail('Missing output reached cleanup or native preparation')
+
+    monkeypatch.setattr(shutil, 'rmtree', forbidden)
+    monkeypatch.setattr(module.cli, 'find_executable', forbidden)
+    with pytest.raises(ValueError, match='Output folder is not specified'):
+        module._RealityScanAlignment__align_zone(
+            str(images), output_folder, 'zone', None, None)
+    assert sentinel.read_text(encoding='utf-8') == 'preserve'
+
+
+@pytest.mark.parametrize('output_folder', ['.', 'images', 'images/output'])
+def test_alignment_refuses_overlapping_output_before_cleanup(
+        tmp_path, monkeypatch, output_folder):
+    images = tmp_path / 'images'
+    images.mkdir()
+    sentinel = images / 'original.jpg'
+    sentinel.write_bytes(b'original')
+    module = RealityScanAlignment(QUIET)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv('RS_ALIGN_POOL_DIR', raising=False)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail('Overlapping output reached cleanup or native preparation')
+
+    monkeypatch.setattr(shutil, 'rmtree', forbidden)
+    monkeypatch.setattr(os, 'rename', forbidden)
+    monkeypatch.setattr(module.cli, 'find_executable', forbidden)
+    with pytest.raises(ValueError, match='must not overlap'):
+        module._RealityScanAlignment__align_zone(
+            'images', output_folder, 'zone', None, None)
+    assert sentinel.read_bytes() == b'original'
+    assert list(images.iterdir()) == [sentinel]
+
+
+def test_alignment_refuses_output_that_contains_the_pool(tmp_path, monkeypatch):
+    images = tmp_path / 'zone'
+    images.mkdir()
+    pool = tmp_path / 'out' / 'pool'
+    pool.mkdir(parents=True)
+    sentinel = pool / 'original.jpg'
+    sentinel.write_bytes(b'original')
+    module = RealityScanAlignment(QUIET)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RS_ALIGN_POOL_DIR', 'out/pool')
+    monkeypatch.setattr(module.cli, 'find_executable',
+                        lambda: pytest.fail('Pool overlap reached native preparation'))
+    with pytest.raises(ValueError, match='must not overlap'):
+        module._RealityScanAlignment__align_zone('zone', 'out', 'zone', None, None)
+    assert sentinel.read_bytes() == b'original'
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Windows directory junction')
+def test_alignment_refuses_output_that_aliases_input(tmp_path, monkeypatch):
+    import subprocess
+
+    images = tmp_path / 'images'
+    images.mkdir()
+    sentinel = images / 'original.jpg'
+    sentinel.write_bytes(b'original')
+    alias = tmp_path / 'output'
+    subprocess.run(['cmd', '/c', 'mklink', '/J', str(alias), str(images)],
+                   check=True, capture_output=True)
+    module = RealityScanAlignment(QUIET)
+    monkeypatch.setattr(module.cli, 'find_executable',
+                        lambda: pytest.fail('Alias reached native preparation'))
+    try:
+        with pytest.raises(ValueError, match='must not overlap'):
+            module._RealityScanAlignment__align_zone(
+                str(images), str(alias), 'zone', None, None)
+        assert sentinel.read_bytes() == b'original'
+    finally:
+        os.rmdir(alias)
+
+
+def test_validation_alignment_passes_absolute_filesystem_arguments(
+        tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from scripts.validation.run_zone9_validation import run_alignment
+    from modules.realityscan_interface.realityscan_cli import METADATA_DIR
+
+    images = tmp_path / 'images'
+    images.mkdir()
+    (images / 'image.jpg').write_bytes(b'fixture')
+    nav = images / 'nav.txt'
+    nav.write_text(LOG_HEADER, encoding='utf-8')
+    monkeypatch.chdir(tmp_path)
+    calls = []
+
+    def capture(script, args, log_dir):
+        calls.append((script, args, log_dir))
+        return WorkflowResult(False, 1)
+
+    result = run_alignment(SimpleNamespace(run_batch_script=capture),
+                           'images', 'results/zone', 'ordinary_label', QUIET)
+    assert calls == [('AlignImagesFromFolder.bat',
+                      [str(images), str(tmp_path / 'results' / 'zone'), str(nav),
+                       os.path.join(METADATA_DIR, 'FlightLogParams.xml'),
+                       'false', 'false', 'ordinary_label', 'false', 'false'],
+                      str(tmp_path / 'results' / 'zone' / 'logs'))]
+    assert result['success'] is False
+
+
 def _scene(tmp_path):
     scene_dir = tmp_path / 'scene'
     scene_dir.mkdir()

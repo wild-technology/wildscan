@@ -109,6 +109,81 @@ def test_launch_failure_leaves_runner_available(tmp_path):
     assert not runner.running
 
 
+def test_planned_paths_and_child_cwd_stay_with_the_intake_folder(tmp_path, monkeypatch):
+    from wildscan.session import Session, build_commands
+
+    caller = tmp_path / 'intake with spaces'
+    caller.mkdir()
+    raw = caller / 'raw clip.mov'
+    raw.write_text('fixture input', encoding='utf-8')
+    results = caller / 'results'
+    results.mkdir()
+    monkeypatch.chdir(caller)
+    plan = build_commands(Session(results_root='results', enabled=['extract'],
+                                  answers={'i_input': raw.name}))[0]
+    assert plan.cwd == str(caller)
+    assert plan.workspace == str(results)
+    assert Path(plan.argv[1]).is_absolute()
+    input_path = plan.argv[plan.argv.index('--i_input') + 1]
+    output_path = plan.argv[plan.argv.index('--output_dir') + 1]
+    child = ("from pathlib import Path; import os,sys; "
+             "assert Path.cwd() == Path(sys.argv[3]); "
+             "root=Path(sys.argv[2]); root.mkdir(exist_ok=True); "
+             "(root/'copied.txt').write_text(Path(sys.argv[1]).read_text(),encoding='utf-8')")
+    plan.argv = [sys.executable, '-B', '-c', child, input_path, output_path, str(caller)]
+    marker = results / 'interrupted_stage.json'
+    marker.write_text(json.dumps({'stages': ['extract']}), encoding='utf-8')
+    other = tmp_path / 'other'
+    other.mkdir()
+    monkeypatch.chdir(other)
+    sink = Sink()
+    runner = CommandRunner(sink)
+    runner.start(plan)
+    assert sink.finished.wait(5)
+    assert sink.messages[-1].returncode == 0
+    assert (results / 'copied.txt').read_text(encoding='utf-8') == 'fixture input'
+    assert not marker.exists()
+    assert not (other / 'results').exists()
+
+
+def test_cancel_marker_is_anchored_to_the_explicit_child_cwd(tmp_path, monkeypatch):
+    caller = tmp_path / 'caller'
+    results = caller / 'results'
+    results.mkdir(parents=True)
+    ready = caller / 'ready'
+    other = tmp_path / 'other'
+    other.mkdir()
+    monkeypatch.chdir(other)
+    child = "from pathlib import Path; import time; Path('ready').touch(); time.sleep(60)"
+    sink = Sink()
+    runner = CommandRunner(sink)
+    runner.start(StageCommand('fixture', [sys.executable, '-B', '-c', child], {},
+                              workspace='results', stages=('extract',), cwd=str(caller)))
+    try:
+        wait_for(ready)
+        runner.terminate()
+        assert sink.finished.wait(5)
+        assert sink.messages[-1].cancelled
+        assert (results / 'interrupted_stage.json').is_file()
+        assert not (other / 'results').exists()
+    finally:
+        if runner.running:
+            runner.terminate()
+
+
+def test_manual_command_keeps_the_default_checkout_cwd(tmp_path, monkeypatch):
+    from wildscan.runner import LogLine, REPO
+
+    monkeypatch.chdir(tmp_path)
+    sink = Sink()
+    runner = CommandRunner(sink)
+    runner.start(StageCommand('fixture', [sys.executable, '-B', '-c',
+                                        'from pathlib import Path; print(Path.cwd())'], {}))
+    assert sink.finished.wait(5)
+    assert sink.messages[-1].returncode == 0
+    assert [m.line for m in sink.messages if isinstance(m, LogLine)] == [str(REPO)]
+
+
 @pytest.mark.parametrize("marker", [[], {"stages": ["model"], "command": ["old settings"]}])
 def test_retry_clears_only_matching_stage_interruption(tmp_path, marker):
     path = tmp_path / "interrupted_stage.json"

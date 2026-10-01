@@ -13,9 +13,12 @@ Each destination activates only when its credentials are present, and
 Results land in <workspace>/publish_report.json so WildScan can show them.
 Dry runs write publish_plan.json and preserve the publication report.
 
-Usage:
-    py -3.13 publish_batch.py --workspace F:/na156_h2024_v2 \
-        --prefix "IN-401" [--flight-log <log>] [--dry-run]
+Example (PowerShell, from the Git checkout):
+    & "./.venv/Scripts/python.exe" publish_batch.py --workspace "F:/na156_h2024_v2" `
+        --prefix "IN-401" --dry-run
+
+Add --flight-log with a quoted path for an independent navigation check.
+Remove --dry-run to upload to the configured destinations.
 """
 from __future__ import annotations
 

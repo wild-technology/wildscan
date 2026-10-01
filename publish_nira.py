@@ -16,14 +16,20 @@ carries georeferencing) and the .mtl + textures. PLY point clouds are NOT
 accepted (LAS/LAZ/E57 only) and point clouds must be part of the INITIAL
 upload - they cannot be appended later.
 
-One-time setup:
-    git clone https://github.com/NiraOfficial/niraclient
-    py -3.13 niraclient/nira.py configure     (org admin API key)
+One-time setup (PowerShell, from the Git checkout):
+    git clone https://github.com/NiraOfficial/niraclient.git "C:/tools/niraclient"
+    $wildscanPython = (Resolve-Path "./.venv/Scripts/python.exe").Path
+    Push-Location -LiteralPath "C:/tools/niraclient"
+    try { & $wildscanPython ./nira.py configure } finally { Pop-Location }
+    $env:NIRACLIENT_DIR = "C:/tools/niraclient"
 
-Example:
-    py -3.13 publish_nira.py --name "IN-401 hull" \
-        --dir F:/na156_h2024_v2/exports/cluster_0_a2_c0/obj \
-        --niraclient C:/tools/niraclient
+Configure prompts for the Enterprise API key and secret. The official client
+bundles its dependencies; see docs/SETUP-AND-RUN.md for the complete setup.
+
+Example (PowerShell, from the Git checkout):
+    & "./.venv/Scripts/python.exe" publish_nira.py --name "IN-401 hull" `
+        --dir "F:/na156_h2024_v2/exports/cluster_0_a2_c0/obj" `
+        --niraclient "C:/tools/niraclient"
 """
 from __future__ import annotations
 
@@ -125,7 +131,7 @@ def main() -> int:
         raise SystemExit(
             f'nira.py not found at {nira_py}. Clone '
             'github.com/NiraOfficial/niraclient and run "nira.py configure" '
-            'first (requires a Nira Enterprise plan API key).')
+            'first (requires a Nira Enterprise plan API key and secret).')
 
     directory = Path(args.dir)
     if not directory.is_dir():
