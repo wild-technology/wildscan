@@ -26,8 +26,9 @@ Rollback (module_base/scene_checkpoint.py):
   - checkpoint_scene rmtree'd an existing same-tag checkpoint before
     writing the replacement.
 
-No RealityScan: run_batch_script is stubbed, and the checkpoint tests
-inject OSError into shutil.copytree.
+No RealityScan: executable discovery uses an inert temporary file,
+run_batch_script is stubbed, and the checkpoint tests inject OSError
+into shutil.copytree.
 
 Run:  py -3.13 -m pytest tests/test_align_and_rollback_safety.py
 """
@@ -45,8 +46,10 @@ sys.path.insert(0, REPO_ROOT)
 
 from module_base import scene_checkpoint  # noqa: E402
 from module_base.parameter import Parameter  # noqa: E402
+from module_base.settings_store import SettingsStore  # noqa: E402
 from module_base.scene_checkpoint import (checkpoint_scene,  # noqa: E402
                                           restore_scene, scene_bundle)
+from modules.realityscan_interface import realityscan_cli as cli_mod  # noqa: E402
 from modules.realityscan_interface.realityscan_cli import WorkflowResult  # noqa: E402
 from modules.realityscan_interface.realityscan_interface import (  # noqa: E402
     RealityScanAlignment)
@@ -56,6 +59,15 @@ QUIET.addHandler(logging.NullHandler())
 QUIET.propagate = False
 
 LOG_HEADER = 'filename;X (East);Y (North);Alt\n'
+
+
+@pytest.fixture(autouse=True)
+def no_native_install(tmp_path, monkeypatch):
+    """These offline tests must pass without machine settings or an install."""
+    monkeypatch.delenv('RS_EXECUTABLE', raising=False)
+    monkeypatch.setattr(cli_mod, 'EXECUTABLE_CANDIDATES', [])
+    monkeypatch.setattr(cli_mod, 'SettingsStore',
+                        lambda: SettingsStore(str(tmp_path / 'settings.json')))
 
 
 def _param(name, value, default=None):
@@ -79,14 +91,17 @@ def _batched(root, zones=('zone_1', 'zone_2'), with_log=True, images=True):
 
 
 def _module_with_stub(tmp_path, monkeypatch, params, results=None,
-                      produce=False):
+                      produce=False, logger=QUIET):
     """RealityScanAlignment whose only RealityScan call is recorded.
 
     ``produce=True`` makes a successful stub run leave the artifacts a
     real AlignZone.bat would (the saved .rsproj plus one exported
     .rsalign), so the zone counts as SUCCEEDED rather than
-    'no components exported'."""
-    module = RealityScanAlignment(QUIET)
+    'no components exported'. The inert executable lets the real input
+    fingerprint record native-file metadata without probing an install."""
+    executable = tmp_path / 'mock_RealityScan.exe'
+    executable.write_bytes(b'offline fixture; not an executable')
+    module = RealityScanAlignment(logger)
     module.params = params
     queued: list[tuple] = []
 
@@ -103,6 +118,7 @@ def _module_with_stub(tmp_path, monkeypatch, params, results=None,
         return result
 
     monkeypatch.setattr(module.cli, 'run_batch_script', fake_run)
+    monkeypatch.setattr(module.cli, 'find_executable', lambda: str(executable))
     monkeypatch.setattr(module, '_initialize_loading_bar',
                         lambda *a, **k: None)
     monkeypatch.setattr(module, '_update_loading_bar', lambda *a, **k: None)
@@ -282,11 +298,9 @@ def test_a_pre_existing_pose_sidecar_is_announced(tmp_path, monkeypatch):
     logger.propagate = False
     logger.setLevel(logging.WARNING)
     logger.addHandler(Cap())
-    module = RealityScanAlignment(logger)
-    module.params = {}
-    monkeypatch.setattr(module.cli, 'run_batch_script',
-                        lambda *a, **k: WorkflowResult(False, 1, None, 'x',
-                                                       [], 0.0))
+    module, _queued = _module_with_stub(
+        tmp_path, monkeypatch, {}, [WorkflowResult(False, 1, None, 'x', [], 0.0)],
+        logger=logger)
     module._RealityScanAlignment__align_zone(
         str(images), str(tmp_path / 'out'), 'zone_1', None, None)
     assert any('pose-bearing' in m and 'identity_r0' in m
@@ -304,11 +318,8 @@ def test_a_previous_runs_project_is_renamed_not_deleted(tmp_path, monkeypatch):
     (out / 'zone_1.rsproj').write_bytes(b'project')
     (out / 'zone_1_c0.rsalign').write_bytes(b'component')
 
-    module = RealityScanAlignment(QUIET)
-    module.params = {}
-    monkeypatch.setattr(module.cli, 'run_batch_script',
-                        lambda *a, **k: WorkflowResult(False, 1, None, 'x',
-                                                       [], 0.0))
+    module, _queued = _module_with_stub(
+        tmp_path, monkeypatch, {}, [WorkflowResult(False, 1, None, 'x', [], 0.0)])
     module._RealityScanAlignment__align_zone(
         str(images), str(out), 'zone_1', None, None)
 
@@ -354,11 +365,8 @@ def test_the_superseded_folder_is_not_rescanned_as_a_zone(tmp_path,
         _json.dumps({'rsalign': str(out / 'zone_1_c0.rsalign'),
                      'camera_count': 1200}), encoding='utf-8')
 
-    module = RealityScanAlignment(QUIET)
-    module.params = {}
-    monkeypatch.setattr(module.cli, 'run_batch_script',
-                        lambda *a, **k: WorkflowResult(False, 1, None, 'x',
-                                                       [], 0.0))
+    module, _queued = _module_with_stub(
+        tmp_path, monkeypatch, {}, [WorkflowResult(False, 1, None, 'x', [], 0.0)])
     module._RealityScanAlignment__align_zone(
         str(images), str(out), 'zone_1', None, None)
     # The re-run re-exports under the SAME name.
@@ -390,11 +398,8 @@ def test_a_stale_folder_without_deliverables_is_still_cleared(tmp_path,
     out.mkdir(parents=True)
     (out / 'leftover.png').write_bytes(b'plot')
 
-    module = RealityScanAlignment(QUIET)
-    module.params = {}
-    monkeypatch.setattr(module.cli, 'run_batch_script',
-                        lambda *a, **k: WorkflowResult(False, 1, None, 'x',
-                                                       [], 0.0))
+    module, _queued = _module_with_stub(
+        tmp_path, monkeypatch, {}, [WorkflowResult(False, 1, None, 'x', [], 0.0)])
     module._RealityScanAlignment__align_zone(
         str(images), str(out), 'zone_1', None, None)
     assert not (out / 'leftover.png').exists()
