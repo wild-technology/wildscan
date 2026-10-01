@@ -4,6 +4,11 @@ A step-by-step guide to installing wildscan on a new machine and running a
 dive through it. Follow the parts in order the first time. Later sessions
 start at [part 6](#6-run-the-pipeline).
 
+For the first-use input checklist and workspace inspection, follow
+[Analyze a dataset](ANALYZE_A_DATASET.md). The
+[documentation index](README.md) routes the current guides and historical
+experiment records.
+
 Commands are written for **Windows PowerShell**, the platform the pipeline
 runs on. Where a step differs in Command Prompt, the alternative is given.
 
@@ -132,10 +137,12 @@ separate from the rest of the machine.
 
 ```powershell
 py -3.13 -m venv .venv
+& ".\.venv\Scripts\python.exe" -m pip install --upgrade "pip>=26.2"
 & ".\.venv\Scripts\python.exe" -m pip install -e ".[dev]"
 ```
 
-The commands invoke the environment's Python directly. They work without
+Upgrade the environment installer before resolving dependencies. The commands
+invoke the environment's Python directly. They work without
 activation or a PowerShell execution-policy change. Run them from the checkout
 folder; use the full quoted executable path with `&` from another directory.
 
@@ -337,8 +344,10 @@ After successful activation, `wildscan "F:\na156_h2024"` is equivalent. The
 workspace argument is optional — without it, WildScan asks for the expedition,
 dive and folder and remembers your answers.
 
-WildScan surveys the workspace and shows the nine stages in order, each
-marked done, partial or pending:
+On the first screen, enter the dataset locations and a separate results root.
+Choose **View results** to inspect an existing workspace without processing,
+or **Continue** to create or open the working results root and choose stages.
+The nine stages are shown in order with a detected state and summary:
 
 1. Extract Images
 2. Georeference
@@ -350,15 +359,14 @@ marked done, partial or pending:
 8. Export Deliverables
 9. Publish (Cesium / Nira)
 
-Pick a stage and WildScan shows the exact command, settings and estimate
-before anything runs, then streams progress as it goes. It always launches
-the same drivers described below, so you can move between the two freely. It
-is resume-aware: reopen the workspace later and stages with valid reports and
-matching inputs stay marked done. Changed inputs or interrupted work require
-a retry.
-
-RealityScan stages need Windows. On macOS or Linux the app still opens a
-workspace for inspection, exports review and publishing.
+Select the needed stages, answer the parameter wizard, then review the source
+paths, settings, and publishing notice before choosing **Run**. The app streams
+logs and progress and launches the canonical drivers described below. It is
+resume-aware: valid completion evidence keeps stages unselected; incomplete,
+changed, or interrupted work may need a retry. Artifact checks differ by stage
+and do not establish reconstruction quality. The supported processing target
+is native Windows; see [Analyze a dataset](ANALYZE_A_DATASET.md) for the screen
+sequence, inspection limits, and pauses between commands.
 
 ### 6.3 The stages on the command line
 

@@ -4,8 +4,12 @@ ROV underwater photogrammetry pipeline driving **RealityScan 2.2** (Epic
 Games; the product formerly named RealityCapture) via its CLI. Runs on
 Windows with a multi-GPU CUDA setup.
 
-Released as **wildscan**, with a fresh history; pre-release development
-happened in predecessor repositories.
+The package is **wildscan**. Pre-release development and some of the dated
+empirical records came from predecessor repositories.
+
+For a first dataset, start with [Analyze a dataset](docs/ANALYZE_A_DATASET.md).
+The [documentation index](docs/README.md) separates current guidance from
+historical experiment records.
 
 ---
 
@@ -17,10 +21,12 @@ Set up the checkout in a virtual environment (dependencies are declared in
 
 ```powershell
 py -3.13 -m venv .venv
+& ".\.venv\Scripts\python.exe" -m pip install --upgrade "pip>=26.2"
 & ".\.venv\Scripts\python.exe" -m pip install -e ".[dev]"
 ```
 
-Baseline, from the checkout without activation:
+Upgrade the environment installer before resolving dependencies. Baseline,
+from the checkout without activation:
 
 ```powershell
 & ".\.venv\Scripts\python.exe" -m pytest
@@ -42,7 +48,7 @@ the routing index of the RealityScan manual.
 
 ## Operating practices
 
-Each of these was learned the expensive way.
+These practices follow earlier native runs and failure investigations.
 
 - **Verify by census, never by exit status.** RealityScan exits SUCCESS
   while doing nothing — merges that do not fuse, settings that never
@@ -54,9 +60,10 @@ Each of these was learned the expensive way.
   overwrote a concurrent run's `rs_settings.json`. Resolve `RS_INSTANCE` and
   `RS_GPU_DEVICES` explicitly, check no other instance holds that name, and
   never write another run's settings.
-- **Source data is read-only.** This pipeline writes sidecars into input
-  folders; align from hardlinked or copied trees, never from originals.
-  Deliverables are never overwritten — a name collision is a stop.
+- **Preserve source data.** Alignment writes sidecars into its input folders;
+  align from prepared working trees instead of irreplaceable originals.
+  Preserve previous deliverables before exporting into an existing directory;
+  not every native export workflow refuses a same-name replacement.
 - **Record findings when they are made.** Refuted hypotheses stay in the
   log, marked SUPERSEDED — deleting one guarantees rediscovering it.
 - **Declare a budget before any long run**: expected duration, expected
@@ -97,8 +104,9 @@ becoming load-bearing for a conclusion.
   declared installation floor is 3.12, matching the dependency floor.
   Invoke `.venv\Scripts\python.exe` directly, or use `python` after successful
   activation. A version-qualified `py -3.13` bypasses the environment.
-- ASCII-only console output; the cp1252 console crashes on non-ASCII. Set
-  `PYTHONIOENCODING=utf-8` when parsing UTF-8 sources.
+- Legacy cp1252 console streams can reject Unicode output. Use a Unicode-capable
+  terminal for the TUI; set `PYTHONIOENCODING=utf-8` for Python streams when
+  reading or emitting UTF-8 text in those environments.
 - Data lives on large local/NAS volumes with user-specific paths. Never
   hardcode them — prompt through `SettingsStore`.
 

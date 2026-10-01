@@ -622,8 +622,10 @@ and the matching flight-log rows, then apply it. Fitting scale as well collapses
 zero against noise-dominated nav data (0.5 observed on zone_9), so `--allow-scale` is a
 diagnostics-only flag. [VERIFIED: poses_to_flight_log.py, zone_9]
 
+From the checkout in **Command Prompt**, using the installed environment:
+
 ```bat
-py -3 C:\Users\jonat\Desktop\CoyoteThings\wildscan\poses_to_flight_log.py ^
+".venv\Scripts\python.exe" poses_to_flight_log.py ^
    --images-dir "F:\na156_h2024\batched_images_by_zone\zone_1\cinema" ^
    --flight-log "F:\na156_h2024\batched_images_by_zone\zone_1\flight_log_4Q_UTM.txt" ^
    --position-accuracy 1.0 --registered-only
@@ -1840,6 +1842,12 @@ Every row here fails **without an error code**, which is why this document exist
 
 ## 16. Runnable recipes
 
+The Python examples below use **Command Prompt** from the editable checkout
+with the virtual environment installed. They write or move sidecars; use a
+working image tree rather than irreplaceable source data. The native recipes
+run RealityScan and need the instance and format setup described in
+[Setup and run](../SETUP-AND-RUN.md).
+
 ### 16.1 Write calibration-only sidecars for a batched zone tree
 
 **Must be one physical line.** cmd's `^` line-continuation is inert *inside* a quoted
@@ -1847,7 +1855,7 @@ string — the caret is passed through to Python verbatim and yields
 `SyntaxError: invalid syntax`. Verified by execution, 2026-08-04.
 
 ```bat
-py -3 -c "import sys; sys.path.insert(0, r'C:\Users\jonat\Desktop\CoyoteThings\wildscan'); from modules import camera_registry as cr; print(cr.ensure_calibration_sidecars(r'F:\na156_h2024\batched_images_by_zone\zone_1'))"
+".venv\Scripts\python.exe" -c "from modules import camera_registry as cr; print(cr.ensure_calibration_sidecars(r'F:\na156_h2024\batched_images_by_zone\zone_1'))"
 ```
 
 Prints `(created, unknown_camera_skipped)`. Idempotent: images that already have a sidecar
@@ -1910,7 +1918,7 @@ remain". [VERIFIED: FINDINGS 2026-07-23/24]
 Again one physical line (see §16.1):
 
 ```bat
-py -3 -c "import sys; sys.path.insert(0, r'C:\Users\jonat\Desktop\CoyoteThings\wildscan'); from modules import camera_registry as cr; root=r'F:\na156_h2024\batched_images_by_zone\zone_1'; print('pose_count, restored, removed =', cr.sanitize_and_census(root)); print('created, unknown =', cr.ensure_calibration_sidecars(root))"
+".venv\Scripts\python.exe" -c "from modules import camera_registry as cr; root=r'F:\na156_h2024\batched_images_by_zone\zone_1'; print('pose_count, restored, removed =', cr.sanitize_and_census(root)); print('created, unknown =', cr.ensure_calibration_sidecars(root))"
 ```
 
 `sanitize_and_census` returns the registration census **and** destroys the evidence in the

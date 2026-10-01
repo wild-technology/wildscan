@@ -693,17 +693,13 @@ def test_disagreeing_zone_logs_fail_the_zone_not_the_process(tmp_path,
 
 def test_a_supplied_folder_with_disagreeing_logs_is_refused(tmp_path,
                                                             monkeypatch):
-    """The rs_input_image_dir branch - the other uncaught lookup.
-
-    Note where the logs go: for a supplied folder the lookup searches
-    output_dir/raw_images and output_dir, NOT the supplied folder itself
-    (pre-existing behaviour, untouched by this pass)."""
+    """A standalone input must refuse its own conflicting flight logs."""
     folder = tmp_path / 'my_images'
     folder.mkdir()
     (folder / 'a.jpg').write_bytes(b'j')
     for tag in ('53N', '57L'):
-        (tmp_path / f'flight_log_{tag}_UTM.txt').write_text(LOG_HEADER,
-                                                            encoding='utf-8')
+        (folder / f'flight_log_{tag}_UTM.txt').write_text(LOG_HEADER,
+                                                        encoding='utf-8')
     params = _chained_params(tmp_path)
     params['rs_input_image_dir'] = _param('rs_input_image_dir', str(folder))
     module, queued = _module_with_stub(tmp_path, monkeypatch, params)

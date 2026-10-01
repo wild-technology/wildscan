@@ -5,6 +5,21 @@ georeference dive imagery, batch it, and drive **RealityScan 2.2**
 (Epic Games, formerly RealityCapture) through its CLI to align images and
 generate textured models.
 
+Start with a dataset or an existing results folder. WildScan helps identify
+available imagery and navigation files, review pipeline artifacts, and select
+the next processing stages. RealityScan performs alignment and reconstruction;
+WildScan prepares the inputs and runs the workflows around it.
+
+**New users:** [install the checkout](docs/SETUP-AND-RUN.md), then follow
+[Analyze a dataset](docs/ANALYZE_A_DATASET.md). Browse the
+[documentation index](docs/README.md) for current instructions, developer
+guidance, and dated experiment records.
+
+The project is beta software for **native Windows 11** and RealityScan 2.2.
+Offline regression tests cover planning, calculations, artifact detection,
+and process supervision. They do not certify the reconstruction quality,
+geographic accuracy, or native behavior of a new dataset or installation.
+
 ## Requirements
 
 - Windows 10/11 (RealityScan is Windows-only; the data-prep scripts are
@@ -22,7 +37,7 @@ generate textured models.
 
 ## Quickstart
 
-New to the pipeline? **`docs/SETUP-AND-RUN.md`** is the full step-by-step
+New to the pipeline? [Setup and run](docs/SETUP-AND-RUN.md) is the full step-by-step
 manual: prerequisites, environment, configuration, running a dive and
 troubleshooting. The short version follows.
 
@@ -37,10 +52,12 @@ In **PowerShell** (the Windows default):
 git clone https://github.com/wild-technology/wildscan.git
 cd wildscan
 py -3.13 -m venv .venv
+& ".\.venv\Scripts\python.exe" -m pip install --upgrade "pip>=26.2"
 & ".\.venv\Scripts\python.exe" -m pip install -e ".[dev]"
 ```
 
-These commands use the environment directly; activation and a PowerShell
+Upgrade the environment installer before resolving dependencies. These
+commands use the environment directly; activation and a PowerShell
 execution-policy change are unnecessary. Run them from the checkout folder.
 Select your installed version when creating the environment, for example
 `py -3.14` for 3.14 or `py -3.12` for the package's minimum supported version.
@@ -107,6 +124,42 @@ filename. OpenCV supplies the decoder; a separate `ffmpeg.exe` is unnecessary.
 Check the [video and navigation formats](docs/SETUP-AND-RUN.md#your-data) before
 preparing a dive.
 
+## Analyze a dataset
+
+1. Open WildScan and identify the expedition and dive.
+2. Point it at a delivered cruise folder, a folder of still images, or a
+   specific video. Add processed navigation data when available, and choose
+   a separate results folder.
+3. Review the detected files and workspace stage status. A filename match or
+   existing artifact is a useful starting point; it does not establish that
+   a video decodes, navigation covers the imagery, or a mesh is accurate.
+4. Select the stages needed for this dataset, check every parameter, and
+   review the plan before choosing **Run**.
+
+For an existing results folder, choose **View results** to inspect its
+pipeline and component tables without starting a processing run.
+
+![WildScan stage picker with extraction unselected for existing still images](docs/images/dataset-stages.svg)
+
+The screenshot shows the actual interface with a labelled sample of 24 still
+images and one navigation CSV. No native processing has run.
+
+Use the [dataset guide](docs/ANALYZE_A_DATASET.md) for the input checklist,
+stage meanings, results layout, and inspection limits. Publishing is optional
+and needs credentials for the destinations you select. Alignment writes XMP
+sidecars into its image input tree; preserve originals and run it against
+working copies or the pipeline's prepared zone tree.
+
+## Documentation
+
+| I want to… | Read |
+|---|---|
+| Install on a new Windows machine | [Setup and run](docs/SETUP-AND-RUN.md) |
+| Understand a new dataset or resume a workspace | [Analyze a dataset](docs/ANALYZE_A_DATASET.md) |
+| Understand the code and native execution rules | [Architecture](ARCHITECTURE.md) |
+| Look up a RealityScan command, setting, or failure mode | [RealityScan reference](docs/rs-reference/README.md) |
+| Read past experiments and product decisions | [Historical records](docs/README.md#historical-records) |
+
 ## Repository layout
 
 | Path | Purpose |
@@ -120,7 +173,7 @@ preparing a dive.
 | `publish_cesium.py` | Uploads one mesh export (OBJ) to Cesium ion as a tiled 3D asset via ion's REST flow — the scripted equivalent of the GUI-only "Share to Cesium ion" button |
 | `publish_nira.py` | Uploads one export to Nira through the official `niraclient` (Enterprise plan required), building the explicit typed file list Nira's docs recommend |
 | `modules/camera_registry.py` | Single source of truth for the four physical rig cameras (lens, calibration groups, XMP content, filename families) |
-| `georeference_survey.py` | Standalone georeferencing (ROV nav CSV → RealityScan flight logs). The most up-to-date georeferencing implementation. |
+| `georeference_survey.py` | Standalone georeferencing (ROV nav CSV → RealityScan flight logs), including multiprocessing image copying. |
 | `poses_to_flight_log.py` | Post-alignment: rewrite camera locations back to UTM from the computed poses (XMP sidecars), producing a refined flight log + per-image nav-error QC |
 | `decimate_images.py` | Copy a percentage of images to a new folder (dataset thinning) |
 | `timestamp_rename.py` | Rename `cam*_TIMESTAMP.jpg` → `TIMESTAMP_cam*.jpg` and validate JPEG integrity (was the misnamed `masking.py` — it never masked; renamed 2026-08-07) |
@@ -330,7 +383,8 @@ git history — see `git log`):
   log is history/diagnostics; `errors_<instance>.txt` is the abort
   trigger.
 - **No operation timeouts**: 10+ hour alignments are normal on these
-  datasets. Only *startup* (120 s) and *shutdown* (300 s) are bounded.
+  datasets. Startup and shutdown verification are bounded; the defaults live
+  in `modules/realityscan_interface/realityscan_cli.py` and can be overridden in settings.
 - **Never detect completion by process name** — see the
   `RealityCapture.exe`/`RealityScan.exe` bug above.
 - **Suppress dialogs for unattended runs**: `-silent` + `appAutoSaveMode=false`;
@@ -345,13 +399,12 @@ git history — see `git log`):
 
 ## Typical workflows
 
-**WildScan** — the interactive console over the whole pipeline (Wild
-Technology branding, cross-platform; RealityScan stages run on Windows,
-inspection/exports review works anywhere). It censuses a results folder,
-shows every stage as done/partial/pending, previews exactly what a stage
-will execute (command, settings, estimate) before launching it through the
-canonical drivers, streams progress, and browses the final components with
-their measured scales, models and exports:
+**WildScan** is the interactive console over the whole pipeline. It reviews
+the artifacts in a results folder, offers stages according to their status,
+collects parameters, and launches the canonical drivers. During a run it
+streams logs and progress; workspace status summarizes recorded component
+scales, models, and exports. See the [dataset guide](docs/ANALYZE_A_DATASET.md)
+for what those records establish and what still needs inspection.
 
 ```powershell
 & ".\.venv\Scripts\python.exe" -m wildscan "F:/na156_h2024_v2"
