@@ -113,6 +113,7 @@ def test_current_model_report_censuses_done_after_mocked_driver(tmp_path, monkey
     result, _, _ = _run(tmp_path, monkeypatch, [True, True, True])
     assert result == 0
     assert Workspace(tmp_path)._detect_model().status == 'done'
+    assert all(component.modelled for component in Workspace(tmp_path).components())
 
 
 @pytest.mark.parametrize('changed', [
@@ -159,3 +160,5 @@ def test_model_census_rejects_stale_or_incomplete_completion(tmp_path, monkeypat
             report = {'models': [{'component': 'zone_0_c0', 'success': True}]}
         (tmp_path / 'models_report.json').write_text(json.dumps(report), encoding='utf-8')
     assert Workspace(tmp_path)._detect_model().status == 'partial'
+    if changed not in ('dated_copy', 'membership'):
+        assert not any(component.modelled for component in Workspace(tmp_path).components())

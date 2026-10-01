@@ -59,7 +59,8 @@ SCRIPTS = os.path.join(REPO, "modules", "realityscan_interface", "RS_CLI",
                        "Scripts")
 ERRORS_DIR = os.path.join(REPO, "modules", "realityscan_interface", "RS_CLI",
                           "Errors")
-COLMAP_STUDIO = r"C:\Users\jonat\Desktop\CoyoteThings\colmap_studio"
+COLMAP_STUDIO = (os.environ.get("COLMAP_STUDIO_DIR")
+                 or str(Path(REPO).parent / "colmap_studio"))
 SPARSE0 = r"M:\ON2026 COLMAP processing\sparse\0"
 SRC_IMAGES = r"M:\ON2026 COLMAP processing\images"
 

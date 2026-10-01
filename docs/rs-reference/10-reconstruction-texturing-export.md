@@ -2233,7 +2233,7 @@ whose head and tail belonged to different runs
 ### 21.1 Minimal: aligned project → high model → textured OBJ
 
 ```bat
-set "MD=C:\Users\jonat\Desktop\CoyoteThings\wildscan\modules\realityscan_interface\RS_CLI\Metadata"
+set "MD=C:\tools\wildscan\modules\realityscan_interface\RS_CLI\Metadata"
 
 RealityScan.exe -load "F:\na156_h2024_v2\aligned\zone_1.rsproj" ^
   -selectMaximalComponent ^

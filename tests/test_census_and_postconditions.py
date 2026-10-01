@@ -77,7 +77,8 @@ def test_models_report_json_is_read(tmp_path):
         {'component': 'zone_2_c0', 'success': True}]}), encoding='utf-8')
     status = Workspace(ws).detect()['model']
     assert status.status == 'partial', status.summary
-    assert all(c.modelled for c in Workspace(ws).components())
+    assert not any(c.modelled for c in Workspace(ws).components()), (
+        'name-only success records do not verify current model completion')
 
 
 def test_the_legacy_report_names_still_census(tmp_path):

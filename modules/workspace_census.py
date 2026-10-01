@@ -415,10 +415,25 @@ class Workspace:
             for m in _records(report, "models", "components"):
                 if m.get('success') is True and isinstance(m.get('component'), str):
                     recorded.add(m['component'])
+        report, finals, verified = self._model_completion()
+        dated = report.get('dated_copy')
+        if (finals and set(verified) == set(finals) and isinstance(dated, dict)
+                and dated.get('success') is True):
+            return StageStatus('model', 'done',
+                               f'{len(verified)} of {len(finals)} components modelled',
+                               sorted(key.split('/')[-1] for key in verified))
+        if recorded or _records(report, 'models'):
+            return StageStatus('model', 'partial',
+                               f'{len(verified)} of {len(finals)} components verified '
+                               'for the current assembly - retry required', sorted(recorded))
+        return StageStatus('model', 'pending', 'no model reports')
+
+    def _model_completion(self) -> tuple[dict, dict, dict]:
+        """Current model records shared by the stage census and result rows."""
         merge = self.latest_merge()
         project = self.assembly_project()
         finals = {}
-        verified: set[str] = set()
+        verified = {}
         report = _load_json(self.root / 'models_report.json')
         if merge and project:
             rep = _load_json(merge / 'merge_report.json')
@@ -449,20 +464,10 @@ class Workspace:
                                     and current['bytes'] is not None
                                     and all(saved.get(k) == value
                                             for k, value in current.items())):
-                                verified.add(key)
+                                verified[key] = model
                 except (OSError, TypeError, ValueError):
                     pass
-        dated = report.get('dated_copy')
-        if (finals and verified == set(finals) and isinstance(dated, dict)
-                and dated.get('success') is True):
-            return StageStatus('model', 'done',
-                               f'{len(verified)} of {len(finals)} components modelled',
-                               sorted(key.split('/')[-1] for key in verified))
-        if recorded or _records(report, 'models'):
-            return StageStatus('model', 'partial',
-                               f'{len(verified)} of {len(finals)} components verified '
-                               'for the current assembly - retry required', sorted(recorded))
-        return StageStatus('model', 'pending', 'no model reports')
+        return report, finals, verified
 
     def _detect_export(self) -> StageStatus:
         if not self.exports.is_dir():
@@ -584,16 +589,15 @@ class Workspace:
                 out[name] = ComponentInfo(
                     key=name, cameras=c.get("camera_count"),
                     scale=v.get("median"), scale_status=v.get("status", ""))
-        for rep_name in MODEL_REPORT_NAMES:
-            rep = _load_json(self.root / rep_name)
-            for m in _records(rep, "models", "components"):
-                name = m.get("component")
-                if name in out and m.get("success"):
-                    out[name].modelled = True
-                    out[name].model_minutes = m.get("duration_min")
-                    if m.get("scale") is not None:
-                        out[name].scale = m.get("scale")
-                        out[name].scale_status = m.get("status", "pass")
+        _, _, verified = self._model_completion()
+        for key, model in verified.items():
+            name = key.split('/')[-1]
+            if name in out:
+                out[name].modelled = True
+                out[name].model_minutes = model.get("duration_min")
+                if model.get("scale") is not None:
+                    out[name].scale = model.get("scale")
+                    out[name].scale_status = model.get("status", "pass")
         if self.exports.is_dir():
             for name, info in out.items():
                 comp_dir = self.exports / name

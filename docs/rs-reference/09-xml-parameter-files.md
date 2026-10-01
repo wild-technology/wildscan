@@ -286,7 +286,7 @@ RealityScan.exe -delegateTo RS1 -selectModel "cluster_0_a2_c0_Simplified_Texture
 :: 2. Read F:\na156_h2024\probe\seed.obj.rsInfo, copy the <ModelExport> element
 ::    into an empty file, save as ModelExportParams_seed.xml.
 :: 3. Hand-tune that file and pass it from then on.
-set "MD=C:\Users\jonat\Desktop\CoyoteThings\wildscan\modules\realityscan_interface\RS_CLI\Metadata"
+set "MD=C:\tools\wildscan\modules\realityscan_interface\RS_CLI\Metadata"
 RealityScan.exe -delegateTo RS1 -exportModel "cluster_0_a2_c0_Simplified_Textured" ^
                 "F:\na156_h2024\deliverables\cluster_0\obj\cluster_0.obj" ^
                 "%MD%\ModelExportParams_seed.xml"
@@ -1971,7 +1971,7 @@ Rules:
 
 ## 4. This repository's 34 profiles
 
-All at `C:\Users\jonat\Desktop\CoyoteThings\wildscan\modules\realityscan_interface\RS_CLI\Metadata\`.
+All at `C:\tools\wildscan\modules\realityscan_interface\RS_CLI\Metadata\`.
 `SetVariables.bat` declares path variables for many of them; the *consuming* script is what matters
 and is listed below.
 

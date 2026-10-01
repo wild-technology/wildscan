@@ -77,6 +77,13 @@ Screen {{
     color: {SAND};
     text-style: bold;
 }}
+#s-fields {{ height: 1fr; }}
+.actions {{ height: 3; margin: 0 1 1 1; }}
+#r-header {{ height: auto; }}
+#r-controls {{ height: 3; }}
+#r-log {{ height: 1fr; margin: 0 1; }}
+#st-pipeline-panel {{ height: 16; }}
+#st-components-panel {{ height: 1fr; }}
 DataTable {{
     background: {ABYSS_PANEL};
     color: {FOAM};

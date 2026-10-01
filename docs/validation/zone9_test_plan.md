@@ -1,6 +1,12 @@
 # Test plan — zone_9 CLI validation + preprocessing iteration
 
-Target dataset: `C:\Users\jonat\Desktop\NA173_H2103a\batched_images_by_zone\zone_9`
+> **Historical native validation plan.** Paths and commands below describe the
+> original experiment; personal home prefixes are generalized. The current
+> runner is `scripts/validation/run_zone9_validation.bat` and performs real
+> RealityScan alignment. Use [Setup and run](../SETUP-AND-RUN.md) for the current
+> environment and [the documentation index](../README.md) for the other records.
+
+Target dataset: `C:\Users\<user>\Desktop\NA173_H2103a\batched_images_by_zone\zone_9`
 (4 cameras, flight log `.txt` in the zone root).
 
 Everything below is automated by `testing\run_tests.bat` /
@@ -17,7 +23,7 @@ testing\run_tests.bat            :: phases 0-2 (preflight, smoke, iteration)
 testing\run_tests.bat --full     :: + full-zone confirmation of the winner
 ```
 
-Outputs land in `C:\Users\jonat\Desktop\NA173_H2103a\rs_cli_tests\`
+Outputs land in `C:\Users\<user>\Desktop\NA173_H2103a\rs_cli_tests\`
 (changeable at the first prompt): `results.csv` (every run, machine-readable)
 and `REPORT.md` (ranked table + current best). The original zone_9 folder is
 never modified — every run works on copies.
@@ -44,7 +50,7 @@ make-or-break check from the status log:
 - instance boots headless, workflow delegates, instance verifiably shuts down;
 - **`results_RS1.log` must record finished processes** — if it doesn't, the
   `appProcessExecCmd` trigger is dead (usually quoting + spaces in the
-  checkout path, e.g. `C:\Users\jonat\...` is fine but a path with spaces is
+  checkout path, e.g. `C:\Users\<user>\...` is fine but a path with spaces is
   the classic killer) and the runner hard-stops, because without it error
   detection is blind;
 - component + `.rsproj` produced and detected by the Python layer.

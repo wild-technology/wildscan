@@ -181,7 +181,7 @@ def test_questions_follow_module_order_and_use_descriptions(tmp_path):
     assert stages == sorted(stages, key=["extract", "georeference"].index), (
         "questions must arrive in module order (RC_Main)")
     video = next(q for q in qs if q.arg == "i_input")
-    assert video.required and video.kind == "file"
+    assert video.required and video.kind == "video"
     assert "video" in video.prompt.lower(), (
         "the prompt is the parameter's own description")
 
@@ -240,8 +240,8 @@ def test_camera_parsing_recognises_registry_families(tmp_path):
 
 
 def test_unknown_camera_asks_name_lever_and_tilt(tmp_path):
-    """Project decision: unknown camera string -> ask official name; lever
-    and tilt MUST be asked; the letter table suggests the official name."""
+    """Unknown cameras may carry optional notes; measured rig values are
+    never required or invented from a filename prefix."""
     stills = tmp_path / "stills"
     stills.mkdir()
     (stills / "U9990001_x.jpg").write_bytes(b"j")
@@ -249,11 +249,10 @@ def test_unknown_camera_asks_name_lever_and_tilt(tmp_path):
     s.raw_images_dir = str(stills)
     qs = build_questions(s, scan_raw_data(""))
     cam_qs = {q.arg: q for q in qs if q.stage == "cameras"}
-    assert "cam_u_name" in cam_qs and cam_qs["cam_u_name"].required
-    assert cam_qs["cam_u_name"].default == "Upper (fisheye; 16mm)", (
-        "the letter table must suggest the official name")
-    assert "cam_u_lever" in cam_qs and cam_qs["cam_u_lever"].required
-    assert "cam_u_tilt" in cam_qs and cam_qs["cam_u_tilt"].required
+    assert "Upper (fisheye; 16mm)" in cam_qs["cam_u_name"].prompt
+    assert {'cam_u_name', 'cam_u_lever', 'cam_u_tilt'} <= set(cam_qs)
+    assert all(not q.required and q.default == '' and q.validate('') is None
+               for q in cam_qs.values())
 
 
 def test_known_cameras_ask_nothing(tmp_path):
@@ -438,7 +437,7 @@ def test_merge_without_gate_is_partial(tmp_path):
 def test_components_join_scale_models_exports(tmp_path):
     ws = make_workspace(tmp_path, stage="export")
     comps = {c.key: c for c in ws.components()}
-    assert comps["zone_1_c0"].modelled
+    assert not comps["zone_1_c0"].modelled, 'legacy success alone does not verify the current scene'
     assert comps["zone_1_c0"].exported == ["obj"]
 
 

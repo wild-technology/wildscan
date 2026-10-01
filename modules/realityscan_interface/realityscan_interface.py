@@ -84,8 +84,10 @@ class RealityScanAlignment(RSModule):
             cli_short='r_f',
             cli_long='r_flight_log',
             type=str,
-            default_value=None,
-            description='Path to the flight log file',
+            default_value='',
+            description=('Optional flight log file. Leave blank to discover '
+                         'the input folder or each zone\'s own log; without '
+                         'a matching log, alignment runs without navigation priors.'),
             prompt_user=True,
             disable_when_module_active=['Batch Directory', 'Georeference Images']
         )
@@ -213,7 +215,14 @@ class RealityScanAlignment(RSModule):
 
         # if the flight log path is specified, use that
         if 'rs_flight_log_path' in self.params:
-            return self.params['rs_flight_log_path'].get_value()
+            explicit = self.params['rs_flight_log_path'].get_value()
+            if explicit:
+                return explicit
+
+        # Standalone inputs own their navigation; do not borrow a log from
+        # another image tree under the output workspace.
+        if 'rs_input_image_dir' in self.params:
+            return find_flight_log(self.params['rs_input_image_dir'].get_value())
 
         # The georeference module writes its flight log next to the images
         # it processed: its explicit input dir, or raw_images when chained

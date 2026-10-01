@@ -1,5 +1,11 @@
 # Code review & first-machine validation — July 2026
 
+> **Historical validation record.** Commands, predecessor commits, and source
+> line numbers describe the July 2026 implementation. Personal home-directory
+> prefixes are generalized below; the path layout and observed failures are
+> preserved. For the current installation route, use
+> [Setup and run](SETUP-AND-RUN.md).
+
 What changed in the RealityScan CLI layer, why each change was made, and
 what the evidence was. Covers commits `d360002` through `724814a`
 (2026-07-21/22).
@@ -47,7 +53,7 @@ Git Bash sets. From a plain `cmd.exe` prompt the old code worked; from
 any POSIX-style shell it could never work.
 
 Switching to an absolute path exposed a second, worse bug: from a
-checkout path containing spaces the run failed with `'C:\Users\jonat\RS'
+checkout path containing spaces the run failed with `'C:\Users\<user>\RS'
 is not recognized`. `cmd /c "C:\path with spaces\script.bat"` strips the
 outer quotes under cmd's parsing rules — the exact failure mode
 the status log had predicted for the process trigger, in a different place.
@@ -57,7 +63,7 @@ all and let Python's `subprocess` do the quoting, which it does
 correctly for batch files.
 
 **Evidence.** Smoke test passes from both `...\wildscan` and a
-deliberately hostile `C:\Users\jonat\RS CLI space test\` copy.
+deliberately hostile `C:\Users\<user>\RS CLI space test\` copy.
 
 ### 2. `find` resolved to GNU find and scanned the disk
 

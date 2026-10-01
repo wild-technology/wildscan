@@ -1,5 +1,13 @@
 # Flight-log-first architecture (project decision 2026-08-08)
 
+> **Historical investigation and plan.** The directive below records the
+> August 2026 proposal, not a current instruction to remove all XMP. The
+> active pipeline uses flight logs for navigation and calibration-only XMP
+> sidecars for camera identity and grouping. Current setup and exact installed
+> format verification are in [Setup and run](SETUP-AND-RUN.md#54-flight-log-import-format);
+> the retained GUID evidence is qualified in the
+> [flight-log reference](rs-reference/06-georeferencing-flightlogs-and-scale.md).
+
 Directive: purge XMP sidecar use; deliver everything through RealityScan
 flight logs + settings-XML modification; bake master/zone flight-log
 generation into zoning for BOTH nav sources (COLMAP bridge and

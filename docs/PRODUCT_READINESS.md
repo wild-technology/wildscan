@@ -1,14 +1,26 @@
-# Product readiness backlog — wildscan as a shipping analysis product
+# Product scope and delivery history
 
-Remaining product work covers reliability, delivery, usability and scientific
-validation. The delivery goal is a unified component per major surveyed
-feature (ON2026: hull, two masts, stern flag-pole), with provenance. Offline
-checks do not establish native processing or delivery acceptance.
+WildScan is a beta workflow for preparing, reconstructing, and reviewing ROV
+photogrammetry datasets. For a first survey, use
+[Analyze a dataset](ANALYZE_A_DATASET.md) and
+[Setup and run](SETUP-AND-RUN.md).
 
-Update discipline: move completed items to DONE and record their commit
-hash when committed. Every fix ships with a test or an empirical verification transcript.
+## Current validation boundaries
 
-## DONE
+- Intake identifies candidate files and camera filename families. It does not
+  verify video decoding, navigation coverage, survey completeness, or optical
+  calibration. Confirm those inputs before processing.
+- Workspace status is derived from saved artifacts and reports. Modern resume
+  checks bind relevant inputs to a recorded result; legacy evidence may remain
+  readable without establishing that the current stage is complete.
+- A scale verdict describes the recorded component measurement. It does not
+  establish mesh accuracy, seam quality, absolute positional accuracy, or the
+  suitability of an exported model for a customer's analysis.
+- Native workflows and remote publishers need their own installation and
+  dataset checks. Offline passing tests do not establish native processing or
+  delivery acceptance. Use a small working copy before a large reconstruction.
+
+## Implemented reliability behavior
 
 - Process-tree cancellation records interrupted stages and keeps the instance
   reserved until child processes stop. Failed and cancelled console stages can
@@ -19,6 +31,22 @@ hash when committed. Every fix ships with a test or an empirical verification tr
 - Publishing preserves unrelated staging directories, excludes generated
   Cesium derivatives from Nira input, and requires all requested destinations
   for stage completion. Dry-run plans preserve existing publication reports.
+
+## Historical ON2026 delivery backlog — July and August 2026
+
+The remainder preserves the delivery goals, issue identifiers, measurements,
+and proposed changes recorded for ON2026: a unified component per major
+surveyed feature (hull, two masts, stern flag-pole), with provenance. **DONE,
+MUST-FIX, SHOULD-FIX, and NITS below are historical classifications, not a
+current release checklist.** Several implementation and interface issues have
+since changed. Recheck current source and tests before treating an item as
+open; campaign-specific delivery claims still need the original evidence.
+
+The original maintenance convention was to move completed items to DONE,
+record their commit, and accompany a fix with a test or empirical transcript.
+
+### DONE at the recorded date
+
 - 2026-08-09 calibration-prior question CLOSED by clean A/B/C ladder
   (confounds removed): manufacturer approximate intrinsics COLLAPSE
   ON2026 registration to 45% (2x replicated) — production stays
@@ -49,9 +77,9 @@ hash when committed. Every fix ships with a test or an empirical verification tr
   WildScan portal could not import and 26 of its tests were dormant; 461
   tests now pass, zero skips).
 
-## MUST-FIX
+### MUST-FIX
 
-### Blocks run2 (ON2026 per-feature delivery)
+#### Blocks run2 (ON2026 per-feature delivery)
 1. **The original [run_on2026_wreck.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/testing/run_on2026_wreck.py) is the retired plan** — monolith terminal stage,
    old campaign paths, nav-blind `zone_done()` (any .rsalign+.json =
    skip). Replace per the run2 architecture spec:
@@ -67,7 +95,7 @@ hash when committed. Every fix ships with a test or an empirical verification tr
    executable metadata in `align_inputs.json`. Use that record in campaign
    `zone_done()` checks and verify frame/settings unanimity before merges.
 
-### Scientific rigor (analysis-product claims)
+#### Scientific rigor (analysis-product claims)
 3. **"Metric" is asserted, not measured** — ON2026_final_metric.obj's
    scale claim rests on the export preset + a vertex ratio (convention,
    not measurement); the scale oracle never ran on exported geometry.
@@ -88,7 +116,7 @@ hash when committed. Every fix ships with a test or an empirical verification tr
    their input fingerprints, but merge needs to enforce compatible settings
    and frames (item 2).
 
-### User experience
+#### User experience
 9. **Deliverable directory answers nothing** — no manifest/README (item
    4); `final\` absent from WildScan's results taxonomy (session.py); the
    scale-100 Unreal build carries the plain "final" name while the metric
@@ -114,7 +142,7 @@ hash when committed. Every fix ships with a test or an empirical verification tr
     answers override fresh auto-detection for a NEW dive
     (wrong-provenance risk, verified app.py:275).
 
-## MUST-FIX — added from the goal-verification decisions (2026-08-08)
+### MUST-FIX — added from the goal-verification decisions (2026-08-08)
 
 15. **Stop the staging rename** (project decision, N2): RhodyProc
     stereo_rename.py strips the left/right eye token from VOYIS original
@@ -141,7 +169,7 @@ hash when committed. Every fix ships with a test or an empirical verification tr
     merged code `ON2026_RH0041_RH2042` (verify RH2042 vs RH0042 before
     first use).
 
-## SHOULD-FIX
+### SHOULD-FIX
 - Resolved-settings provenance banner at merge startup (CLI vs stored vs
   fallback per arg).
 - batch_use_z silent 2D degeneration when the alt column is missing
@@ -187,12 +215,12 @@ hash when committed. Every fix ships with a test or an empirical verification tr
   tag (FRAME_WARNING markers are manual); fold frame identity into item
   2's fingerprint.
 
-## NITS
+### NITS
 - Logging-formatted prompts + Matplotlib/Seaborn version banner as the
   first user-visible line of every invocation.
 - Attempt ordinals carry no "accepted" marker in merged trees.
 
-## Delivery and confirmation fields
+### Delivery and confirmation fields
 - PRE-FLIGHT CHECKLIST: data locations and provenance, write destinations,
   coordinate frame, prior accuracies, processing budgets, instance/cache,
   free space and resume state.
