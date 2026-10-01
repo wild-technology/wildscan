@@ -17,14 +17,13 @@ Set up the checkout in a virtual environment (dependencies are declared in
 
 ```powershell
 py -3.13 -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
+& ".\.venv\Scripts\python.exe" -m pip install -e ".[dev]"
 ```
 
-Baseline, with the environment active:
+Baseline, from the checkout without activation:
 
 ```powershell
-python -m pytest
+& ".\.venv\Scripts\python.exe" -m pytest
 ```
 
 Pytest collects the offline suite from `tests/`; its output is authoritative
@@ -94,9 +93,10 @@ becoming load-bearing for a conclusion.
 - Windows 11, native. **No WSL** — cmd, `.bat`, PowerShell, VBS are the
   substrate. `.bat` and `.vbs` must be CRLF (`.gitattributes` pins it);
   LF breaks cmd's byte-offset label search nondeterministically.
-- Use Python 3.13+ for development and native validation. The package's
+- Use 64-bit Python 3.13+ for development and native validation. The package's
   declared installation floor is 3.12, matching the dependency floor.
-  Use the activated environment's `python` for commands.
+  Invoke `.venv\Scripts\python.exe` directly, or use `python` after successful
+  activation. A version-qualified `py -3.13` bypasses the environment.
 - ASCII-only console output; the cp1252 console crashes on non-ASCII. Set
   `PYTHONIOENCODING=utf-8` when parsing UTF-8 sources.
 - Data lives on large local/NAS volumes with user-specific paths. Never
@@ -197,7 +197,8 @@ Exceptions that must NOT be renamed:
   Images → Batch Directory → RealityScan Alignment. `RS_MODULES` /
   `RS_NO_INTERACTIVE` env vars select modules without a TTY; a module
   reporting Success=False stops the chain (exit 1).
-- `wildscan/` — TUI interaction portal (`py -3.13 -m wildscan`): intake,
+- `wildscan/` — TUI interaction portal
+  (`& ".\.venv\Scripts\python.exe" -m wildscan` in PowerShell): intake,
   runnable model/export/publish stages over the same drivers.
 - `merge_zones.py` — iterative component-merge driver (escalating
   mechanism/flags, per-attempt RealityScan.log snapshots + census,

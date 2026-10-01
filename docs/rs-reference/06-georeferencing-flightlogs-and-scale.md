@@ -276,6 +276,12 @@ Facts about this block, all load-bearing:
 
 #### [CONTRADICTED] Did the pre-2026-07-25 runs import orientation at all?
 
+**Historical competing claims, superseded by the 2026-08-23 comparison below.**
+The original attribution and proposed probe are retained for provenance; use the
+resolved saved-project evidence and
+[current installation check](../SETUP-AND-RUN.md#54-flight-log-import-format)
+when configuring a machine.
+
 Two [VERIFIED] entries in this repo's own record cannot both be true, and the answer decides
 what the H2023 scale collapse (§6.1) can be attributed to.
 
@@ -2121,9 +2127,13 @@ Each item states the question and the cheapest probe that answers it.
    result codes. If either is also `0x820000FF`, add a `RealityScan.log` grep for `18002` as a
    second factor in the tolerant path. (§2.6)
 
-5. **Does the hand-merged `{B438A617-…}` format survive a RealityScan update?** Probe:
-   after any update or repair install, `findstr /c:"B438A617" "C:\Program Files\Epic Games\RealityScan_2.2\flightlogs.xml"`
-   — one command, must be in the post-update checklist. (§2.3)
+5. **Does the hand-merged `{B438A617-…}` format survive a RealityScan update?**
+   After any update or repair, verify that the installed dictionary contains exactly
+   one format whose **complete ID** matches `gpsLogFileFormat` in both
+   `FlightLogParams.xml` and `FlightLogParamsLocal.xml`. Searching only for the
+   `B438A617` prefix misses the measured two-place mismatch. Use the read-only
+   [installation check](../SETUP-AND-RUN.md#54-flight-log-import-format), then
+   inspect the parser and validate the imported priors on a small copied fixture. (§2.3)
 
 6. ~~**Can a flight log deliver per-image calibration priors?**~~ **ANSWERED 2026-08-23 —
    NO, at least for `FocalLength`.** A custom 14-column format declaring
@@ -2174,7 +2184,9 @@ Each item states the question and the cheapest probe that answers it.
     For anisotropic or oriented (`RotationAccuracy`) uncertainty, define a private format with
     `YAccuracy index="5"`. (§4.3)
 
-14. **[CONTRADICTED, unresolved] Did any align before 2026-07-25 receive orientation priors
+14. **SUPERSEDED 2026-08-23 — the proposed probe is retained below as historical evidence;
+    see the resolved comparison in §2.3.**
+    **[CONTRADICTED, unresolved] Did any align before 2026-07-25 receive orientation priors
     or per-image accuracies at all?** The custom 13-column format was not installed until
     `flightlogs.xml` mtime `2026-07-25 07:31`, yet `FlightLogParams.xml` had been naming its
     GUID all along. `PRIORS_DISTORTION_TEST_PLAN` audit item 1 says YPR and accuracies were

@@ -394,7 +394,6 @@ class SummaryScreen(Screen):
         app: WildScanApp = self.app  # type: ignore[assignment]
         app.session.continue_automatically = (
             self.query_one("#sum-auto", Input).value.strip().lower() == "true")
-        save_last_run(app.session)     # the next session's defaults
         app.push_screen(RunScreen())
 
 
@@ -436,6 +435,7 @@ class RunScreen(Screen):
             export_names_file(app.session)
         write_camera_records(app.session)
         self.commands = build_commands(app.session)
+        save_last_run(app.session)     # persist the anchored filesystem paths
         self._advance()
 
     def _refresh_export_command(self) -> None:

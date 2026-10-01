@@ -238,9 +238,31 @@ class RealityScanAlignment(RSModule):
 
         if not input_folder:
             raise ValueError("Input folder is not specified")
+        if not output_folder or not os.fspath(output_folder).strip():
+            raise ValueError("Output folder is not specified")
+
+        # The workflow runs from SCRIPTS_DIR; filesystem arguments belong to
+        # this driver's caller, while scene names remain ordinary tokens.
+        input_folder = os.path.abspath(input_folder)
+        output_folder = os.path.abspath(output_folder)
+        if flight_log_path:
+            flight_log_path = os.path.abspath(flight_log_path)
+        if flight_log_params_path:
+            flight_log_params_path = os.path.abspath(flight_log_params_path)
 
         if not os.path.isdir(input_folder):
             raise ValueError(f"Input folder {input_folder} is not a directory")
+
+        hygiene_root = os.path.abspath(os.environ.get('RS_ALIGN_POOL_DIR') or input_folder)
+        target_root = os.path.normcase(os.path.realpath(output_folder))
+        for source in (input_folder, hygiene_root):
+            source_root = os.path.normcase(os.path.realpath(source))
+            try:
+                shared_root = os.path.commonpath((source_root, target_root))
+            except ValueError:
+                shared_root = None
+            if shared_root in (source_root, target_root):
+                raise ValueError('Alignment input and output trees must not overlap')
 
         # A re-run must start from a clean zone folder: stale exports would
         # be indistinguishable from this run's (exportLatestComponents
@@ -262,8 +284,8 @@ class RealityScanAlignment(RSModule):
         current_fp = align_fingerprint.build_fingerprint(
             flight_log_path or None,
             flight_log_params_path or None,
-            os.environ.get('RS_ALIGN_PARAMS')
-            or os.path.join(METADATA_DIR, 'AlignmentParams.xml'),
+            os.path.abspath(os.environ.get('RS_ALIGN_PARAMS')
+                            or os.path.join(METADATA_DIR, 'AlignmentParams.xml')),
             min_component_size,
             rs_executable=self.cli.find_executable())
 
@@ -313,7 +335,6 @@ class RealityScanAlignment(RSModule):
         # POOL images, so every sidecar sweep (pre-align warning, the
         # .bat harvest, sanitize, regeneration) targets the pool root
         # instead of the zone folder. Unset = legacy behavior.
-        hygiene_root = os.environ.get('RS_ALIGN_POOL_DIR') or input_folder
         pose_sidecars = 0
         for root, _dirs, files in os.walk(hygiene_root):
             for name in files:

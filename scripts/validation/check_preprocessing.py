@@ -6,8 +6,9 @@ reuse of completed outputs, and the CLAHE pixel change. Source images remain
 untouched. A supplied work directory must be empty and separate from the
 dataset; otherwise the check uses a temporary directory.
 
-Usage:
-    py -3.13 scripts/validation/check_preprocessing.py --dataset D:/survey/zone
+Example (PowerShell, from the Git checkout):
+    & "./.venv/Scripts/python.exe" scripts/validation/check_preprocessing.py `
+        --dataset "D:/survey/zone"
 """
 from __future__ import annotations
 

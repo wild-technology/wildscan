@@ -163,6 +163,8 @@ def materialize_images(source_dir: str, names: list[str], dest_dir: str,
 
 def run_alignment(cli: RealityScanCLI, image_dir: str, output_dir: str,
                   label: str, logger) -> dict:
+    image_dir = os.path.abspath(image_dir)
+    output_dir = os.path.abspath(output_dir)
     os.makedirs(output_dir, exist_ok=True)
     flight_log = os.path.join(image_dir, os.path.basename(find_flight_log(image_dir)))
     flight_log_params = os.path.join(METADATA_DIR, 'FlightLogParams.xml')
@@ -285,7 +287,8 @@ def phase_preflight(cli: RealityScanCLI, dataset_dir: str, logger) -> None:
         import numpy  # noqa: F401
     except ImportError as error:
         raise SystemExit(f'Missing python dependency ({error.name}). '
-                         'Run: py -3 -m pip install opencv-python numpy')
+                         'Install from the checkout with this interpreter (PowerShell):\n'
+                         f'    & "{sys.executable}" -m pip install -e .')
     logger.info('Preflight OK')
 
 

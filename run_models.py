@@ -25,10 +25,12 @@ untouched in direct mode, so an operator who exports them gets the .bat's
 dated-copy saves; workspace mode still defers dated copies to its single
 end-of-run copy.
 
-Usage:
-    py -3.13 run_models.py --workspace F:/na156_h2024_v2 [--force]
-    py -3.13 run_models.py --project D:/scene/Assembly.rsproj \
-                           [--component zone_1_c0] [--large_tri_threshold 30]
+Examples (PowerShell, from the Git checkout):
+    & "./.venv/Scripts/python.exe" run_models.py --workspace "F:/na156_h2024_v2"
+    & "./.venv/Scripts/python.exe" run_models.py --project "D:/scene/Assembly.rsproj" `
+        --component zone_1_c0 --large_tri_threshold 30
+
+Add --force to bypass successful-component resume checks.
 """
 from __future__ import annotations
 

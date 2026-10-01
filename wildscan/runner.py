@@ -60,6 +60,7 @@ class CommandRunner:
         self._cancelled = False
         self._plan = None
         self._active = False
+        self._workspace: Path | None = None
 
     @property
     def running(self) -> bool:
@@ -73,10 +74,12 @@ class CommandRunner:
         env.update(plan.env)
         self._plan = plan
         self._cancelled = False
+        cwd = getattr(plan, "cwd", None) or str(REPO)
+        workspace = getattr(plan, "workspace", None)
+        self._workspace = (Path(cwd) / workspace).resolve() if workspace else None
         self._active = True
         if getattr(plan, "needs_realityscan", False):
             env["RS_WORKFLOW_OWNER_PID"] = str(os.getpid())
-        cwd = getattr(plan, "cwd", str(REPO))
         # stdin=DEVNULL: a child that reaches input() must get EOF (and take
         # its stored-default path) - never block invisibly on an inherited
         # console.
@@ -122,10 +125,9 @@ class CommandRunner:
                 self._post(LogLine(f"Unable to stop stage processes: {exc}"))
 
     def _record_interruption(self) -> None:
-        workspace = getattr(self._plan, "workspace", None)
-        if not workspace or not Path(workspace).is_dir():
+        root = self._workspace
+        if root is None or not root.is_dir():
             return
-        root = Path(workspace)
         payload = {"stage": self._plan.stage, "command": self._plan.argv,
                    "stages": list(getattr(self._plan, "stages", ())),
                    "driver_pid": self._proc.pid, "cancelled": True,
@@ -192,9 +194,8 @@ class CommandRunner:
         self._proc.stdout.close()
         returncode = returncode or int(self._cancelled)
         if returncode == 0:
-            workspace = getattr(self._plan, "workspace", None)
-            if workspace:
-                marker = Path(workspace) / "interrupted_stage.json"
+            if self._workspace is not None:
+                marker = self._workspace / "interrupted_stage.json"
                 try:
                     prior = json.loads(marker.read_text(encoding="utf-8"))
                     stages = set(getattr(self._plan, "stages", ()))

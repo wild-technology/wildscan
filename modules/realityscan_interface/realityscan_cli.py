@@ -266,7 +266,7 @@ def set_project_save_env(zone_images_root: str, label: str) -> str:
     Returns the RC_projects directory path.
     """
     projects_dir = os.path.join(
-        os.path.dirname(os.path.normpath(zone_images_root)), 'RC_projects')
+        os.path.dirname(os.path.abspath(zone_images_root)), 'RC_projects')
     os.environ['RS_PROJECTS_DIR'] = projects_dir
     os.environ['RS_PROJECT_LABEL'] = label
     os.environ['RS_PROJECT_DATE'] = time.strftime('%Y%m%d')
@@ -325,7 +325,7 @@ class RealityScanCLI:
 
         for candidate in candidates:
             if candidate and os.path.isfile(candidate):
-                return candidate
+                return os.path.abspath(candidate)
 
         raise FileNotFoundError(
             'RealityScan.exe not found. Set "realityscan.executable" in '
@@ -626,6 +626,11 @@ class RealityScanCLI:
             f'resources_{os.path.splitext(os.path.basename(script_name))[0]}_{stamp}.csv')
 
         env = os.environ.copy()
+        # Scripts run from SCRIPTS_DIR; overrides belong to the caller.
+        for key in ('RS_ALIGN_PARAMS', 'RS_ALIGN_POOL_DIR', 'RS_CACHE_DIR',
+                    'RS_PROJECTS_DIR', 'RS_SAVE_PATH'):
+            if env.get(key):
+                env[key] = os.path.abspath(env[key])
         env['RS_EXECUTABLE'] = exe
         env['RS_INSTANCE'] = self.instance_name
         gpu_devices = gpu_devices if gpu_devices is not None else self.settings.get('realityscan', 'gpu_devices')
@@ -785,6 +790,10 @@ class RealityScanCLI:
             f'resources_{os.path.splitext(os.path.basename(script_name))[0]}_{stamp}.csv')
 
         env = os.environ.copy()
+        for key in ('RS_ALIGN_PARAMS', 'RS_ALIGN_POOL_DIR', 'RS_CACHE_DIR',
+                    'RS_PROJECTS_DIR', 'RS_SAVE_PATH'):
+            if env.get(key):
+                env[key] = os.path.abspath(env[key])
         env['RS_EXECUTABLE'] = exe
         env['RS_INSTANCE'] = self.instance_name
         # No RS_GPU_DEVICES/CUDA_VISIBLE_DEVICES here: GPU pinning is a

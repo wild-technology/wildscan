@@ -165,6 +165,67 @@ def test_the_real_process_accepts_the_generated_argv(tmp_path):
     assert proc.returncode != 2, combined[-500:]
 
 
+def test_plan_anchors_filesystem_values_and_preserves_tokens(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    monkeypatch.chdir(tmp_path)
+    session = Session(expedition='NA173', dive='H2104', cruise_folder='cruise',
+                      raw_images_dir='raw', video_path='cruise/clip.mov',
+                      processed_data='processed', results_root='results',
+                      enabled=list(session_mod.ALL_STAGES), answers={
+                          'i_input': 'cruise/clip.mov', 'g_input': 'raw',
+                          'g_flight_log': 'cruise/nav.csv', 'p_input': 'raw',
+                          'b_input': 'processed', 'b_flight_log_path': 'cruise/flight_log.txt',
+                          'r_input': 'zones', 'r_flight_log': 'cruise/flight_log.txt',
+                          'r_flight_log_params': 'cruise/params.xml',
+                          'r_project_label': 'MY_LABEL', 'g_type': 'All',
+                          'g_declination': '-1.2', 'cam_custom_name': 'My Camera'})
+    plans = build_commands(session)
+    for field in ('cruise_folder', 'raw_images_dir', 'video_path',
+                  'processed_data', 'results_root'):
+        assert Path(getattr(session, field)).is_absolute()
+        assert tmp_path in Path(getattr(session, field)).parents
+    for arg in ('i_input', 'g_input', 'g_flight_log', 'p_input', 'b_input',
+                'b_flight_log_path', 'r_input', 'r_flight_log', 'r_flight_log_params'):
+        assert Path(session.answers[arg]).is_absolute()
+        assert tmp_path in Path(session.answers[arg]).parents
+    assert session.answers['r_project_label'] == 'MY_LABEL'
+    assert session.answers['g_type'] == 'All'
+    assert session.answers['g_declination'] == '-1.2'
+    assert session.answers['cam_custom_name'] == 'My Camera'
+    for plan in plans:
+        assert plan.cwd == str(tmp_path)
+        assert plan.workspace == str(tmp_path / 'results')
+        assert Path(plan.argv[1]).is_file()
+
+
+def test_disabled_paths_keep_their_identity_when_a_later_run_changes_cwd(
+        tmp_path, monkeypatch):
+    caller = tmp_path / 'first launch'
+    caller.mkdir()
+    other = tmp_path / 'second launch'
+    other.mkdir()
+    monkeypatch.chdir(caller)
+    original = Session(results_root='results', enabled=['model'], answers={
+        'i_input': 'raw/clip.mov', 'r_input': 'zones', 'r_flight_log': 'nav.csv',
+        'r_flight_log_params': 'params.xml', 'r_project_label': 'UNCHANGED_LABEL',
+        'g_type': 'All', 'cam_custom_name': 'My Camera', 'unknown_answer': 'leave/me'})
+    build_commands(original)
+    session_mod.save_last_run(original)
+    monkeypatch.chdir(other)
+    restored = Session(results_root='next_results', enabled=['align'],
+                       answers=session_mod.load_last_run()['answers'])
+    plan = build_commands(restored)[0]
+    for flag, name in [('--r_input', 'zones'), ('--r_flight_log', 'nav.csv'),
+                       ('--r_flight_log_params', 'params.xml')]:
+        assert plan.argv[plan.argv.index(flag) + 1] == str(caller / name)
+    assert restored.answers['i_input'] == str(caller / 'raw' / 'clip.mov')
+    assert restored.answers['r_project_label'] == 'UNCHANGED_LABEL'
+    assert restored.answers['g_type'] == 'All'
+    assert restored.answers['cam_custom_name'] == 'My Camera'
+    assert restored.answers['unknown_answer'] == 'leave/me'
+
+
 def test_forced_model_flags_only_ride_with_align(tmp_path):
     """The five --r_model_* / --r_display_output flags belong to
     RealityScan Alignment; appending them unconditionally alone rejected
@@ -190,7 +251,7 @@ def test_answers_from_other_stages_are_kept_but_not_forwarded(tmp_path):
                       enabled=['batch', 'align'], answers=dict(FULL_ANSWERS))
     argv = _chain_command(session).argv
     assert '--g_input' not in argv and '--p_input' not in argv
-    assert session.answers['g_input'] == FULL_ANSWERS['g_input']
+    assert session.answers['g_input'] == os.path.abspath(FULL_ANSWERS['g_input'])
 
 
 def test_disable_when_module_active_is_honoured_by_the_filter(tmp_path):
