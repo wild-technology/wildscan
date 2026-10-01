@@ -138,6 +138,86 @@
       "principal_point_u": 0.01313138,
       "principal_point_v": -0.00757196,
       "opt_in_env": "RS_VOYIS_CALIB_SIDECARS"
+    },
+    "ilx_left": {
+      "_provenance": "Checkerboard solve 2026-09-30 from Stereo_Calibration/dive_001 (pool, 2026-05-18): 60 of 61 detected boards used, reprojection RMS 1.15 px. Focal FIXED at the stated 16 mm (fx=fy=2016.8 px, assuming the 3000 px image height spans the 23.8 mm sensor height); a free-focal solve gave fx=1985+/-49 px at the same RMS. Principal point 1-sigma +/-14/15 px. UNVALIDATED as a RealityScan prior.",
+      "calibration_group": "7",
+      "calibration_prior": "approximate",
+      "focal_length_35mm": 17.72584,
+      "lens_distortion_group": "7",
+      "lens_distortion_prior": "approximate",
+      "distortion_model": "brown3",
+      "principal_point_u": 0.01871054,
+      "principal_point_v": -0.02501735,
+      "resolution": [
+        4096,
+        3000
+      ],
+      "intrinsics": [
+        [
+          2016.8067226890755,
+          0.0,
+          2124.638363787385
+        ],
+        [
+          0.0,
+          2016.8067226890755,
+          1424.9479642616839
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "opencv_distortion_k1_k2_p1_p2_k3": [
+        -0.15051064317869475,
+        0.01672300219900676,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "_distortion_comment": "OpenCV radial coefficients (k3 and tangential held at 0). NOT converted to RealityScan's coefficient convention."
+    },
+    "ilx_right": {
+      "_provenance": "Checkerboard solve 2026-09-30 from Stereo_Calibration/dive_001 (pool, 2026-05-18): 59 of 59 detected boards used, reprojection RMS 1.40 px. Focal FIXED at the stated 16 mm (fx=fy=2016.8 px, assuming the 3000 px image height spans the 23.8 mm sensor height); a free-focal solve gave fx=1995+/-54 px at the same RMS. Principal point 1-sigma +/-19/20 px. UNVALIDATED as a RealityScan prior.",
+      "calibration_group": "8",
+      "calibration_prior": "approximate",
+      "focal_length_35mm": 17.72584,
+      "lens_distortion_group": "8",
+      "lens_distortion_prior": "approximate",
+      "distortion_model": "brown3",
+      "principal_point_u": 0.06111425,
+      "principal_point_v": -0.07754206,
+      "resolution": [
+        4096,
+        3000
+      ],
+      "intrinsics": [
+        [
+          2016.8067226890755,
+          0.0,
+          2298.323974442148
+        ],
+        [
+          0.0,
+          2016.8067226890755,
+          1267.3738112847534
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "opencv_distortion_k1_k2_p1_p2_k3": [
+        -0.14233307188331493,
+        0.01544261781011792,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "_distortion_comment": "OpenCV radial coefficients (k3 and tangential held at 0). NOT converted to RealityScan's coefficient convention."
     }
   },
   "families": [
@@ -357,6 +437,108 @@
       "calibration_prior": "approximate",
       "calibration_groups": "per-eye",
       "_calibration_comment": "Project decision 2026-08-08: when using COLMAP output, calibration groups are PER-CAMERA (per eye) and the manufacturer resized-corrected calibration is given as an APPROXIMATE prior (nominal 23 mm; pixel intrinsics authoritative). These pixel values equal COLMAP sparse/0's solved PINHOLE exactly - COLMAP recovered the factory calibration."
+    },
+    "ilx_lr1_stereo": {
+      "_comment": "DATA-ONLY, no family registered: ilx_left/ilx_right are not runtime Camera rows and no pipeline stage consumes this. Source and full solve record: calibration/ilx_lr1_stereo_dive_001.json.",
+      "eyes": {
+        "L": {
+          "camera": "ilx_left",
+          "pattern": "_left\\."
+        },
+        "R": {
+          "camera": "ilx_right",
+          "pattern": "_right\\."
+        }
+      },
+      "resolution": [
+        4096,
+        3000
+      ],
+      "focal_nominal_mm": 16,
+      "_focal_comment": "16 mm per camera as stated by the operator 2026-09-30. The calibration images carry no EXIF. The onr2b survey EXIF (same lens model, FE PZ 16-35mm F4 G) reads 24 mm (DSC* body) and 29 mm (_CA3* body, serial 01001083) - a different zoom setting, so this calibration does not apply to onr2b.",
+      "stereo_baseline_m": 0.225425,
+      "_stereo_baseline_comment": "SUPPLIED, not measured here: 225.425 mm from docs/rs-reference/13 section 3.5, confirmed by the operator. The checkerboard square size is unknown, so the solve is in square units (|T|=19.38 squares) and this baseline sets the scale; implied square 11.63 mm.",
+      "calibration_groups": "per-eye",
+      "calibration_prior": "approximate",
+      "extrinsics_left_to_right": {
+        "_convention": "OpenCV: X_right = R * X_left + T, camera frames x right, y down, z forward, T in metres.",
+        "R": [
+          [
+            0.9995935074808155,
+            0.02777667196867463,
+            0.006424663146441526
+          ],
+          [
+            -0.02768219776777462,
+            0.9995137116893981,
+            -0.014353956654127028
+          ],
+          [
+            -0.00682024405328816,
+            0.01417027308231528,
+            0.9998763361695416
+          ]
+        ],
+        "T_m": [
+          -0.22441637050732877,
+          0.01828702446168495,
+          0.01092282059062868
+        ],
+        "rotation_deg": 1.827
+      },
+      "quality": {
+        "stereo_reprojection_rms_px": 2.841,
+        "pairs_used": 10,
+        "pairs_candidate": 13,
+        "pair_time_offset_ms": [
+          -58.3,
+          -39.8
+        ],
+        "per_pair_baseline_spread_pct": 7.2,
+        "_comment": "The eyes are not hardware-synchronised; pairs are left/right frames within 60 ms of each other of a handheld laminated-paper board with glare. Treat the relative rotation and the off-axis translation components as approximate."
+      },
+      "pair_files": [
+        [
+          "20260518T205348.030532Z_left.jpg",
+          "20260518T205347.972251Z_right.jpg"
+        ],
+        [
+          "20260518T205413.020480Z_left.jpg",
+          "20260518T205412.963958Z_right.jpg"
+        ],
+        [
+          "20260518T211300.253824Z_left.jpg",
+          "20260518T211300.214046Z_right.jpg"
+        ],
+        [
+          "20260518T211310.755086Z_left.jpg",
+          "20260518T211310.712646Z_right.jpg"
+        ],
+        [
+          "20260518T211317.761568Z_left.jpg",
+          "20260518T211317.707847Z_right.jpg"
+        ],
+        [
+          "20260518T211335.785954Z_left.jpg",
+          "20260518T211335.741933Z_right.jpg"
+        ],
+        [
+          "20260518T211339.753722Z_left.jpg",
+          "20260518T211339.711379Z_right.jpg"
+        ],
+        [
+          "20260518T211343.814772Z_left.jpg",
+          "20260518T211343.774024Z_right.jpg"
+        ],
+        [
+          "20260518T211345.266968Z_left.jpg",
+          "20260518T211345.212021Z_right.jpg"
+        ],
+        [
+          "20260518T211359.256043Z_left.jpg",
+          "20260518T211359.210219Z_right.jpg"
+        ]
+      ]
     }
   }
 }
