@@ -1,12 +1,10 @@
 """WildScan - Wild Technology's interactive subsea photogrammetry console.
 
-A cross-platform (Windows / macOS / Linux) Textual TUI over this repo's
-canonical pipeline drivers. It ORCHESTRATES the existing entry points -
-main.py's module chain, merge_zones.py, the RS_CLI workflow .bats, the
-publish_* scripts - and never grows a second way to launch or monitor
-RealityScan (hard rule 1). RealityScan itself only runs on Windows; on other
-platforms the app still opens any workspace for inspection, previews, exports
-review and publishing.
+A Textual interface over the repository's canonical pipeline drivers:
+main.py's module chain, merge_zones.py, the native workflows, and the
+publishing scripts. The supported processing platform is native Windows.
+Dataset inspection and saved-result browsing use the same source and
+reports as the drivers; they do not verify native processing or model quality.
 
 Run:  wildscan [workspace]   (or: python -m wildscan [workspace])
 """

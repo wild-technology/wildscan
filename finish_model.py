@@ -22,10 +22,10 @@ The per-operation error gate lives in ModelToFinal.bat's :run subroutine
 (rev/lastError baselining via -getStatus), because a GUI-launched instance
 never writes errors_<instance>.txt.
 
-Usage:
-    py -3.13 finish_model.py --outdir "M:/.../final" [--instance RS1]
-        [--name Final] [--preset 4x8k] [--simplify true]
-        [--format objmetric] [--save-path "M:/.../final/scene.rsproj"]
+Example (PowerShell, from the Git checkout):
+    & "./.venv/Scripts/python.exe" finish_model.py --outdir "M:/dive/final" `
+        --instance RS1 --name Final --preset 4x8k --simplify true `
+        --format objmetric --save-path "M:/dive/final/scene.rsproj"
 
 ``--instance`` defaults to ``*`` ("first available") - fine for a single
 interactive session, ambiguous with two instances running: name one

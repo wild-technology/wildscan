@@ -198,7 +198,7 @@ Reproduced **byte-for-byte identically** in all twelve workflow scripts: `AlignZ
 `MergeZoneComponents.bat`, `GenerateModel.bat`, `ExportDeliverables.bat`, `GrowZone.bat`,
 `AlignImageList.bat`, `SequentialAlignGrow.bat`, `SaveProjectCopy.bat`,
 `ProbeLockAlign.bat`, `ProbeSubsetAlign.bat`, `ProbeSubsetAlign2.bat`, and the deprecated
-`AlignImagesFromFolder.bat` (kept only for `testing/run_zone9_tests.py`)
+`AlignImagesFromFolder.bat` (kept only for `scripts/validation/run_zone9_validation.py`)
 [VERIFIED-by-inspection: RS_CLI/Scripts/*.bat, 2026-08-04]. Only the leading comment
 differs between files. Copying it into a new workflow is the sanctioned way to add one —
 there is deliberately no shared include, because a `call`ed child `.bat` would add a
@@ -778,7 +778,7 @@ Not in the table and deliberately so: `AlignImagesFromFolder.bat` (`%1` input di
 component output dir, `%3` flight log, `%4` flight-log params, `%5` generate model, `%6`
 cull polygons, `%7` scene name, `%8` texture model, `%9` simplify model) is **DEPRECATED**
 — it is the pre-consolidation workflow, exhausts all nine slots on booleans, and survives
-only because `testing/run_zone9_tests.py` still calls it. Do not build on it; `AlignZone.bat`
+only because `scripts/validation/run_zone9_validation.py` still calls it. Do not build on it; `AlignZone.bat`
 plus `GenerateModel.bat` is the supported split [VERIFIED: FINDINGS 2026-07-28 deprecation
 sweep; ARCHITECTURE.md architecture section].
 
@@ -1440,7 +1440,7 @@ call :run -save "F:\na156_h2024_v2\aligned_components\zone_1\zone_1.rsproj" || g
 
 **[CONTRADICTED — internal, RESOLVED] on `appIncSubdirs`.** The NA167 revised-docs entry
 for `-addFolder` reads "in our 2.2 build subfolders were included **without** setting the
-key (zone_13: `wca/` + `zeuss/` both imported)" [testing/NA167 notes §1] and is
+key (zone_13: `wca/` + `zeuss/` both imported)" [historical NA167 notes §1] and is
 still on file that way; the H2023 line observed the opposite on the same product version —
 `Added 0 layer images` in the log snapshot, every flight-log row failing `err:18002`, the
 run finishing "successfully" in 25 s. **The reconciliation is recorded and settles it:**
@@ -1485,7 +1485,7 @@ paths. Consequences, in order of severity:
      SUCCESS with the "merged" component being exactly the biggest input
      [VERIFIED: NA167 #23–#26, 2026-07-24].
    - **Content overlap fuses under BOTH mechanisms, with or without shared paths.** Probe
-     D7 (`archive/campaign_drivers/probe_d7.py`, smoke fixture): `zone_c` (78 cams) + `zone_d_c0` (42 cams),
+     D7 ([archive/campaign_drivers/probe_d7.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/probe_d7.py), smoke fixture): `zone_c` (78 cams) + `zone_d_c0` (42 cams),
      **zero shared basenames and zero shared paths**, same seafloor strip → one
      120-camera component ("Finalizing 1") both *without* any flight log in the merge
      scene and *with* union log + `-update`; `-align` + rematch fused the 118+62 pair to
@@ -1530,7 +1530,7 @@ imagelist); **zone_4** 90.1 % (1,438/1,596) vs 91.0 % (1,453)
 free at the registration level and is decided entirely by the merge and accounting
 consequences above.
 
-Driver skeleton (the shape of `archive/campaign_drivers/run_h2024_v2.py`):
+Driver skeleton (the shape of [archive/campaign_drivers/run_h2024_v2.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/run_h2024_v2.py)):
 
 ```python
 V2_ROOT         = r"F:\na156_h2024_v2"
@@ -1655,7 +1655,7 @@ Loop-design facts that cost real time to learn:
   the older 10 m-margin adjacency for comparison. The margin is applied to **both**
   bboxes, so `DEFAULT_BORDER_MARGIN_M = 10.0` treats components up to **20 m** apart as
   bordering — every description of it as a "10 m-expanded bbox" understates the reach by
-  2× [VERIFIED: FINDINGS 2026-07-27, pinned by testing/test_merge_scope.py].
+  2× [VERIFIED: FINDINGS 2026-07-27, pinned by tests/test_merge_scope.py].
 - **`-mergeComponents` never adds images, and `MergeZoneComponents.bat` has no
   `-addFolder` at all** — so a merge scene structurally cannot contain an orphan
   (never-registered) image, and no merge rung can ever register one. Orphan inclusion
@@ -1893,7 +1893,7 @@ layer, or both.
 | `PYTHONIOENCODING` | Python children | `utf-8` | Required when parsing UTF-8 sources; the console itself stays ASCII-only |
 
 [VERIFIED-by-inspection: RS_CLI/Scripts/*.bat, realityscan_cli.py, main.py, merge_zones.py,
-grow_zone.py, run_models.py, testing/run_h2024_v2.py, 2026-08-04; individual behaviours
+grow_zone.py, run_models.py, [archive/campaign_drivers/run_h2024_v2.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/run_h2024_v2.py), 2026-08-04; individual behaviours
 tagged in the sections above]
 
 Four knobs are **not** environment variables — they live in `rs_settings.json` (repo root,

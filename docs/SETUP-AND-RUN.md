@@ -4,6 +4,11 @@ A step-by-step guide to installing wildscan on a new machine and running a
 dive through it. Follow the parts in order the first time. Later sessions
 start at [part 6](#6-run-the-pipeline).
 
+For the first-use input checklist and workspace inspection, follow
+[Analyze a dataset](ANALYZE_A_DATASET.md). The
+[documentation index](README.md) routes the current guides and historical
+experiment records.
+
 Commands are written for **Windows PowerShell**, the platform the pipeline
 runs on. Where a step differs in Command Prompt, the alternative is given.
 
@@ -39,7 +44,7 @@ Contents:
 | Component | Notes |
 |---|---|
 | RealityScan 2.2 (Epic Games) | A separate install, **not** a pip package. Installed by default under `C:\Program Files\Epic Games\RealityScan_2.2\`. Needs its own Epic licence. |
-| Python 3.12 or 3.13 | From [python.org](https://www.python.org/downloads/windows/), which installs the `py` launcher. 3.12 is the hard floor: `numpy>=2.5` and `scipy>=1.18` do not install on anything older. |
+| 64-bit Python 3.13 or newer recommended | From [python.org](https://www.python.org/downloads/windows/), with the `py` launcher. Development and native validation use 3.13+. The declared package floor is 3.12, matching the minimum dependencies. |
 | Git for Windows | [git-scm.com](https://git-scm.com/download/win) |
 
 **Accounts, only for the stages you use**
@@ -48,11 +53,35 @@ Contents:
 - **Nira** — an Enterprise plan and a local `niraclient` checkout, for
   publishing to Nira.
 
-**Your data**
+### Your data
 
-- The dive imagery.
+- The dive imagery, or `.mp4` / `.mov` recordings to extract. Video filenames
+  must contain a UTC timestamp as `YYYYMMDDTHHMMSSZ` or `YYYYMMDDHHMMSS`, for
+  example `20260930T120000Z`. Missing or invalid timestamps prevent extraction.
+  Split recordings named with `_0001_`, `_0002_`, and so on need every preceding
+  part and readable duration metadata to place frames at the correct time.
 - The ROV navigation table (the Kalman CSV) covering the dive, used to
   georeference the images.
+
+The navigation file is comma-separated, with these case-sensitive columns:
+
+```text
+Timestamp,kalman_lat,kalman_long,kalman_depth,kalman_yaw_deg,kalman_pitch_deg,kalman_roll_deg
+```
+
+`Timestamp` must use UTC `YYYY-MM-DDTHH:MM:SSZ`, for example
+`2026-09-30T12:00:00Z`. Coordinates are latitude/longitude in degrees, depth
+is metres, and yaw/pitch/roll are degrees. Depth becomes `-abs(depth)` in the
+flight log. Empty numeric cells and nonfinite numbers become missing values;
+usable positions still require valid coordinates. The pipeline rejects malformed
+numeric rows; the standalone georeferencing command skips them. Check the data
+before a long run. Camera filename families and rig defaults are recorded in
+`modules/cameras.json`.
+
+Extraction uses OpenCV's `VideoCapture`; the installed OpenCV wheel includes
+FFmpeg, so a separate `ffmpeg.exe` is unnecessary. Codec support still depends
+on the recording: confirm a small sample decodes before processing a dive.
+[OpenCV package documentation](https://pypi.org/project/opencv-python/).
 
 ---
 
@@ -70,52 +99,71 @@ Contents:
    git --version
    ```
 
-   `py --list` should show 3.13 (or 3.12).
+   `py --list` should show your installed 64-bit 3.13+ interpreter. The examples
+   select 3.13; substitute your installed version, such as `py -3.14`, as needed.
 
 ---
 
 ## 3. Get the code
 
-Clone into a path **without spaces**. A checkout path containing spaces has
-broken runs in the past.
+Use a Git clone. Create the parent directory before entering it:
 
 ```powershell
-cd C:\tools
+New-Item -ItemType Directory -Path "C:\tools" -Force | Out-Null
+Set-Location -LiteralPath "C:\tools"
 git clone https://github.com/wild-technology/wildscan.git
-cd wildscan
+Set-Location -LiteralPath ".\wildscan"
 ```
+
+An editable installation was checked from a checkout path containing spaces.
+Quote paths used as arguments, and use PowerShell's `&` operator when invoking
+a quoted executable path. Native RealityScan processing has not been validated
+for every path layout; a simple checkout and workspace path remains prudent.
+The native command boundary rejects shell metacharacters such as `&`, `%`, `!`,
+commas and parentheses even in quoted workflow arguments.
+
+The full pipeline depends on root driver scripts and CRLF batch workflows.
+Wheels and packaged source archives omit root drivers and other checkout files;
+GitHub's source ZIP does not apply the checkout line-ending rules in
+`.gitattributes`. Use the Git checkout and editable install below for the
+supported workflow.
 
 ---
 
 ## 4. Create the environment and install
 
-Install into a virtual environment, so wildscan's pinned dependencies stay
+Install into a virtual environment, so wildscan's processing dependencies stay
 separate from the rest of the machine.
 
 ```powershell
 py -3.13 -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
+& ".\.venv\Scripts\python.exe" -m pip install --upgrade "pip>=26.2"
+& ".\.venv\Scripts\python.exe" -m pip install -e ".[dev]"
 ```
 
-Your prompt now starts with `(.venv)`.
+Upgrade the environment installer before resolving dependencies. The commands
+invoke the environment's Python directly. They work without
+activation or a PowerShell execution-policy change. Run them from the checkout
+folder; use the full quoted executable path with `&` from another directory.
 
-- **Only Python 3.12 installed?** Use `py -3.12 -m venv .venv`.
-- **Command Prompt instead of PowerShell?** Activate with
-  `.venv\Scripts\activate.bat`.
-- **PowerShell refuses to run `Activate.ps1`?** Allow local scripts once for
-  your account, then activate again:
+- **Only Python 3.12 installed?** Use `py -3.12 -m venv .venv` to meet the
+  declared package floor; 3.13+ remains recommended for native validation.
+- **Command Prompt instead of PowerShell?** Omit `&` when invoking
+  `.venv\Scripts\python.exe`.
+- **Prefer shorter commands?** Activation is optional:
 
   ```powershell
-  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+  .\.venv\Scripts\Activate.ps1
   ```
 
-> **Two rules that save a lot of confusion.**
-> **Use `python`, not `py -3.13`, once the environment is active.** A `py`
-> launch with a version flag ignores the active environment and runs the
-> global interpreter, so your packages appear to vanish.
-> **Activate the environment in every new terminal** (`.venv\Scripts\Activate.ps1`
-> from the checkout folder).
+  In Command Prompt, activation is `.venv\Scripts\activate.bat`. Only after
+  activation succeeds can `python` and `wildscan` stand in for the environment's
+  full paths. Activate again in each new terminal if using those shorter names.
+  If activation is blocked, keep using the direct interpreter commands above.
+
+> A version-qualified `py -3.13` command ignores the active environment and
+> runs the global interpreter. Use it to create the environment, then use the
+> environment's interpreter for installation and execution.
 
 The install must stay **editable** (`-e`). The app runs the driver scripts
 and the RealityScan `.bat` workflows out of the checkout itself.
@@ -123,12 +171,15 @@ and the RealityScan `.bat` workflows out of the checkout itself.
 **Verify before touching real data:**
 
 ```powershell
-python -m pytest
+& ".\.venv\Scripts\python.exe" -m pytest
 ```
 
-Expect **560 tests, all passing, in about 30 s**. One geoid test skips on a
-machine that cannot reach the internet. Any failure on a clean checkout
-means the install is wrong — fix it before processing a dive.
+Pytest collects the offline suite from `tests/` and reports its current count
+and skips. The geoid check skips when the EGM2008 grid is unavailable.
+Investigate failures before processing a dive; a failure can concern the
+environment, a fixture, or the code. Offline tests do not establish native
+RealityScan acceptance. Manual validation commands live in
+`scripts/validation/`, with historical plans under `docs/validation/`.
 
 ---
 
@@ -171,7 +222,8 @@ Set these only when you need them. In PowerShell: `$env:NAME = "value"`.
 | `RS_INSTANCE` | Name of the RealityScan instance to own (default `RS1`). Give each parallel run its own name. |
 | `RS_GPU_DEVICES` | GPUs for this instance, e.g. `0` — exported as `CUDA_VISIBLE_DEVICES`. |
 | `RS_CACHE_DIR` | Move RealityScan's cache to a large drive. |
-| `RS_HEADLESS` | `0` launches a visible RealityScan instead of headless. |
+| `RS_ALIGN_PARAMS` | Alignment parameter XML to apply instead of the repository's `AlignmentParams.xml`; its content is recorded in each alignment fingerprint. |
+| `RS_HEADLESS` | `0` launches a visible instance; `1` launches headless. Python drivers default to visible. Hand-run batch workflows default to headless when unset. |
 | `CESIUM_ION_TOKEN` | Cesium ion access token, used by the publishers. |
 | `NIRACLIENT_DIR` | Path to your `niraclient` checkout, for Nira publishing. |
 | `RS_MODULES` | Comma-separated module names to run non-interactively in `main.py`. |
@@ -182,20 +234,92 @@ set (`RS_INSTANCE=RS_GPU0` with `RS_GPU_DEVICES=0`, and a second pair for
 the other GPU). A per-instance lock makes a same-instance collision fail
 immediately rather than corrupt both runs.
 
-### 5.4 Cesium publishing: the geoid grid
+### 5.4 Flight log import format
 
-Cesium publishing converts depths below the sea surface into ellipsoidal
-heights using the EGM2008 geoid grid (~80 MB). `publish_cesium.py`
-downloads it from `cdn.proj.org` the first time it runs. On a machine with
-no internet, install it beforehand:
+With the checkout available, close RealityScan and back up `flightlogs.xml`
+beside `RealityScan.exe`. Copy only the repository's custom `<format>` element,
+with ID `{B438A617-2434-5A24-C1B7-58980F28345A}`, inside the installed
+`<FlightLogs>` element. If that exact ID is already present, compare its parser
+with the repository's 13-column format rather than adding a duplicate. Preserve
+the other installed formats; do not replace the installation dictionary with the
+repository's older copy. Editing Program Files may require administrator access.
+
+The full ID must match `gpsLogFileFormat` in both parameter templates. This
+read-only check verifies the two templates and the installed format; adjust the
+dictionary path for your RealityScan installation:
 
 ```powershell
-projsync --file us_nga_egm08_25.tif
+$flightLogDictionary = 'C:\Program Files\Epic Games\RealityScan_2.2\flightlogs.xml'
+$formatId = '{B438A617-2434-5A24-C1B7-58980F28345A}'
+$dictionaryText = Get-Content -Raw -LiteralPath $flightLogDictionary
+$formatPattern = '<format\b[^>]*\bid\s*=\s*["'']' + [regex]::Escape($formatId) + '["'']'
+if ([regex]::Matches($dictionaryText, $formatPattern).Count -ne 1) {
+    throw 'The installed dictionary must contain exactly one matching format.'
+}
+foreach ($template in @('FlightLogParams.xml', 'FlightLogParamsLocal.xml')) {
+    [xml]$params = Get-Content -Raw -LiteralPath "modules\realityscan_interface\RS_CLI\Metadata\$template"
+    $configuredId = @($params.Configuration.entry | Where-Object { $_.key -eq 'gpsLogFileFormat' })
+    if ($configuredId.Count -ne 1 -or $configuredId[0].value -ne $formatId) {
+        throw "The format ID in $template does not match."
+    }
+}
 ```
 
-This matters: without the grid, PROJ would silently apply a zero correction
-and your model would sit at sea level. The code refuses to continue rather
-than publish a wrong position.
+A missing or mismatched format can import positions while silently dropping
+orientation and accuracy. Recheck after a RealityScan update or repair. For the
+first native validation, use a few copied images and their generated flight log,
+save the project, and inspect the position, orientation and accuracy priors.
+The saved-project signatures and the dated comparison are in
+[the flight-log reference](rs-reference/06-georeferencing-flightlogs-and-scale.md#resolved-2026-08-23--side-a-holds-what-an-unresolvable-format-guid-actually-does).
+The ID check alone does not establish native import correctness.
+
+### 5.5 Cesium publishing: the geoid grid
+
+Cesium publishing converts depths below the sea surface into ellipsoidal
+heights using the EGM2008 geoid grid (~80 MB). `publish_cesium.py` enables PROJ
+network access, which can fetch needed grid data from `cdn.proj.org`. For
+reliable offline use, download the complete grid on an online machine beforehand:
+
+```powershell
+& ".\.venv\Scripts\python.exe" -m pyproj sync --file us_nga_egm08_25.tif
+```
+
+For a separate offline machine, locate the online machine's grid directory
+with `& ".\.venv\Scripts\python.exe" -c "from pyproj.datadir import get_user_data_dir; print(get_user_data_dir())"`.
+Transfer `us_nga_egm08_25.tif` into the same user data directory reported by
+that command on the offline machine. Use `--no-proj-network` when publishing
+there so a missing local grid is reported immediately.
+
+Without the grid, a zero correction would leave the mesh's sea-surface depth
+interpreted as an ellipsoidal height: its vertical position would be wrong by
+the local geoid undulation. The code rejects unavailable or undefined geoid
+transformations.
+
+### 5.6 Nira publishing
+
+Scripted Nira upload requires an Enterprise account and its API key and secret.
+Clone the [official client](https://github.com/NiraOfficial/niraclient), configure
+it with the same environment interpreter, then expose its checkout to WildScan:
+
+```powershell
+git clone https://github.com/NiraOfficial/niraclient.git "C:\tools\niraclient"
+Push-Location -LiteralPath 'C:\tools\niraclient'
+try {
+    & 'C:\tools\wildscan\.venv\Scripts\python.exe' .\nira.py configure
+} finally {
+    Pop-Location
+}
+$env:NIRACLIENT_DIR = 'C:\tools\niraclient'
+```
+
+Adjust both checkout paths if you chose different locations. The configuration
+command prompts for the API key and secret. The official client bundles its
+dependencies, so it does not require a separate pip install.
+[Official setup and dependency guidance](https://github.com/NiraOfficial/niraclient#quick-start).
+
+`NIRACLIENT_DIR` is set for the current PowerShell session. Set it again in a
+new terminal when using batch publishing; the single-service command also
+accepts a quoted `--niraclient` path. Configuration does not upload an asset.
 
 ---
 
@@ -210,18 +334,20 @@ drive, for example `F:\na156_h2024`.
 
 ### 6.2 WildScan, the recommended way
 
-With the environment active:
+From the checkout, without activation:
 
 ```powershell
-wildscan F:\na156_h2024
+& ".\.venv\Scripts\python.exe" -m wildscan "F:\na156_h2024"
 ```
 
-`python -m wildscan F:\na156_h2024` is the same thing. The workspace
-argument is optional — without it, WildScan asks for the expedition, dive
-and folder and remembers your answers.
+After successful activation, `wildscan "F:\na156_h2024"` is equivalent. The
+workspace argument is optional — without it, WildScan asks for the expedition,
+dive and folder and remembers your answers.
 
-WildScan surveys the workspace and shows the nine stages in order, each
-marked done, partial or pending:
+On the first screen, enter the dataset locations and a separate results root.
+Choose **View results** to inspect an existing workspace without processing,
+or **Continue** to create or open the working results root and choose stages.
+The nine stages are shown in order with a detected state and summary:
 
 1. Extract Images
 2. Georeference
@@ -233,14 +359,14 @@ marked done, partial or pending:
 8. Export Deliverables
 9. Publish (Cesium / Nira)
 
-Pick a stage and WildScan shows the exact command, settings and estimate
-before anything runs, then streams progress as it goes. It always launches
-the same drivers described below, so you can move between the two freely. It
-is resume-aware: reopen the workspace later and finished stages stay marked
-done.
-
-RealityScan stages need Windows. On macOS or Linux the app still opens a
-workspace for inspection, exports review and publishing.
+Select the needed stages, answer the parameter wizard, then review the source
+paths, settings, and publishing notice before choosing **Run**. The app streams
+logs and progress and launches the canonical drivers described below. It is
+resume-aware: valid completion evidence keeps stages unselected; incomplete,
+changed, or interrupted work may need a retry. Artifact checks differ by stage
+and do not establish reconstruction quality. The supported processing target
+is native Windows; see [Analyze a dataset](ANALYZE_A_DATASET.md) for the screen
+sequence, inspection limits, and pauses between commands.
 
 ### 6.3 The stages on the command line
 
@@ -252,7 +378,7 @@ unattended runs.
 → RealityScan Alignment):
 
 ```powershell
-python main.py
+& ".\.venv\Scripts\python.exe" main.py
 ```
 
 It asks which modules to run, then prompts for each one's paths and
@@ -262,33 +388,47 @@ chain. For an unattended run, select modules by name instead:
 ```powershell
 $env:RS_MODULES = "Georeference Images,Batch Directory"
 $env:RS_NO_INTERACTIVE = "1"
-python main.py
+& ".\.venv\Scripts\python.exe" main.py
 ```
 
-`python main.py --help` lists the flags for the enabled modules.
+`& ".\.venv\Scripts\python.exe" main.py --help` lists the flags for the enabled modules.
 
-**Georeferencing on its own**, which is the newer and faster
-implementation, is `python geoall.py`. It asks for the image folder, the ROV
-data folder and an output folder, or takes `--image-base-dir`,
+**Georeferencing on its own** uses
+`& ".\.venv\Scripts\python.exe" georeference_survey.py`, whose
+standalone workflow includes multiprocessing image copying. It asks for the image
+folder, the ROV data folder and an output folder, or takes `--image-base-dir`,
 `--rov-data-dir` and `--output-dir`.
+
+Image-copy retries check existing destination content before reuse. A stale
+destination is preserved and rejected. If any image copy fails for a dive,
+the standalone command withholds that dive's new flight log and returns a
+failed result; validated outputs for successful dives remain available.
 
 **Merge the per-zone components, then model the merged result:**
 
 ```powershell
-python merge_zones.py --components_root F:\na156_h2024\aligned_components --images_root F:\na156_h2024\batched_images_by_zone --output F:\na156_h2024\merged
-python run_models.py --workspace F:\na156_h2024
+& ".\.venv\Scripts\python.exe" merge_zones.py --components_root "F:\na156_h2024\aligned_components" --images_root "F:\na156_h2024\batched_images_by_zone" --output "F:\na156_h2024\merged"
+& ".\.venv\Scripts\python.exe" run_models.py --workspace "F:\na156_h2024"
 ```
 
 `run_models.py` models every final component, smallest first, and is
 scale-gated: a component whose measured metric scale falls outside the
-accepted band is not modelled. It is resumable — rerun it and it picks up
-where it stopped.
+accepted band is not modelled. Saved bands and measured values must be valid
+finite numbers; malformed saved verdicts require remeasurement. Reruns reuse
+successes only when the saved assembly, source components, navigation and
+model recipe still match.
 
 **Export deliverables** (OBJ by parts, FBX by parts, and an ultra-dense
 coloured PLY):
 
 ```powershell
-modules\realityscan_interface\RS_CLI\Scripts\ExportDeliverables.bat "F:\na156_h2024\final_assembly\assembly\Assembly.rsproj" "F:\na156_h2024\exports" "F:\na156_h2024\exports\components.names"
+$workspace = 'F:\na156_h2024'
+$report = Get-Content -Raw -LiteralPath "$workspace\merged\merge_report.json" | ConvertFrom-Json
+$names = @($report.clusters.final_components | ForEach-Object { ($_.key -split '/')[-1] })
+if ($names.Count -eq 0) { throw 'The merge report has no final components.' }
+New-Item -ItemType Directory -Path "$workspace\exports" -Force | Out-Null
+[System.IO.File]::WriteAllLines("$workspace\exports\components.names", [string[]]$names, [System.Text.UTF8Encoding]::new($false))
+& ".\.venv\Scripts\python.exe" modules/export_deliverables.py --project "$workspace\merged\assembly\Merged.rsproj" --exports "$workspace\exports" --names "$workspace\exports\components.names"
 ```
 
 ---
@@ -300,7 +440,7 @@ credentials for:
 
 ```powershell
 $env:CESIUM_ION_TOKEN = "<your ion token>"
-python publish_batch.py --workspace F:\na156_h2024 --prefix "NA156 H2024" --dry-run
+& ".\.venv\Scripts\python.exe" publish_batch.py --workspace "F:\na156_h2024" --prefix "NA156 H2024" --dry-run
 ```
 
 Drop `--dry-run` to publish for real. Add `--components` to limit it to
@@ -309,12 +449,22 @@ named components.
 One export at a time:
 
 ```powershell
-python publish_cesium.py --name "IN-401 hull" --dir F:\na156_h2024\exports\<comp>\obj --input-crs EPSG:32604 --verify
-python publish_nira.py --name "IN-401 hull" --dir F:\na156_h2024\exports\<comp>\obj --niraclient C:\tools\niraclient
+& ".\.venv\Scripts\python.exe" publish_cesium.py --name "IN-401 hull" --dir "F:\na156_h2024\exports\COMPONENT\obj" --verify
+& ".\.venv\Scripts\python.exe" publish_nira.py --name "IN-401 hull" --dir "F:\na156_h2024\exports\COMPONENT\obj" --niraclient "C:\tools\niraclient"
 ```
+
+Replace `COMPONENT` with an exported component name. Cesium reads the CRS and
+transform from the mesh's `.rsInfo` sidecar; pass `--flight-log` to add an
+independent navigation-envelope check.
 
 Notes:
 
+- Cesium prepares local copies under `_cesium_local`. A nonempty folder
+  without its `.cesium-stage.json` marker is preserved; pass `--staging`
+  with a new directory in that case. Nira excludes these generated copies.
+- Cesium defaults to the whole OBJ, and Nira defaults to its by-parts copy.
+  Use `--parts whole` or `--parts split` on the single-service publishers to
+  choose explicitly; Nira requires `--geometry` if the directory mixes mesh formats.
 - Both services want the OBJ. Nira rejects PLY point clouds — LAS, LAZ or
   E57 only — and scripted upload needs an Enterprise API key.
 - Always pass `--verify` on a real Cesium publish. It is not on by default,
@@ -337,6 +487,13 @@ read to resume:
 | `grow_report.json` | `grow_zone.py` |
 | `models_report.json` | `run_models.py` |
 | `publish_report.json` | `publish_batch.py` |
+| `publish_plan.json` | `publish_batch.py --dry-run` (preserves publication evidence) |
+| `preprocessed_images.manifest.json` | Preprocess Images (settings, completion and source/output integrity) |
+| `interrupted_stage.json` | Console runner after Stop; cleared by a successful retry of the affected stages |
+
+Preprocessing verifies image contents before reusing existing output. This
+adds reads of the source and processed images, which can take time on large
+network drives. Changed sources or settings require regeneration.
 
 Settings you typed live in `rs_settings.json` in the checkout root.
 
@@ -346,16 +503,18 @@ Settings you typed live in `rs_settings.json` in the checkout root.
 
 | Symptom | Cause and fix |
 |---|---|
-| `wildscan` is not recognised | The environment is not active. Run `.venv\Scripts\Activate.ps1` from the checkout. |
-| Packages installed but Python cannot import them | A `py -3.13` command was used inside the active environment, which installed into the global interpreter. Reinstall with `python -m pip install -e ".[dev]"`. |
-| `Activate.ps1` cannot be loaded | PowerShell execution policy. Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then activate again. |
+| `wildscan` is not recognised | Use `& ".\.venv\Scripts\python.exe" -m wildscan` from the checkout, or activate successfully before using the shorter command. |
+| Packages installed but Python cannot import them | A version-qualified `py` command installed into the global interpreter. Reinstall with `& ".\.venv\Scripts\python.exe" -m pip install -e ".[dev]"`. |
+| `Activate.ps1` cannot be loaded | Activation is optional. Invoke `& ".\.venv\Scripts\python.exe"` directly; no execution-policy change is needed. |
+| `import cv2` fails with a DLL load error | Check the Visual C++ runtime; Windows N/KN editions also need the Media Feature Pack. See the [OpenCV Windows FAQ](https://pypi.org/project/opencv-python/#frequently-asked-questions). |
 | `RealityScan.exe not found` | Non-standard install. Set `realityscan.executable` in `rs_settings.json` or `RS_EXECUTABLE`. |
-| Tests fail on a clean checkout | A broken install. Recreate `.venv` and reinstall before running data. |
+| Tests fail on a clean checkout | Inspect the failure and confirm the selected interpreter and dependencies. A code or fixture failure also needs fixing before running data. |
 | A stage "succeeds" but produces nothing | RealityScan exits SUCCESS while doing nothing. Check the stage's census and report rather than the exit code; `docs/rs-reference/12-failure-modes-and-race-conditions.md` catalogues every known silent-success mode. |
-| A run fails saying the geoid grid is missing | See [5.4](#54-cesium-publishing-the-geoid-grid). Do not work around it — a missing grid means a wrong depth. |
+| A run fails saying the geoid grid is missing | See [5.5](#55-cesium-publishing-the-geoid-grid). A missing grid means a wrong vertical position. |
 | Two runs interfere with each other | Both used the same instance name. Give each its own `RS_INSTANCE` and `RS_GPU_DEVICES`. |
 | Disk fills mid-run | RealityScan's cache. Point `RS_CACHE_DIR` at a large drive and flush between runs with the `FlushCache` workflow. |
 | A run stops with "not found" for an input folder | The path prompt was accepted while empty or stale. Rerun and enter the real folder, or pass it as a flag. |
+| A copy stage refuses an existing image | The destination content differs from its source. Preserve and inspect the previous output, or select a fresh output folder. |
 
 ---
 

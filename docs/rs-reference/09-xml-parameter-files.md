@@ -286,7 +286,7 @@ RealityScan.exe -delegateTo RS1 -selectModel "cluster_0_a2_c0_Simplified_Texture
 :: 2. Read F:\na156_h2024\probe\seed.obj.rsInfo, copy the <ModelExport> element
 ::    into an empty file, save as ModelExportParams_seed.xml.
 :: 3. Hand-tune that file and pass it from then on.
-set "MD=C:\Users\jonat\Desktop\CoyoteThings\wildscan\modules\realityscan_interface\RS_CLI\Metadata"
+set "MD=C:\tools\wildscan\modules\realityscan_interface\RS_CLI\Metadata"
 RealityScan.exe -delegateTo RS1 -exportModel "cluster_0_a2_c0_Simplified_Textured" ^
                 "F:\na156_h2024\deliverables\cluster_0\obj\cluster_0.obj" ^
                 "%MD%\ModelExportParams_seed.xml"
@@ -1526,7 +1526,7 @@ config "defines the scene transformation settings saved from the import dialog" 
 adjust the coordinate system or apply custom transformations during import". COLMAP takes the path
 to any of the three text files. [OFFICIAL: appbasics/allcommands]
 
-Not used here, and `archive/colmap/` is retired — do not resurrect it into the active pipeline.
+Not used here, and [archive/colmap/](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/colmap/) is retired — do not resurrect it into the active pipeline.
 [ARCHITECTURE.md]
 
 ### 2.23 Classification params and the `.cfd` format file
@@ -1971,7 +1971,7 @@ Rules:
 
 ## 4. This repository's 34 profiles
 
-All at `C:\Users\jonat\Desktop\CoyoteThings\wildscan\modules\realityscan_interface\RS_CLI\Metadata\`.
+All at `C:\tools\wildscan\modules\realityscan_interface\RS_CLI\Metadata\`.
 `SetVariables.bat` declares path variables for many of them; the *consuming* script is what matters
 and is listed below.
 
@@ -2139,7 +2139,7 @@ verification below is an *independent* observation of the operation's output.
 |---|---|---|
 | Alignment | Count pose-bearing `.xmp` sidecars — only registered cameras get pose entries, so the count is a registration census. Then run the metric-scale oracle (`modules/scale_oracle.py`) on the poses: a component at 0.236 registers perfectly and is 1:4.24 scale, invisible in any viewer. | minutes, on artifacts you already produce |
 | Alignment settings replay | `RealityScan.log` shows `Parsing setting key=value '<key>' failed [err:7155]` when a `-set` was split by cmd. Snapshot the log **immediately** — it is truncated on the next instance boot. | free, but the window is short |
-| Flight-log import | Read `xcr:Position` back out of the exported pose XMPs and fit local→UTM (`poses2flightlog.py`); a correctly georeferenced component fits near-identity. Cross-check the row count: `4,598 log rows − 4,496 cameras = 102` unregistered is benign; a wrong zone shows up as absurd residuals. | minutes |
+| Flight-log import | Read `xcr:Position` back out of the exported pose XMPs and fit local→UTM (`poses_to_flight_log.py`); a correctly georeferenced component fits near-identity. Cross-check the row count: `4,598 log rows − 4,496 cameras = 102` unregistered is benign; a wrong zone shows up as absurd residuals. | minutes |
 | Simplify | Triangle count of the resulting model, and its part count. A profile that forced a singleton would show 1 part on export — the production profile (`simplPreserveParts=2`) shows 4, which is how the §2.4 contradiction was found. Also confirm a **new** model appeared: simplify never edits in place. | seconds, from the export |
 | Texturing / unwrap | Count and resolution of the emitted texture files. A 4 × 16K budget produces at most four 16384² images. | seconds, `dir` on the export folder |
 | Reprojection | Open one exported texture. `allowColor=false` produces a geometrically valid model with no reprojected colour — and no error. | seconds |

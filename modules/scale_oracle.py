@@ -20,7 +20,7 @@ at 0.175 and 0.220 (5.7x / 4.5x too small) while the bow and other zones
 solved at ~1.0. A uniform scale error is invisible in the viewer, so
 nothing upstream caught it.
 
-PROMOTED out of testing/ on 2026-07-26: this is a DELIVERABLE GATE, called by
+PROMOTED out of tests/ on 2026-07-26: this is a DELIVERABLE GATE, called by
 merge_zones before any model is generated, so it must not live beside the unit
 tests. A 0.236-scale H2024 component passed every existing check and reached a
 deliverable because nothing called this module (review finding D3).
@@ -216,7 +216,8 @@ DEFAULT_SCALE_MIN = 0.90
 DEFAULT_SCALE_MAX = 1.10
 
 
-def scale_for_images(images: list, components_dir: str, nav: dict) -> dict | None:
+def scale_for_images(images: list, components_dir: str, nav: dict,
+                     *, solved: dict | None = None) -> dict | None:
     """Scale for ONE component identified by its manifest image list.
 
     Preferred over report() when the caller already knows exactly which images
@@ -224,9 +225,11 @@ def scale_for_images(images: list, components_dir: str, nav: dict) -> dict | Non
     and cannot mis-attribute a component by ordinal position. Returns None when
     the component cannot be measured (no harvest on disk, or fewer than 30
     images shared between the harvest and the nav table) - callers must treat
-    None as UNMEASURED, never as passing.
+    None as UNMEASURED, never as passing. Callers measuring several components
+    of an unchanged zone may supply the already loaded solved-position table.
     """
-    solved = load_solved_positions(os.path.join(components_dir, 'identity_r0'))
+    if solved is None:
+        solved = load_solved_positions(os.path.join(components_dir, 'identity_r0'))
     if not solved:
         return None
     members = {os.path.splitext(str(i))[0].lower() for i in images}

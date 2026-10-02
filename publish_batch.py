@@ -11,10 +11,14 @@ Each destination activates only when its credentials are present, and
                  (Enterprise plan; run `nira.py configure` once)
 
 Results land in <workspace>/publish_report.json so WildScan can show them.
+Dry runs write publish_plan.json and preserve the publication report.
 
-Usage:
-    py -3.13 publish_batch.py --workspace F:/na156_h2024_v2 \
-        --prefix "IN-401" [--flight-log <log>] [--dry-run]
+Example (PowerShell, from the Git checkout):
+    & "./.venv/Scripts/python.exe" publish_batch.py --workspace "F:/na156_h2024_v2" `
+        --prefix "IN-401" --dry-run
+
+Add --flight-log with a quoted path for an independent navigation check.
+Remove --dry-run to upload to the configured destinations.
 """
 from __future__ import annotations
 
@@ -26,6 +30,12 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+from modules.cesium_placement import find_rsinfo
+from modules.publish_fingerprint import (
+    publication_source_matches, publication_source_state)
+from publish_cesium import referenced_companions, select_objs
+from publish_nira import build_file_list
 
 REPO = Path(__file__).resolve().parent
 
@@ -76,8 +86,12 @@ def run(argv: list[str], dry_run: bool) -> dict:
         logger.info('DRY RUN: %s', printable)
         return {'command': printable, 'dry_run': True}
     logger.info('running: %s', printable)
-    proc = subprocess.run(argv, capture_output=True, text=True,
-                          stdin=subprocess.DEVNULL)
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL)
+    except OSError as exc:
+        logger.error('cannot start publisher: %s', exc)
+        return {'command': printable, 'success': False, 'error': str(exc)}
     if proc.stdout:
         logger.info('%s', proc.stdout.strip()[-2000:])
     if proc.returncode != 0:
@@ -133,47 +147,109 @@ def main() -> int:
         raise SystemExit('no destination configured and not --dry-run - '
                          'nothing to do')
 
-    report: dict = {'started': time.strftime('%Y-%m-%d %H:%M:%S'),
-                    'assets': []}
     comps = sorted(p for p in exports.iterdir()
                    if p.is_dir() and (p / 'obj').is_dir()
-                   and any((p / 'obj').iterdir()))
-    if args.components:
+                   and any(obj.is_file() and obj.suffix.lower() == '.obj'
+                           and obj.stat().st_size > 0
+                           for obj in (p / 'obj').iterdir()))
+    available = [c.name for c in comps]
+    if args.components is not None:
         wanted = set(args.components)
+        if not wanted:
+            raise SystemExit('--components requires at least one component')
+        missing = wanted - set(available)
+        if missing:
+            raise SystemExit('requested component(s) have no exported OBJ: '
+                             + ', '.join(sorted(missing)))
         comps = [c for c in comps if c.name in wanted]
     if not comps:
         raise SystemExit('no exported obj/ components found')
 
+    configured = (["cesium"] if cesium_token else []) + \
+        (["nira"] if nira_dir else [])
+    destinations = configured or ['cesium', 'nira']
+    assets = []
     for comp in comps:
+        directory = comp / 'obj'
+        files = set()
+        if 'cesium' in destinations:
+            objs = select_objs(directory, 'whole')
+            files.update(objs)
+            files.update(referenced_companions(objs))
+            files.update(info for obj in objs
+                         if (info := find_rsinfo(obj)) is not None)
+        if 'nira' in destinations:
+            files.update(Path(entry['path']) for entry in build_file_list(directory, 'split'))
+        try:
+            source = publication_source_state(directory, list(files), destinations)
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f'cannot identify publication source: {exc}') from None
+        assets.append({'component': comp.name,
+                       'asset_name': f'{args.prefix} {comp.name}',
+                       'source': source,
+                       **{d: {'pending': True} for d in destinations}})
+    report: dict = {
+        'schema': 3, 'started': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'dry_run': args.dry_run,
+        'requested_components': [c.name for c in comps],
+        'destinations': destinations, 'configured_destinations': configured,
+        'available_components': available,
+        'assets': assets,
+    }
+    report_path = Path(args.workspace) / (
+        'publish_plan.json' if args.dry_run else 'publish_report.json')
+
+    def flush() -> None:
+        temporary = report_path.with_suffix('.json.tmp')
+        temporary.write_text(json.dumps(report, indent=2), encoding='utf-8')
+        temporary.replace(report_path)
+
+    flush()
+    for comp, entry in zip(comps, report['assets']):
         name = f'{args.prefix} {comp.name}'
-        entry: dict = {'component': comp.name, 'asset_name': name}
-        if cesium_token or args.dry_run:
+
+        def submit(argv: list[str]) -> dict:
+            if not publication_source_matches(comp / 'obj', entry['source']):
+                return {'success': False, 'error': 'source export changed before publication'}
+            result = run(argv, args.dry_run)
+            if not publication_source_matches(comp / 'obj', entry['source']):
+                result['success'] = False
+                result['error'] = 'source export changed during publication'
+            return result
+
+        if 'cesium' in destinations:
             argv = [sys.executable, str(REPO / 'publish_cesium.py'),
                     '--name', name, '--dir', str(comp / 'obj'),
+                    '--parts', 'whole',
                     '--poll', '--verify']
             if flight_log:
                 argv += ['--flight-log', str(flight_log)]
             if args.dry_run:
                 argv.append('--dry-run')
-            entry['cesium'] = run(argv, args.dry_run)
-        if nira_dir or args.dry_run:
+            entry['cesium'] = submit(argv)
+            flush()
+        if 'nira' in destinations:
             argv = [sys.executable, str(REPO / 'publish_nira.py'),
                     '--name', name, '--dir', str(comp / 'obj'),
+                    '--parts', 'split',
                     '--niraclient', nira_dir or '<NIRACLIENT_DIR>']
             if args.dry_run:
                 argv.append('--dry-run')
-            entry['nira'] = run(argv, args.dry_run)
-        report['assets'].append(entry)
-        with open(Path(args.workspace) / 'publish_report.json', 'w',
-                  encoding='utf-8') as fh:
-            json.dump(report, fh, indent=2)
+            entry['nira'] = submit(argv)
+            flush()
 
-    ok = all(r.get('success', True)
-             for a in report['assets']
-             for r in (a.get('cesium'), a.get('nira')) if r)
-    logger.info('published %d component(s); report: %s',
-                len(report['assets']),
-                Path(args.workspace) / 'publish_report.json')
+    if args.dry_run:
+        logger.info('planned %d component(s); plan: %s', len(comps), report_path)
+        return 0
+    succeeded = sum(entry[d].get('success') is True
+                    for entry in report['assets'] for d in destinations)
+    expected = len(comps) * len(destinations)
+    ok = succeeded == expected
+    report['complete'] = ok
+    report['finished'] = time.strftime('%Y-%m-%d %H:%M:%S')
+    flush()
+    logger.info('completed %d of %d publication command(s); report: %s',
+                succeeded, expected, report_path)
     return 0 if ok else 1
 
 

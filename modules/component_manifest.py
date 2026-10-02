@@ -36,7 +36,6 @@ accept/rollback/twin-drop decision (docs/merge-growth-strategy-2026-07.md,
 from __future__ import annotations
 
 import datetime
-import glob
 import json
 import os
 
@@ -110,26 +109,6 @@ def load_manifest(path: str) -> dict:
         raise ValueError(
             f'Unsupported manifest schema {manifest.get("schema")!r} in {path} '
             f'(this code understands schema {SCHEMA_VERSION})')
-    return manifest
-
-
-def load_zone_manifests(zone_dir: str) -> list[dict]:
-    """All manifests under a zone's export directory (recursive - the
-    identity-capture loop writes into a subfolder), sorted by component
-    name for determinism."""
-    pattern = os.path.join(glob.escape(zone_dir), '**', '*' + MANIFEST_SUFFIX)
-    manifests = [load_manifest(p) for p in sorted(glob.glob(pattern, recursive=True))]
-    manifests.sort(key=lambda m: (m.get('zone', ''), m.get('component', '')))
-    return manifests
-
-
-def append_history(manifest_path: str, event: str) -> dict:
-    """Append an audit event ({'event': ..., 'at': iso8601}) to a stored
-    manifest and rewrite it. Returns the updated manifest."""
-    manifest = load_manifest(manifest_path)
-    manifest['history'].append({'event': event, 'at': _now_iso()})
-    write_manifest(manifest, manifest_path if manifest_path.endswith(MANIFEST_SUFFIX)
-                   else manifest_path_for(manifest_path))
     return manifest
 
 

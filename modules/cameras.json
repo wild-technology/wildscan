@@ -15,7 +15,7 @@
     "geoall.py constants, wildscan/session.py OFFICIAL_CAMERAS and",
     "modules/file_metadata_parser.py still carry their own copies, each",
     "marked 'superseded-by modules/cameras.json' at the site. Pinned by",
-    "testing/test_rig_mounts.py."
+    "tests/test_rig_mounts.py."
   ],
   "defaults": {
     "_comment": [
@@ -27,7 +27,7 @@
       "--alt-accuracy / --orientation-accuracy on geoall.py.",
       "Position accuracy is END-TO-END PER-IMAGE UNCERTAINTY, not sensor",
       "spec: claiming the sensor figure (1/1/0.1) measurably FRAGMENTS",
-      "solves (testing/PRIORS_DISTORTION_TEST_PLAN.md 'bow 2x2').",
+      "solves (docs/validation/priors_distortion_test_plan.md 'bow 2x2').",
       "Orientation stays at HONEST 15 deg until the mounts are",
       "ground-truthed: PD-0/PD-0b measured 3-5 deg claimed accuracy",
       "FRAGMENTING the solve while 15 deg gained registration.",

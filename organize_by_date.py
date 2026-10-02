@@ -14,8 +14,10 @@ and the script printed "Complete: 0 files moved" and exited 0
 (audit 2026-08-07). Probed then: 'P231C0001_20260807T120000Z.jpg' -> None,
 'camlower_20231104020854.jpg' -> None, 'ZEUSS_20260807T120000Z.jpg' -> None.
 
-Usage:
-    py -3.13 organize_by_date.py [--source DIR] [--dry-run]
+Example (PowerShell, from the Git checkout):
+    & "./.venv/Scripts/python.exe" organize_by_date.py --source "D:/survey/images" --dry-run
+
+Remove --dry-run to move images into date folders.
 """
 from __future__ import annotations
 

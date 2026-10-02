@@ -5,6 +5,21 @@ georeference dive imagery, batch it, and drive **RealityScan 2.2**
 (Epic Games, formerly RealityCapture) through its CLI to align images and
 generate textured models.
 
+Start with a dataset or an existing results folder. WildScan helps identify
+available imagery and navigation files, review pipeline artifacts, and select
+the next processing stages. RealityScan performs alignment and reconstruction;
+WildScan prepares the inputs and runs the workflows around it.
+
+**New users:** [install the checkout](docs/SETUP-AND-RUN.md), then follow
+[Analyze a dataset](docs/ANALYZE_A_DATASET.md). Browse the
+[documentation index](docs/README.md) for current instructions, developer
+guidance, and dated experiment records.
+
+The project is beta software for **native Windows 11** and RealityScan 2.2.
+Offline regression tests cover planning, calculations, artifact detection,
+and process supervision. They do not certify the reconstruction quality,
+geographic accuracy, or native behavior of a new dataset or installation.
+
 ## Requirements
 
 - Windows 10/11 (RealityScan is Windows-only; the data-prep scripts are
@@ -14,22 +29,22 @@ generate textured models.
   and `Capturing Reality` install folders). Override with the
   `RS_EXECUTABLE` environment variable or `"realityscan": {"executable": ...}`
   in `rs_settings.json`.
-- **Python 3.12 or newer** (developed and run on `py -3.13`). The pinned
-  dependency set requires it: `numpy>=2.5` and `scipy>=1.18` are themselves
-  Python 3.12+ only, so an older interpreter cannot resolve the install.
+- **64-bit Python 3.13 or newer recommended** for development and native
+  validation. The declared installation floor is 3.12: `numpy>=2.5` and
+  `scipy>=1.18` require Python 3.12 or newer.
 - One or more CUDA GPUs. RealityScan uses **all** GPUs by default; see
   [Multi-GPU](#multi-gpu) to pin instances to specific GPUs.
 
 ## Quickstart
 
-New to the pipeline? **`docs/SETUP-AND-RUN.md`** is the full step-by-step
+New to the pipeline? [Setup and run](docs/SETUP-AND-RUN.md) is the full step-by-step
 manual: prerequisites, environment, configuration, running a dive and
 troubleshooting. The short version follows.
 
 Every Python dependency is declared in `pyproject.toml`; installing the
-project installs them at the versions the shipped deliverables were built on.
+project installs compatible versions at or above the declared minimums.
 Prerequisites: [Git for Windows](https://git-scm.com/download/win) and
-Python 3.12 or 3.13 from python.org (which includes the `py` launcher).
+[64-bit Python](https://www.python.org/downloads/windows/) with the `py` launcher.
 
 In **PowerShell** (the Windows default):
 
@@ -37,62 +52,113 @@ In **PowerShell** (the Windows default):
 git clone https://github.com/wild-technology/wildscan.git
 cd wildscan
 py -3.13 -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
+& ".\.venv\Scripts\python.exe" -m pip install --upgrade "pip>=26.2"
+& ".\.venv\Scripts\python.exe" -m pip install -e ".[dev]"
 ```
 
-In **Command Prompt**, activate with `.venv\Scripts\activate.bat` instead.
-If PowerShell refuses to run `Activate.ps1`, allow local scripts once for
-your account with
-`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. With only Python
-3.12 installed, create the environment with `py -3.12 -m venv .venv`.
+Upgrade the environment installer before resolving dependencies. These
+commands use the environment directly; activation and a PowerShell
+execution-policy change are unnecessary. Run them from the checkout folder.
+Select your installed version when creating the environment, for example
+`py -3.14` for 3.14 or `py -3.12` for the package's minimum supported version.
 
-Once the environment is active, use `python`, not `py -3.13`: a `py` launch
-with a version flag ignores the active environment and runs the global
-interpreter instead. Activate `.venv` again in every new terminal.
+Activation is optional: use `.\.venv\Scripts\Activate.ps1` in PowerShell or
+`.venv\Scripts\activate.bat` in Command Prompt. Only after successful activation
+can you shorten the examples to `python` or `wildscan`. A version-qualified
+`py -3.13` launch uses the global interpreter even while an environment is active.
 
 Verify the checkout before running anything against real data:
 
 ```powershell
-python -m pytest
+& ".\.venv\Scripts\python.exe" -m pytest
 ```
 
-Expect **560 tests in about 30 s**, all passing on Windows. One geoid test
-is skipped on a machine that cannot download the EGM2008 grid (see below).
-Any failure on a clean checkout means the install is broken; fix it before
-processing data. (Off Windows, 22 tests that pin Windows paths fail and 3
-NTFS-junction tests skip; that is expected.)
+Pytest collects the offline suite from `tests/` and reports the current test
+count and skips. The geoid check skips when the EGM2008 grid is unavailable;
+Windows-specific checks may skip elsewhere. Investigate failures before
+processing data. These checks do not establish native RealityScan acceptance.
 
 Then start the TUI, which is the product entry point:
 
 ```powershell
-wildscan [workspace]
+& ".\.venv\Scripts\python.exe" -m wildscan
 ```
 
 `workspace` is the results folder for one dive (the pipeline writes
 batches, aligned components, models and exports under it). It is optional:
 without it, WildScan asks for the expedition, dive and folder during session
-setup and remembers your answers for next time. `python -m wildscan
-[workspace]` is equivalent, and `python main.py` runs the lower-level
-interactive module chain directly.
+setup and remembers your answers for next time. To open an existing workspace,
+append its quoted path, for example `"D:\survey results\dive_1"`. After activation,
+`wildscan "D:\survey results\dive_1"` is equivalent; `python main.py` runs the
+lower-level interactive module chain directly.
 
 The install must be **editable** (`-e`): the TUI launches the driver scripts
 (`main.py`, `merge_zones.py`, ...) and the `RS_CLI` workflows from the
-checkout itself. Installing without the test suite is `python -m pip
-install -e .`; `python -m pip install -e ".[tui]"` installs only the console
-UI (Textual + Rich) without the geo and imaging stack, for a machine that
-inspects workspaces but does not process them. `requirements.txt` is kept in
-step with `pyproject.toml` for anyone who prefers `python -m pip install -r
-requirements.txt`; that route installs no `wildscan` command, so start the
-TUI with `python -m wildscan` from the checkout folder.
+checkout itself. Installing without the test suite is
+`& ".\.venv\Scripts\python.exe" -m pip install -e .`. Use a Git clone:
+the GitHub source ZIP does not apply Git's CRLF rules to native workflows.
+Wheels and packaged source archives omit root drivers and other checkout files
+needed by the full pipeline.
+The `tui` extra is retained for compatibility and installs the
+same processing dependencies as the base project. `requirements.txt` is kept in
+step with `pyproject.toml` for anyone who prefers
+`& ".\.venv\Scripts\python.exe" -m pip install -r requirements.txt`; that route
+installs no `wildscan` command, so start the TUI with the environment interpreter's
+`-m wildscan` from the checkout folder.
 
 > RealityScan itself is a separate Windows install from Epic Games and is not
 > a pip dependency. Nira publishing additionally needs the `niraclient`
-> checkout (Enterprise plan) pointed at by `NIRACLIENT_DIR` — see
-> `publish_nira.py`. Cesium publishing converts depths to ellipsoidal
-> heights through the EGM2008 geoid grid (~80 MB), which `publish_cesium.py`
-> downloads from cdn.proj.org on first use; on an offline machine install it
-> beforehand with `projsync --file us_nga_egm08_25.tif`.
+> checkout (Enterprise plan), configured with its API key and secret and pointed
+> at by `NIRACLIENT_DIR` — see [Nira setup](docs/SETUP-AND-RUN.md#56-nira-publishing).
+> Cesium publishing converts depths to ellipsoidal heights through the EGM2008
+> geoid grid (~80 MB). PROJ can fetch grid data from cdn.proj.org when network
+> access works; install the complete grid for offline use as described in
+> [geoid setup](docs/SETUP-AND-RUN.md#55-cesium-publishing-the-geoid-grid).
+>
+> Before importing flight logs, install the custom format from the repository's
+> `flightlogs.xml` into the RealityScan installation dictionary, preserving
+> its existing formats. Follow [the setup guide](docs/SETUP-AND-RUN.md#54-flight-log-import-format).
+
+Extraction accepts `.mp4` and `.mov` recordings with a UTC timestamp in the
+filename. OpenCV supplies the decoder; a separate `ffmpeg.exe` is unnecessary.
+Check the [video and navigation formats](docs/SETUP-AND-RUN.md#your-data) before
+preparing a dive.
+
+## Analyze a dataset
+
+1. Open WildScan and identify the expedition and dive.
+2. Point it at a delivered cruise folder, a folder of still images, or a
+   specific video. Add processed navigation data when available, and choose
+   a separate results folder.
+3. Review the detected files and workspace stage status. A filename match or
+   existing artifact is a useful starting point; it does not establish that
+   a video decodes, navigation covers the imagery, or a mesh is accurate.
+4. Select the stages needed for this dataset, check every parameter, and
+   review the plan before choosing **Run**.
+
+For an existing results folder, choose **View results** to inspect its
+pipeline and component tables without starting a processing run.
+
+![WildScan stage picker with extraction unselected for existing still images](docs/images/dataset-stages.svg)
+
+The screenshot shows the actual interface with a labelled sample of 24 still
+images and one navigation CSV. No native processing has run.
+
+Use the [dataset guide](docs/ANALYZE_A_DATASET.md) for the input checklist,
+stage meanings, results layout, and inspection limits. Publishing is optional
+and needs credentials for the destinations you select. Alignment writes XMP
+sidecars into its image input tree; preserve originals and run it against
+working copies or the pipeline's prepared zone tree.
+
+## Documentation
+
+| I want to… | Read |
+|---|---|
+| Install on a new Windows machine | [Setup and run](docs/SETUP-AND-RUN.md) |
+| Understand a new dataset or resume a workspace | [Analyze a dataset](docs/ANALYZE_A_DATASET.md) |
+| Understand the code and native execution rules | [Architecture](ARCHITECTURE.md) |
+| Look up a RealityScan command, setting, or failure mode | [RealityScan reference](docs/rs-reference/README.md) |
+| Read past experiments and product decisions | [Historical records](docs/README.md#historical-records) |
 
 ## Repository layout
 
@@ -107,37 +173,67 @@ TUI with `python -m wildscan` from the checkout folder.
 | `publish_cesium.py` | Uploads one mesh export (OBJ) to Cesium ion as a tiled 3D asset via ion's REST flow — the scripted equivalent of the GUI-only "Share to Cesium ion" button |
 | `publish_nira.py` | Uploads one export to Nira through the official `niraclient` (Enterprise plan required), building the explicit typed file list Nira's docs recommend |
 | `modules/camera_registry.py` | Single source of truth for the four physical rig cameras (lens, calibration groups, XMP content, filename families) |
-| `geoall.py` | Standalone georeferencing (ROV nav CSV → RealityScan flight logs). The most up-to-date georeferencing implementation. |
-| `poses2flightlog.py` | Post-alignment: rewrite camera locations back to UTM from the computed poses (XMP sidecars), producing a refined flight log + per-image nav-error QC |
-| `decimator.py` | Copy a percentage of images to a new folder (dataset thinning) |
+| `georeference_survey.py` | Standalone georeferencing (ROV nav CSV → RealityScan flight logs), including multiprocessing image copying. |
+| `poses_to_flight_log.py` | Post-alignment: rewrite camera locations back to UTM from the computed poses (XMP sidecars), producing a refined flight log + per-image nav-error QC |
+| `decimate_images.py` | Copy a percentage of images to a new folder (dataset thinning) |
 | `timestamp_rename.py` | Rename `cam*_TIMESTAMP.jpg` → `TIMESTAMP_cam*.jpg` and validate JPEG integrity (was the misnamed `masking.py` — it never masked; renamed 2026-08-07) |
 | `organize_by_date.py` | Sort images into per-date subfolders (was `test.py`) |
 | `module_base/` | Framework: `RSModule` base class, `Parameter`, `SettingsStore` |
 | `modules/realityscan_interface/` | Everything that talks to RealityScan — see below |
 | `modules/extract_images/`, `modules/georeference/`, `modules/preprocess_images/`, `modules/image_batcher/` | Pipeline modules used by `main.py` |
-| `archive/colmap/` | Retired COLMAP scripts (reference only) — the live COLMAP line is the separate `colmap_studio` project; see `docs/COLMAP_CROSSOVER.md` |
+| `tests/` | Offline pytest regression tests and fixtures |
+| `scripts/campaigns/` | Dataset-specific ON2026 drivers, the calibration ladder, and the overnight workbench campaign |
+| `scripts/validation/` | Explicit manual checks: zone_9 native validation, preprocessing checks, and the Cesium depth probe |
+| `scripts/analysis/score_yellow_pixels.py` | Image analysis for yellow-pixel contamination; writes scores without changing images |
+| `docs/validation/`, `docs/validation/results/` | Dated experiment plans and preserved result evidence |
 | `flightlogs.xml`, `sensorsdb.xml` | RealityScan reference data |
 | `docs/code-review-2026-07.md` | What the first-machine validation changed and why (read before trusting older assumptions about the CLI layer) |
+
+The canonical utility names are `georeference_survey.py`, `decimate_images.py`,
+and `poses_to_flight_log.py`. The former names `geoall.py`, `decimator.py`, and
+`poses2flightlog.py` remain command and import aliases. Existing settings
+sections keep those old keys, so saved answers continue to work.
+
+Manual validation is separate from pytest. For a small preprocessing check
+on copies of your images, use:
+
+```powershell
+& ".\.venv\Scripts\python.exe" scripts/validation/check_preprocessing.py --dataset "D:\survey\images" --work-dir "D:\survey_preprocess_check"
+```
+
+The supplied work directory must be empty and separate from the source;
+omitting it uses a temporary directory. The native zone_9 runner is
+`scripts/validation/run_zone9_validation.bat` (or the adjacent `.py` file).
+It runs RealityScan alignment; `probe_cesium_depth.py` creates a real Cesium
+probe asset. Campaign drivers live under `scripts/campaigns/` and retain their
+campaign-specific paths and settings.
+
+Retired scripts are excluded from the published tree. Their
+[original archive snapshot](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive)
+remains available for historical citations; a local `archive/` is ignored.
+The dated plans in `docs/validation/` retain the filenames and commands used
+when those experiments were recorded. Current commands use the layout above.
 
 ### Preprocessing default
 
 `Preprocess Images` applies CLAHE (clip 2.0, 8×8 tiles, L channel in LAB)
 to copies under `<output>/preprocessed_images`, leaving the originals in
-place — align on the processed copies, texture from the originals. The
-default was A/B-measured on a zone_9 400-image subset (2026-07-21,
-`testing/run_zone9_tests.py`): baseline registered 0% (no component at
+place. The current workflow uses those processed copies for both alignment
+and texturing. The default was A/B-measured on a zone_9 400-image subset (2026-07-21,
+`scripts/validation/run_zone9_validation.py`): baseline registered 0% (no component at
 all), CLAHE 2.0/8×8 registered 59.8% and beat every neighboring clip/tile
 setting; gray-world white balance *reduced* registration (~34%) and is
 off by default.
 
 ### Known duplication
 
-`geoall.py` (standalone) and `modules/georeference/georeference_images.py`
+`georeference_survey.py` (standalone) and `modules/georeference/georeference_images.py`
 (pipeline module) implement the same georeferencing workflow. The standalone
-is the newer, faster implementation (multiprocessing + binary-search
-timestamp matching); the module is the version wired into `main.py`. Prefer
-`geoall.py` for standalone runs. When the module needs improvements, port
-them from `geoall.py` rather than diverging further.
+uses multiprocessing for image copying; the module is wired into `main.py`.
+Both share the camera and mount registries, and regression tests check their
+orientation and offset calculations agree. Use `georeference_survey.py` for
+standalone runs and keep the shared behavior consistent when either workflow
+changes.
 
 ## Persisted settings (`rs_settings.json`)
 
@@ -161,21 +257,22 @@ Reserved section `"realityscan"`:
 All keys are optional; omit the file entirely for auto-detection and
 defaults.
 
-## How RealityScan execution works (read before touching it)
+## RealityScan execution
 
-**Every** RealityScan run goes through one execution layer —
+RealityScan workflows use a shared execution layer —
 `modules/realityscan_interface/realityscan_cli.py` on the Python side and
 the shared `:run` pattern in the `RS_CLI/Scripts/*.bat` workflow scripts.
-Do not add new code that shells out to RealityScan directly; reuse this
-layer so monitoring and race-condition handling stay uniform.
+Developer rules for this layer are in [Architecture](ARCHITECTURE.md) and
+[Contributing](CONTRIBUTING.md).
 
-The design (informed by hard-won lessons — see
-[Lessons learned](#lessons-learned)):
+Execution follows these rules:
 
-1. `startRealityScan.bat` boots one persistent **headless** instance named
+1. `startRealityScan.bat` boots one persistent instance named
    `RS1` (`-setInstanceName`), or attaches to it with a fresh scene if it
    already exists, and waits for readiness by polling `-getStatus` (bounded
-   at 120 s).
+   at 120 s). Python drivers default to a visible instance; set
+   `RS_HEADLESS=1` or `realityscan.headless=true` for headless operation.
+   Hand-run batch workflows default to headless when that variable is absent.
 2. The instance is started with RealityScan's built-in monitoring hooks
    (all marker files are namespaced per instance so parallel instances
    stay isolated):
@@ -275,17 +372,11 @@ of corrupting each other.
 Collected from prior iterations of this repo (some of which only survive in
 git history — see `git log`):
 
-- **Delegation pickup race**: `-waitCompleted` returns prematurely when
-  called before the instance has picked up the queued command. Mitigation
-  (the `:run` pattern): `-delegateTo` → grace delay → `-waitCompleted`
-  twice with a second grace between them. Never infer completion from
-  `results_<instance>.log` growth — RealityScan 2.2 emits heartbeat
-  processes through the same trigger, so a log-growth gate races ahead of
-  a running `-align` (that check existed and was removed). The results
-  log is history/diagnostics; `errors_<instance>.txt` is the abort
-  trigger.
+- **Delegation pickup race**: use the delegation and completion checks
+  described in [RealityScan execution](#realityscan-execution).
 - **No operation timeouts**: 10+ hour alignments are normal on these
-  datasets. Only *startup* (120 s) and *shutdown* (300 s) are bounded.
+  datasets. Startup and shutdown verification are bounded; the defaults live
+  in `modules/realityscan_interface/realityscan_cli.py` and can be overridden in settings.
 - **Never detect completion by process name** — see the
   `RealityCapture.exe`/`RealityScan.exe` bug above.
 - **Suppress dialogs for unattended runs**: `-silent` + `appAutoSaveMode=false`;
@@ -300,25 +391,24 @@ git history — see `git log`):
 
 ## Typical workflows
 
-**WildScan** — the interactive console over the whole pipeline (Wild
-Technology branding, cross-platform; RealityScan stages run on Windows,
-inspection/exports review works anywhere). It censuses a results folder,
-shows every stage as done/partial/pending, previews exactly what a stage
-will execute (command, settings, estimate) before launching it through the
-canonical drivers, streams progress, and browses the final components with
-their measured scales, models and exports:
+**WildScan** is the interactive console over the whole pipeline. It reviews
+the artifacts in a results folder, offers stages according to their status,
+collects parameters, and launches the canonical drivers. During a run it
+streams logs and progress; workspace status summarizes recorded component
+scales, models, and exports. See the [dataset guide](docs/ANALYZE_A_DATASET.md)
+for what those records establish and what still needs inspection.
 
-```
-wildscan F:/na156_h2024_v2
+```powershell
+& ".\.venv\Scripts\python.exe" -m wildscan "F:/na156_h2024_v2"
 ```
 
 Deliverable export (OBJ by parts per Nira guidance, FBX by parts, ultra-dense
 colored PLY) and publishing:
 
-```
-modules\realityscan_interface\RS_CLI\Scripts\ExportDeliverables.bat "D:\dive\final_assembly\assembly\Assembly.rsproj" "D:\dive\exports" "D:\dive\exports\components.names"
-python publish_cesium.py --name "IN-401 hull" --dir D:/dive/exports/<comp>/obj --input-crs EPSG:32604
-python publish_nira.py --name "IN-401 hull" --dir D:/dive/exports/<comp>/obj --niraclient C:/tools/niraclient
+```powershell
+& ".\.venv\Scripts\python.exe" modules/export_deliverables.py --project "D:\dive\merged\assembly\Merged.rsproj" --exports "D:\dive\exports" --names "D:\dive\exports\components.names"
+& ".\.venv\Scripts\python.exe" publish_cesium.py --name "IN-401 hull" --dir "D:\dive\exports\COMPONENT\obj" --verify
+& ".\.venv\Scripts\python.exe" publish_nira.py --name "IN-401 hull" --dir "D:\dive\exports\COMPONENT\obj" --niraclient "C:/tools/niraclient"
 ```
 
 (Cesium ion and Nira both recommend the OBJ; Nira scripted upload needs an
@@ -327,16 +417,21 @@ LAZ/E57 only.)
 
 Full interactive pipeline (extraction through per-zone alignment):
 
-```
-python main.py
+```powershell
+& ".\.venv\Scripts\python.exe" main.py
 ```
 
 Merge the per-zone components, then build the model on the merged result:
 
+```powershell
+& ".\.venv\Scripts\python.exe" merge_zones.py --components_root "D:\dive\aligned_components" --images_root "D:\dive\batched_images_by_zone" --output "D:\dive\merged"
+& ".\.venv\Scripts\python.exe" run_models.py --workspace "D:\dive"
 ```
-python merge_zones.py --components_root D:\dive\aligned_components --images_root D:\dive\batched_images_by_zone --output D:\dive\merged
-modules\realityscan_interface\RS_CLI\Scripts\GenerateModel.bat "D:\dive\merged\attempt_merge_georef\Merged.rsproj" "Merged"
-```
+
+Export the modelled assembly through `modules/export_deliverables.py` with a
+component-name list derived from `merged/merge_report.json`. The
+[command-line setup instructions](docs/SETUP-AND-RUN.md#63-the-stages-on-the-command-line)
+show how to create that list and run the export driver.
 
 ### Finishing a model in a running instance
 
@@ -374,8 +469,8 @@ AlignZone.bat "D:\zones\zone_01" "D:\dive\aligned_components\zone_01" "D:\zones\
 
 Standalone georeferencing:
 
-```
-python geoall.py
+```powershell
+& ".\.venv\Scripts\python.exe" georeference_survey.py
 ```
 
 All prompts default to your previous answers (see `rs_settings.json`).
