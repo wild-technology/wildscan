@@ -3,7 +3,7 @@
 
 Cesium ion renders every height as metres above the WGS84 ELLIPSOID
 (CesiumJS ``Cartographic.height`` is defined that way). This pipeline's
-vertical is nothing of the kind: ``geoall.py`` writes ``-abs(kalman_depth)``
+vertical is nothing of the kind: ``georeference_survey.py`` writes ``-abs(kalman_depth)``
 into the flight log's ``Alt`` column, so the Z that reaches an exported model
 is depth below the instantaneous SEA SURFACE - an orthometric height, referred
 to the geoid. Handing that number to ion unchanged sinks or floats the whole
@@ -436,7 +436,7 @@ def geoid_separation(lon: float, lat: float,
             f'no {model} geoid transformation is available: {exc}. PROJ needs '
             f'the geoid grid (EGM2008 -> us_nga_egm08_25.tif, ~80 MB from '
             'cdn.proj.org). Enable network access with PROJ_NETWORK=ON, or '
-            'install the grid with "projsync --file us_nga_egm08_25.tif". '
+            'install the grid with "python -m pyproj sync --file us_nga_egm08_25.tif". '
             'Refusing to continue: without the grid PROJ silently applies a '
             'ZERO correction and the asset would be placed off by the local '
             'undulation (up to ~70 m in the Solomon Sea).') from exc
@@ -465,7 +465,7 @@ def msl_to_ellipsoidal(depth_msl: float, lon: float, lat: float,
     """(ellipsoidal height, N) for a sea-surface-referenced height.
 
     ``depth_msl`` is the pipeline's own convention: negative metres DOWN from
-    the sea surface, exactly as ``geoall.py`` writes ``ALTITUDE_EST``.
+    the sea surface, exactly as ``georeference_survey.py`` writes ``ALTITUDE_EST``.
     """
     separation = geoid_separation(lon, lat, model)
     return depth_msl + separation, separation

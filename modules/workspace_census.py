@@ -30,10 +30,15 @@ a workspace is instant even on a NAS.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+from .align_fingerprint import (component_input_fingerprint,
+                                model_input_fingerprint, project_state)
+from .harvest_guard import assert_harvestable
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".heif"}
 
@@ -179,7 +184,19 @@ class Workspace:
 
     # ------------------------------------------------------------ detection
     def detect(self) -> dict[str, StageStatus]:
-        return {key: getattr(self, f"_detect_{key}")() for key in STAGE_ORDER}
+        statuses = {key: getattr(self, f"_detect_{key}")() for key in STAGE_ORDER}
+        interrupted = _load_json(self.root / 'interrupted_stage.json')
+        stages = interrupted.get('stages')
+        if interrupted.get('cancelled') is True and isinstance(stages, list):
+            for key in stages:
+                if not isinstance(key, str) or key not in statuses:
+                    continue
+                prior = statuses[key]
+                statuses[key] = StageStatus(
+                    key, 'blocked' if prior.status in ('pending', 'blocked')
+                    else 'partial', 'interrupted run - retry required',
+                    [prior.summary, *prior.details])
+        return statuses
 
     def _detect_extract(self) -> StageStatus:
         n = _count_images(self.raw_images)
@@ -222,12 +239,74 @@ class Workspace:
         return StageStatus("georeference", "pending", "no flight_log_*_UTM.txt")
 
     def _detect_preprocess(self) -> StageStatus:
-        n = _count_images(self.preprocessed)
-        if n:
-            return StageStatus("preprocess", "done",
-                               f"{n:,} CLAHE images in preprocessed_images/")
-        return StageStatus("preprocess", "pending",
-                           "not run (align falls back to raw imagery)")
+        """Check completion and file metadata; the producer verifies SHA.
+
+        The census stays inexpensive for image trees on a NAS. Content edits
+        preserving both size and mtime require the producer's full check.
+        """
+        marker = self.root / 'preprocessed_images.manifest.json'
+        manifest = _load_json(marker)
+        try:
+            if self.preprocessed.is_symlink() or self.preprocessed.is_junction():
+                raise RuntimeError('preprocessed_images is a directory alias')
+            assert_harvestable(str(self.preprocessed), logging.getLogger(__name__))
+            leaves = [Path(root) / name
+                      for root, _dirs, files in os.walk(self.preprocessed)
+                      for name in files]
+            if any(path.is_symlink() or path.is_junction()
+                   for path in leaves):
+                raise RuntimeError('preprocessed_images contains a file alias')
+            images = {os.path.relpath(path, self.preprocessed): path
+                      for path in leaves if path.suffix.lower() in IMAGE_EXTS}
+            n = len(images)
+            records = manifest.get('images')
+            settings = manifest.get('settings')
+            if not (manifest.get('schema') == 1
+                    and manifest.get('status') == 'complete'
+                    and isinstance(records, dict) and records
+                    and isinstance(settings, dict)):
+                if n or marker.exists():
+                    return StageStatus('preprocess', 'partial',
+                                       'preprocessing has no verified completion - retry required')
+                return StageStatus('preprocess', 'pending',
+                                   'not run (align falls back to raw imagery)')
+            input_dir = settings.get('input_dir')
+            if not isinstance(input_dir, str) or not os.path.isdir(input_dir):
+                return StageStatus('preprocess', 'partial',
+                                   'preprocessing source is unavailable - retry required')
+            source_root = os.path.normcase(os.path.realpath(input_dir))
+            output_root = os.path.normcase(os.path.realpath(self.preprocessed))
+            try:
+                common = os.path.commonpath((source_root, output_root))
+            except ValueError:
+                common = None
+            if common in (source_root, output_root):
+                raise RuntimeError('preprocessing input and output trees overlap')
+            sources = {os.path.relpath(Path(root) / name, input_dir):
+                       Path(root) / name
+                       for root, _dirs, files in os.walk(input_dir)
+                       for name in files if Path(name).suffix.lower()
+                       in ('.jpg', '.jpeg', '.png')}
+            if set(records) != set(sources) or set(records) != set(images):
+                return StageStatus('preprocess', 'partial',
+                                   'preprocessing image membership changed - retry required')
+            for key, record in records.items():
+                if not isinstance(record, dict):
+                    return StageStatus('preprocess', 'partial',
+                                       'preprocessing provenance is invalid - retry required')
+                for kind, path in (('source', sources[key]), ('output', images[key])):
+                    signature = record.get(kind)
+                    stat = path.stat()
+                    if not (isinstance(signature, dict) and signature.get('sha256')
+                            and signature.get('size') == stat.st_size
+                            and signature.get('mtime_ns') == stat.st_mtime_ns):
+                        return StageStatus('preprocess', 'partial',
+                                           f'preprocessing {kind} changed - retry required')
+            return StageStatus('preprocess', 'done',
+                               f'{n:,} verified CLAHE images in preprocessed_images/')
+        except (OSError, RuntimeError) as exc:
+            return StageStatus('preprocess', 'blocked',
+                               f'cannot verify preprocessing: {exc}')
 
     def _detect_batch(self) -> StageStatus:
         if not self.batched.is_dir():
@@ -330,30 +409,65 @@ class Workspace:
         return StageStatus("merge", "partial", f"{merge.name}: no finals yet")
 
     def _detect_model(self) -> StageStatus:
-        done: list[str] = []
+        recorded: set[str] = set()
         for name in MODEL_REPORT_NAMES:
             report = _load_json(self.root / name)
             for m in _records(report, "models", "components"):
-                if m.get("success"):
-                    done.append(m.get("component"))
-        done = [d for d in done if d]
+                if m.get('success') is True and isinstance(m.get('component'), str):
+                    recorded.add(m['component'])
+        report, finals, verified = self._model_completion()
+        dated = report.get('dated_copy')
+        if (finals and set(verified) == set(finals) and isinstance(dated, dict)
+                and dated.get('success') is True):
+            return StageStatus('model', 'done',
+                               f'{len(verified)} of {len(finals)} components modelled',
+                               sorted(key.split('/')[-1] for key in verified))
+        if recorded or _records(report, 'models'):
+            return StageStatus('model', 'partial',
+                               f'{len(verified)} of {len(finals)} components verified '
+                               'for the current assembly - retry required', sorted(recorded))
+        return StageStatus('model', 'pending', 'no model reports')
+
+    def _model_completion(self) -> tuple[dict, dict, dict]:
+        """Current model records shared by the stage census and result rows."""
         merge = self.latest_merge()
-        finals = []
-        if merge:
-            rep = _load_json(merge / "merge_report.json")
-            finals = [c.get("key", "").split("/")[-1]
-                      for rec in _records(rep, "clusters")
-                      for c in _records(rec, "final_components")]
-        if done and finals and set(finals) <= set(done):
-            return StageStatus("model", "done",
-                               f"{len(done)} of {len(finals)} components "
-                               "modelled", sorted(done))
-        if done:
-            missing = sorted(set(finals) - set(done))
-            return StageStatus("model", "partial",
-                               f"{len(done)} modelled, missing: "
-                               f"{', '.join(missing) or '?'}", sorted(done))
-        return StageStatus("model", "pending", "no model reports")
+        project = self.assembly_project()
+        finals = {}
+        verified = {}
+        report = _load_json(self.root / 'models_report.json')
+        if merge and project:
+            rep = _load_json(merge / 'merge_report.json')
+            finals = {c['key']: c for rec in _records(rep, 'clusters')
+                      for c in _records(rec, 'final_components')
+                      if isinstance(c.get('key'), str) and c['key']}
+            logs = sorted(merge.glob('flight_log*_UTM.txt')) + \
+                sorted((merge / 'assembly').glob('flight_log*_UTM.txt'))
+            if logs:
+                from .realityscan_interface.realityscan_cli import METADATA_DIR, SCRIPTS_DIR
+                try:
+                    inputs = model_input_fingerprint(
+                        merge / 'merge_report.json', str(logs[0]),
+                        os.path.join(SCRIPTS_DIR, 'GenerateModel.bat'), METADATA_DIR)
+                    if (report.get('inputs') == inputs
+                            and report.get('project_state') == project_state(project)):
+                        for model in _records(report, 'models'):
+                            key = model.get('component_key')
+                            if (not isinstance(key, str) or key not in finals
+                                    or model.get('mode') != 'workspace'
+                                    or model.get('success') is not True
+                                    or model.get('status') != 'pass'):
+                                continue
+                            saved = model.get('component_input')
+                            current = component_input_fingerprint(
+                                finals[key].get('rsalign', ''), hash_content=False)
+                            if (isinstance(saved, dict) and saved.get('sha256')
+                                    and current['bytes'] is not None
+                                    and all(saved.get(k) == value
+                                            for k, value in current.items())):
+                                verified[key] = model
+                except (OSError, TypeError, ValueError):
+                    pass
+        return report, finals, verified
 
     def _detect_export(self) -> StageStatus:
         if not self.exports.is_dir():
@@ -394,16 +508,61 @@ class Workspace:
         return StageStatus("export", "pending", "exports/ is empty")
 
     def _detect_publish(self) -> StageStatus:
+        from .publish_fingerprint import publication_source_matches
+
         report = _load_json(self.root / "publish_report.json")
         assets = _records(report, "assets")
         if assets:
-            ok = sum(1 for a in assets
-                     if (a.get("cesium") or {}).get("success")
-                     or (a.get("nira") or {}).get("success"))
+            by_component = {a['component']: a for a in assets
+                            if isinstance(a.get('component'), str)
+                            and a['component']}
+            requested = report.get('requested_components')
+            expected = {c for c in requested if isinstance(c, str) and c} \
+                if isinstance(requested, list) else set(by_component)
+            if self.exports.is_dir():
+                expected.update(
+                    c.name for c in self.exports.iterdir()
+                    if c.is_dir() and (c / 'obj').is_dir()
+                    and any(p.is_file() and p.suffix.lower() == '.obj'
+                            and p.stat().st_size > 0
+                            for p in (c / 'obj').iterdir()))
+            configured = report.get('destinations')
+            destinations = {d for d in configured if d in ('cesium', 'nira')} \
+                if isinstance(configured, list) else {
+                    d for a in assets for d in ('cesium', 'nira') if d in a}
+            completed = set()
+            details = []
+            for component in sorted(expected):
+                asset = by_component.get(component, {})
+                outstanding = []
+                for destination in sorted(destinations):
+                    result = asset.get(destination)
+                    if not (isinstance(result, dict)
+                            and result.get('success') is True
+                            and not result.get('dry_run')):
+                        outstanding.append(destination)
+                source = asset.get('source')
+                source_current = (publication_source_matches(
+                    self.exports / component / 'obj', source)
+                    and isinstance(source, dict)
+                    and set(source.get('destinations', [])) == destinations)
+                if not source_current:
+                    outstanding.append('current source export')
+                if destinations and not outstanding and not report.get('dry_run'):
+                    completed.add(component)
+                else:
+                    details.append(f'{component}: outstanding '
+                                   + (', '.join(outstanding) or 'publication'))
+            if len(by_component) != len(assets):
+                details.append('publication report has missing or duplicate '
+                               'component identities')
+            complete = bool(expected) and completed == expected \
+                and len(by_component) == len(assets)
             return StageStatus("publish",
-                               "done" if ok == len(assets) else "partial",
-                               f"{ok} of {len(assets)} asset(s) published",
-                               [a.get("asset_name", "?") for a in assets])
+                               "done" if complete else "partial",
+                               f"{len(completed)} of {len(expected)} "
+                               "component(s) published to all requested "
+                               "destinations", details)
         if self.exports.is_dir() and any(self.exports.iterdir()):
             return StageStatus("publish", "pending",
                                "exports ready - needs CESIUM_ION_TOKEN "
@@ -430,16 +589,15 @@ class Workspace:
                 out[name] = ComponentInfo(
                     key=name, cameras=c.get("camera_count"),
                     scale=v.get("median"), scale_status=v.get("status", ""))
-        for rep_name in MODEL_REPORT_NAMES:
-            rep = _load_json(self.root / rep_name)
-            for m in _records(rep, "models", "components"):
-                name = m.get("component")
-                if name in out and m.get("success"):
-                    out[name].modelled = True
-                    out[name].model_minutes = m.get("duration_min")
-                    if m.get("scale") is not None:
-                        out[name].scale = m.get("scale")
-                        out[name].scale_status = m.get("status", "pass")
+        _, _, verified = self._model_completion()
+        for key, model in verified.items():
+            name = key.split('/')[-1]
+            if name in out:
+                out[name].modelled = True
+                out[name].model_minutes = model.get("duration_min")
+                if model.get("scale") is not None:
+                    out[name].scale = model.get("scale")
+                    out[name].scale_status = model.get("status", "pass")
         if self.exports.is_dir():
             for name, info in out.items():
                 comp_dir = self.exports / name

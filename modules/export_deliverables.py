@@ -24,12 +24,12 @@ Layering note: this module is imported by wildscan (and importable by any
 driver) but imports only module_base + modules code itself - never
 wildscan. The stage passes the workspace-derived paths as arguments.
 
-Usage:
-    py -3.13 modules/export_deliverables.py
-        --project D:/dive/final_assembly/assembly/Assembly.rsproj
-        --exports D:/dive/exports
-        --names   D:/dive/exports/components.names
-        [--log_dir D:/dive/logs]
+Example (PowerShell, from the Git checkout):
+    & "./.venv/Scripts/python.exe" modules/export_deliverables.py `
+        --project "D:/dive/final_assembly/assembly/Assembly.rsproj" `
+        --exports "D:/dive/exports" `
+        --names "D:/dive/exports/components.names" `
+        --log_dir "D:/dive/logs"
 """
 from __future__ import annotations
 

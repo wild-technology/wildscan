@@ -30,12 +30,14 @@ images absent from those components, so the round trip would silently
 lose every orphan image - the precious missing-link candidates this
 stage exists to register. It remains a manual fallback only.
 
-Usage:
-    py -3.13 grow_zone.py --scene <zone .rsproj> --images_root <zone images>
-        [--components_dir <AlignZone exports with manifests>]
-        [--output <dir>] [--min_size 50] [--max_passes 8]
-        [--feature_source 1] [--selection_cmds editsel|legacy]
-        [--lock_anchor] [--skip_global] [--project_label NA156_H2023]
+Example (PowerShell, from the Git checkout):
+    & "./.venv/Scripts/python.exe" grow_zone.py `
+        --scene "D:/dive/aligned_components/zone_1/zone_1.rsproj" `
+        --images_root "D:/dive/batched_images_by_zone/zone_1" `
+        --components_dir "D:/dive/aligned_components/zone_1" `
+        --output "D:/dive/grown/zone_1" --min_size 50 --max_passes 8
+
+See --help for feature-source, selection and checkpoint options.
 
 All prompts default to the previous run's answers (rs_settings.json).
 RS_HEADLESS resolves through the settings store's 'realityscan' section
@@ -65,10 +67,6 @@ from modules.realityscan_interface.realityscan_cli import (
 # Parallel-developed bookkeeping modules (manifest contract schema 1;
 # twin/orphan analysis). Import-guarded so this driver runs - degraded
 # but safely - until they land.
-try:
-    from modules import component_manifest  # type: ignore
-except Exception:  # pragma: no cover - module still in development
-    component_manifest = None
 try:
     from modules import component_analysis  # type: ignore
 except Exception:  # pragma: no cover - module still in development
@@ -184,17 +182,6 @@ def load_contract_manifests(directory: str, logger) -> dict[str, dict]:
     if manifests:
         logger.info('loaded %d component manifests from %s', len(manifests), directory)
     return manifests
-
-
-def try_build_manifests(export_dir: str, zone: str, logger) -> bool:
-    """Growth exports CANNOT rebuild identity manifests: stem-named
-    per-component membership only exists via AlignZone.bat's in-session
-    successive-difference harvest (-exportXMPForSelectedComponent is
-    always ordinal - FINDINGS B10 FINAL FORM). This is an honest no-op
-    kept as the single place that documents WHY refresh is impossible
-    here; post-growth manifests stay approximate until an AlignZone
-    identity pass re-runs on the grown scene."""
-    return False
 
 
 def write_manifest(manifest: dict, directory: str) -> str:
@@ -606,9 +593,9 @@ def main() -> int:
         if accepted:
             baseline = after
             note_exports(export_dir)
-            # Refresh per-component composition from this full export.
-            if try_build_manifests(export_dir, zone, logger):
-                pass
+            # Growth exports cannot rebuild stem identity: it requires
+            # AlignZone's successive-difference harvest. Only manifests
+            # already written beside this export can replace approximations.
             fresh = load_contract_manifests(export_dir, logger)
             if fresh:
                 manifests = fresh
@@ -725,8 +712,6 @@ def main() -> int:
             if accepted:
                 sweep_gain += max(gain, 0)
                 note_exports(export_dir)
-                if try_build_manifests(export_dir, zone, logger):
-                    pass
                 fresh = load_contract_manifests(export_dir, logger)
                 if fresh:
                     # Authoritative composition for the components this
@@ -776,7 +761,6 @@ def main() -> int:
         if final_census:
             final_entry['registered'] = len(final_census)
             baseline |= final_census
-        try_build_manifests(final_dir, zone, logger)
     record(final_entry)
 
     # Component table: every tracked component at its LATEST export

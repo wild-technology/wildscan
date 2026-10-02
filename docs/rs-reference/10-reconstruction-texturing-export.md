@@ -1761,13 +1761,18 @@ file list rather than relying on Nira's auto-detection (its docstring records
 that image auto-detection is unreliable) and pipes it to
 `nira.py asset create <name> photogrammetry`.
 
-**KNOWN DEFECT, unfixed as shipped:** `publish_nira.py`'s sidecar filter is
+**Historical defect (2026-08-04):** `publish_nira.py`'s sidecar filter was
 `SIDECAR = {'.rcinfo'}` — the **legacy** extension. RealityScan 2.2 writes
 `<model>.<ext>.rsInfo`, whose lower-cased suffix is `.rsinfo`, so the info file
-is **silently excluded from the Nira file list** even though the script's own
-docstring says to include it because it carries georeferencing. Fix: accept
+was **silently excluded from the Nira file list** even though the script's own
+docstring said to include it because it carries georeferencing. The required fix was to accept
 both `.rsinfo` and `.rcinfo` [VERIFIED-by-inspection: `publish_nira.py`
 vs the verified export layout in §13.4, 2026-08-04].
+
+The current publisher accepts both suffixes and keeps metadata matching the
+selected models, including a whole-model sidecar for its selected parts.
+It excludes staged Cesium copies and requires a choice when several geometry
+formats coexist [VERIFIED-by-inspection: `publish_nira.build_file_list`].
 
 **The dense PLY deliverable is for local use only** and is explicitly not a
 Nira artifact [VERIFIED-by-inspection: `ExportDeliverables.bat` header].
@@ -1794,7 +1799,7 @@ current tiler** [VERIFIED-as-guidance: `publish_cesium.py` docstring,
 publish path that consumes it.)
 
 **[CONTRADICTED — the long-standing "Cesium ignores depth" belief is wrong.]**
-A live probe (ion asset `5171554`, `testing/probe_cesium_depth.py`,
+A live probe (ion asset `5171554`, `scripts/validation/probe_cesium_depth.py`,
 2026-08-31) uploaded a 435-byte OBJ box with
 `position=[133.634688, 3.584574, -512.46]` and read it back from the asset's
 own `tileset.json` at **h = −512.46 m, error −0.000 m**. ion neither refuses
@@ -1810,7 +1815,7 @@ sea-surface asset on this account:
 2. **Even when placement IS carried, the vertical datum is wrong.** The
    project CRS is 2D (`+proj=utm +zone=53 +datum=WGS84 +units=m +no_defs`) and
    declares no vertical datum, while the Z it carries is the flight log's
-   `ALTITUDE_EST` — negative metres below the **sea surface** (`geoall.py:320`
+   `ALTITUDE_EST` — negative metres below the **sea surface** (`georeference_survey.py:320`
    writes `-abs(kalman_depth)`). Cesium reads every height as metres above the
    **WGS84 ellipsoid**. Nothing in the chain converts between them, so the
    asset sinks or floats by the geoid undulation N: **+72.69 m** at the NA168
@@ -1866,7 +1871,8 @@ and returns Z **unchanged**, having silently chosen a "ballpark vertical
 transformation". Every transformer in `modules/cesium_placement.py` passes
 `allow_ballpark=False`, which raises instead. The EGM2008 grid
 (`us_nga_egm08_25.tif`, ~80 MB) comes from cdn.proj.org and needs
-`PROJ_NETWORK=ON` or a local `projsync`.
+`PROJ_NETWORK=ON` or a local grid installed with
+`python -m pyproj sync --file us_nga_egm08_25.tif`.
 
 ```bat
 py -3.13 publish_cesium.py --name "IN-401 hull" ^
@@ -1901,6 +1907,16 @@ It resolves the cruise flight log itself and forwards it as the INDEPENDENT
 nav check on each mesh placement, and runs every Cesium publish with
 `--verify`. Results land in `<workspace>/publish_report.json`
 [VERIFIED-by-inspection: `publish_batch.py`].
+
+Dry runs write `publish_plan.json` and preserve prior publication evidence.
+The batch passes explicit geometry choices: whole OBJ for Cesium, split OBJ
+for Nira. Reports record every requested component and destination plus the
+selected source hashes and metadata. Completion requires every requested
+command to succeed against unchanged sources; changed or missing source files
+leave the workspace publication status partial. Census compares file size and
+modification time to keep refreshes cheap; edits preserving both metadata
+values require fresh publication evidence. Nira's command success records
+submission, while its optional `--wait` controls remote processing.
 
 ---
 
@@ -2034,7 +2050,7 @@ assembly — the longest-standing open item, open since 2026-07-23, with operato
 GUI screenshots as the interim proxy), and **`componentMedianError` /
 `componentMeanError` are the candidate answer to U14** (per-component
 reprojection error headless, needed for twin-keeper choice)
-[VERIFIED-as-candidate: `testing/ALIGN_MERGE_HARDENING_PLAN.md` U7/U14].
+[VERIFIED-as-candidate: `docs/validation/alignment_merge_hardening_plan.md` U7/U14].
 [OPEN] — the blocker is that `-exportReport` has **never been run here**, and
 the sibling `-exportRegistration` is known to block forever headless without a
 params file, so the cell explicitly flags a blocking risk. Note that both cells
@@ -2217,7 +2233,7 @@ whose head and tail belonged to different runs
 ### 21.1 Minimal: aligned project → high model → textured OBJ
 
 ```bat
-set "MD=C:\Users\jonat\Desktop\CoyoteThings\wildscan\modules\realityscan_interface\RS_CLI\Metadata"
+set "MD=C:\tools\wildscan\modules\realityscan_interface\RS_CLI\Metadata"
 
 RealityScan.exe -load "F:\na156_h2024_v2\aligned\zone_1.rsproj" ^
   -selectMaximalComponent ^
@@ -2276,15 +2292,14 @@ authoring it in PowerShell 5.1 with `Set-Content -Encoding utf8` writes a BOM
 and silently invalidates the first component.
 
 ```bat
-cmd /c modules\realityscan_interface\RS_CLI\Scripts\ExportDeliverables.bat ^
-    "F:\na156_h2024_v2\final_assembly\assembly\H2024_Final_Assembly.rsproj" ^
-    "F:\na156_h2024_v2\exports" ^
-    "F:\na156_h2024_v2\exports\components.names"
+python modules/export_deliverables.py ^
+    --project "F:\na156_h2024_v2\final_assembly\assembly\H2024_Final_Assembly.rsproj" ^
+    --exports "F:\na156_h2024_v2\exports" ^
+    --names "F:\na156_h2024_v2\exports\components.names"
 
-set CESIUM_ION_TOKEN=<token with assets:write,assets:read>
-set NIRACLIENT_DIR=C:\tools\niraclient
-py -3.13 publish_batch.py --workspace F:\na156_h2024_v2 ^
-    --prefix "IN-401" --input-crs EPSG:32604
+set "CESIUM_ION_TOKEN=YOUR_TOKEN"
+set "NIRACLIENT_DIR=C:\tools\niraclient"
+python publish_batch.py --workspace F:\na156_h2024_v2 --prefix "IN-401"
 ```
 
 Note the known defect in the PLY step (§13.7) before running the export

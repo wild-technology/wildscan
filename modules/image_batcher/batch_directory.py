@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ntpath
 import os
 import shutil
 import sys
@@ -23,6 +24,7 @@ from module_base.rs_module import RSModule
 from module_base.parameter import Parameter
 from module_base.settings_store import SettingsStore
 from ..flight_logs import find_flight_log
+from ..align_fingerprint import sha256_file
 from .. import camera_registry
 from .. import image_exts
 
@@ -444,6 +446,9 @@ class BatchDirectory(RSModule):
                 return None
 
             df = df.dropna(subset=['x', 'y'])
+            if not np.isfinite(df[['x', 'y']].to_numpy(dtype=np.float64)).all():
+                self.logger.error('Flight log contains nonfinite X/Y coordinates')
+                return None
             # Altitude column for Z-aware clustering (batch_use_z). Kept as a
             # plain 'z' column - geometry stays 2D so every existing plot and
             # geometry.x/y consumer is untouched. Missing/blank alt -> 0.
@@ -451,6 +456,9 @@ class BatchDirectory(RSModule):
                             if c in df.columns), None)
             df['z'] = (pd.to_numeric(df[alt_col], errors='coerce').fillna(0.0)
                        if alt_col else 0.0)
+            if not np.isfinite(df['z'].to_numpy(dtype=np.float64)).all():
+                self.logger.error('Flight log contains nonfinite altitude coordinates')
+                return None
             geometry = [Point(float(x), float(y)) for x, y in zip(df.x, df.y)]
             gdf = gpd.GeoDataFrame(df, geometry=geometry)
 
@@ -827,7 +835,7 @@ class BatchDirectory(RSModule):
 
     @staticmethod
     def __index_files(input_dir):
-        """One walk over the input tree: filename -> full path, and
+        """One walk over the input tree: filename -> candidate paths, and
         stem -> filename for extension-mismatch diagnostics. Replaces the
         previous per-file os.walk (O(images x tree size)).
 
@@ -835,15 +843,39 @@ class BatchDirectory(RSModule):
         log naming `C231C0001.JPG` against `C231C0001.jpg` on disk used to
         match nothing and produce zone folders holding zero images
         (audit 2026-08-07)."""
-        by_name: dict[str, str] = {}
+        by_name: dict[str, list[str]] = {}
         by_stem: dict[str, str] = {}
+        by_path: dict[str, str] = {}
         all_names: list[str] = []
         for root, _dirs, filenames in os.walk(input_dir):
             for fn in filenames:
                 all_names.append(fn)
-                by_name.setdefault(fn.lower(), os.path.join(root, fn))
+                path = os.path.abspath(os.path.join(root, fn))
+                by_name.setdefault(fn.lower(), []).append(path)
+                by_path[os.path.normcase(path)] = path
                 by_stem.setdefault(os.path.splitext(fn)[0].lower(), fn)
-        return by_name, by_stem, all_names
+        return by_name, by_stem, all_names, by_path
+
+    @staticmethod
+    def _resolve_source_file(file, input_dir, file_index):
+        """Resolve within the selected source tree, preserving exact paths.
+
+        Relocated logs may fall back to a basename only when it identifies
+        one source file. A path outside this tree cannot switch a processed
+        image run back to the raw originals.
+        """
+        raw = str(file)
+        candidate = os.path.abspath(os.path.join(input_dir, raw))
+        exact = file_index[3].get(os.path.normcase(candidate))
+        if exact is not None:
+            return exact
+        matches = file_index[0].get(ntpath.basename(raw).lower(), [])
+        if len(matches) > 1:
+            raise ValueError(
+                f"ambiguous source basename for '{raw}': "
+                + ', '.join(matches)
+                + '. Name the intended path within the selected input tree.')
+        return matches[0] if matches else None
 
     def __copy_files(self, input_dir, batch_folder_dir, files, file_index=None):
         """Copy files to camera-specific subfolders and generate XMP sidecars.
@@ -857,7 +889,7 @@ class BatchDirectory(RSModule):
         """
         if file_index is None:
             file_index = self.__index_files(input_dir)
-        by_name, by_stem = file_index[0], file_index[1]
+        by_stem = file_index[1]
         copied = 0
         missing = 0
 
@@ -870,9 +902,9 @@ class BatchDirectory(RSModule):
         claimed: dict[str, str] = {}
         for file in files:
             raw = str(file)
-            key = os.path.basename(raw).lower()
+            key = ntpath.basename(raw).lower()
             prior = claimed.setdefault(key, raw)
-            if prior.lower() != raw.lower():
+            if ntpath.normcase(ntpath.normpath(prior)) != ntpath.normcase(ntpath.normpath(raw)):
                 raise ValueError(
                     f"flight-log basename collision: '{prior}' and '{raw}' "
                     f"both map to '{key}' - basename lookup cannot tell "
@@ -882,8 +914,8 @@ class BatchDirectory(RSModule):
             # Basename-normalized row name: the lookup key, the copied
             # file's name, and the sidecar stem (an absolute row must
             # never be os.path.join'd - it would swallow camera_dir).
-            name = os.path.basename(str(file))
-            file_path = by_name.get(name.lower())
+            name = ntpath.basename(str(file))
+            file_path = self._resolve_source_file(file, input_dir, file_index)
 
             if file_path is None:
                 missing += 1
@@ -904,7 +936,19 @@ class BatchDirectory(RSModule):
             os.makedirs(camera_dir, exist_ok=True)
 
             output_path = os.path.join(camera_dir, name)
-            if not os.path.exists(output_path):
+            if os.path.exists(output_path):
+                try:
+                    linked = (not os.path.islink(file_path) and not os.path.islink(output_path)
+                              and os.path.samefile(file_path, output_path))
+                    source_digest = None if linked else sha256_file(file_path)
+                    if not linked and (source_digest is None
+                                       or source_digest != sha256_file(output_path)):
+                        raise ValueError(
+                            f'Existing batched image does not match selected source: '
+                            f'{output_path} != {file_path}. Use a fresh batch output directory.')
+                except OSError as exc:
+                    raise ValueError(f'Cannot verify reused image {output_path}: {exc}') from exc
+            else:
                 shutil.copy(file_path, output_path)
 
             # Optionally generate XMP sidecar with camera calibration priors
@@ -991,7 +1035,7 @@ class BatchDirectory(RSModule):
                                  'tree; XMP sidecars are retired - '
                                  'docs/FLIGHTLOG_ARCHITECTURE.md)')
         elif flight_log_df is not None and any(
-                os.path.isabs(str(n)) for n in flight_log_df.index[:50]):
+                ntpath.isabs(str(n)) for n in flight_log_df.index):
             # A full-path master log zoned into COPY mode would write zone
             # logs whose rows name the POOL files while the scenes add the
             # zone COPIES - silently reintroducing the split-identity
@@ -1032,14 +1076,10 @@ class BatchDirectory(RSModule):
                 # zone flight log below. Rows that resolve nowhere are
                 # counted missing AND dropped from the log - a log row
                 # naming an absent image fails the RS import (err:18002).
-                by_name = file_index[0]
                 path_of = {}
                 zone_missing = 0
                 for file in unique_zone_files:
-                    if os.path.isabs(str(file)):
-                        p = file if os.path.isfile(file) else None
-                    else:
-                        p = by_name.get(str(file).lower())
+                    p = self._resolve_source_file(file, input_dir, file_index)
                     if p is None:
                         zone_missing += 1
                         if self._missing_example is None:

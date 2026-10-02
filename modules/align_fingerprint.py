@@ -1,6 +1,6 @@
 """Per-zone alignment-input fingerprint (PRODUCT_READINESS must-fix 2).
 
-One mechanism, three closures (persona + rigor audits, 2026-08-08):
+Records the alignment inputs needed for retries and downstream verification:
 - a RETRY after a settings/nav change was messaged identically to a
   same-settings retry - nothing on disk recorded which inputs built a
   component (align had no equivalent of the batcher's batch_inputs.json);
@@ -25,6 +25,9 @@ import json
 import os
 import subprocess
 import time
+from pathlib import Path
+
+from module_base.scene_checkpoint import scene_bundle
 
 from .flight_logs import utm_zone_from_flight_log_name
 
@@ -42,6 +45,58 @@ def sha256_file(path: str | None) -> str | None:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def project_state(project: Path) -> dict:
+    """Scene SHA plus companion-file paths, sizes and modification times.
+
+    Native blobs use an inventory rather than repeated multi-GB hashing.
+    Runtime locks are excluded; edits that preserve size and timestamps are
+    outside this lightweight scene check.
+    """
+    files = []
+    for bundle_path in scene_bundle(str(project)):
+        if not os.path.isdir(bundle_path):
+            continue
+        for root, _dirs, names in os.walk(bundle_path):
+            for name in sorted(names):
+                if name.endswith('.lock'):
+                    continue
+                path = Path(root) / name
+                stat = path.stat()
+                files.append({'path': str(path.relative_to(project.parent)),
+                              'bytes': stat.st_size, 'mtime_ns': stat.st_mtime_ns})
+    return {'path': str(project.resolve()), 'sha256': sha256_file(str(project)),
+            'files': sorted(files, key=lambda entry: entry['path'])}
+
+
+def model_input_fingerprint(merge_report: Path, flight_log: str,
+                            workflow: str, metadata_dir: str) -> dict:
+    """Shared content identity for model execution and workspace inspection."""
+    return {
+        'merge_report': sha256_file(str(merge_report)),
+        'flight_log': sha256_file(flight_log),
+        'workflow': sha256_file(workflow),
+        'settings': {path.name: sha256_file(str(path))
+                     for path in sorted(Path(metadata_dir).glob('*.xml'))},
+    }
+
+
+def component_input_fingerprint(path: str, *, hash_content: bool = True) -> dict:
+    """Hash immutable inputs for execution; inspect large blobs by metadata.
+
+    Census omits the rsalign hash but compares its path, size and mtime, and
+    hashes the small manifest. Full content verification remains in the model
+    driver before a recorded success may authorize skipping a component.
+    """
+    stat = os.stat(path) if path and os.path.isfile(path) else None
+    identity = {'path': str(Path(path or '').resolve()),
+                'bytes': None if stat is None else stat.st_size,
+                'mtime_ns': None if stat is None else stat.st_mtime_ns,
+                'manifest': sha256_file((path or '') + '.manifest.json')}
+    if hash_content:
+        identity['sha256'] = sha256_file(path)
+    return identity
 
 
 def _repo_sha() -> str | None:

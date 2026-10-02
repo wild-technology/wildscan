@@ -1,5 +1,11 @@
 # Code review & first-machine validation — July 2026
 
+> **Historical validation record.** Commands, predecessor commits, and source
+> line numbers describe the July 2026 implementation. Personal home-directory
+> prefixes are generalized below; the path layout and observed failures are
+> preserved. For the current installation route, use
+> [Setup and run](SETUP-AND-RUN.md).
+
 What changed in the RealityScan CLI layer, why each change was made, and
 what the evidence was. Covers commits `d360002` through `724814a`
 (2026-07-21/22).
@@ -21,7 +27,7 @@ the batch layer had ever executed against a real RealityScan install.**
 
 the status log said so explicitly and listed seven things to verify on
 first run. This pass executed that checklist on the dual-5090 Windows
-box using the repo's own harness (`testing/run_zone9_tests.py`), against
+box using the repo's own harness (`scripts/validation/run_zone9_validation.py`), against
 the zone_9 dataset.
 
 The headline result: **the code was correct on paper and wrong in
@@ -47,7 +53,7 @@ Git Bash sets. From a plain `cmd.exe` prompt the old code worked; from
 any POSIX-style shell it could never work.
 
 Switching to an absolute path exposed a second, worse bug: from a
-checkout path containing spaces the run failed with `'C:\Users\jonat\RS'
+checkout path containing spaces the run failed with `'C:\Users\<user>\RS'
 is not recognized`. `cmd /c "C:\path with spaces\script.bat"` strips the
 outer quotes under cmd's parsing rules — the exact failure mode
 the status log had predicted for the process trigger, in a different place.
@@ -57,7 +63,7 @@ all and let Python's `subprocess` do the quoting, which it does
 correctly for batch files.
 
 **Evidence.** Smoke test passes from both `...\wildscan` and a
-deliberately hostile `C:\Users\jonat\RS CLI space test\` copy.
+deliberately hostile `C:\Users\<user>\RS CLI space test\` copy.
 
 ### 2. `find` resolved to GNU find and scanned the disk
 
@@ -271,11 +277,11 @@ Georeference and Batch. It writes processed copies to
 `<output>/preprocessed_images`, mirroring folder structure and
 preserving filenames (flight-log matching is by filename); originals are
 untouched so texturing can still use them. `BatchDirectory` prefers the
-preprocessed folder when present. `testing/preprocess_variants.py` now
+preprocessed folder when present. `scripts/validation/preprocess_variants.py` now
 imports the transforms from the module rather than keeping a second
 copy, per `ARCHITECTURE.md` hard rule 6.
 
-### `poses2flightlog.py` (`d4759d0`)
+### `poses_to_flight_log.py` (`d4759d0`)
 
 The USBL/DVL flight logs are position *estimates*; after alignment the
 bundle-adjusted poses are better relative geometry. The XMP sidecars
@@ -291,7 +297,7 @@ the 10 m accuracy the log claims for itself.
 
 ### Test coverage (`724814a`)
 
-`testing/test_preprocess_module.py` asserts the properties the pipeline
+`scripts/validation/check_preprocessing.py` asserts the properties the pipeline
 depends on: mirrored folders, preserved filenames, **byte parity with
 the canonical transform** (so the harness and the pipeline cannot
 silently diverge), idempotent rerun, and that CLAHE actually altered
@@ -303,7 +309,7 @@ pixels.
 
 Things that look like omissions but are choices:
 
-- **Orientations are not rewritten by `poses2flightlog.py`.** Six
+- **Orientations are not rewritten by `poses_to_flight_log.py`.** Six
   rotation-convention candidates were tested against the flight-log
   yaw/pitch/roll; none matched (best mean error ~77°). Writing
   orientations in an unverified convention would poison future priors,
@@ -367,5 +373,5 @@ Carried forward; do not assume these work:
 | `2b5e0c1` | `modules/preprocess_images/`, wired into `main.py`; transforms deduplicated |
 | `24c0894` | Untrack a `__pycache__` directory |
 | `7e51210` | Flight-log discovery in `raw_images` (defect 9) |
-| `d4759d0` | `poses2flightlog.py` |
+| `d4759d0` | `poses_to_flight_log.py` |
 | `724814a` | Preprocessing module test; dataset seeds moved to `M:` |

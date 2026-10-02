@@ -1,8 +1,13 @@
 # COLMAP unified fact base — FROZEN COPY (received 2026-07-24)
 
+> **Historical external research record.** Personal home-directory prefixes
+> are generalized; experiment identifiers, project names, and technical
+> observations retain their original scope. This is reference evidence for
+> separate COLMAP work, not a current WildScan installation or processing guide.
+
 PROVENANCE: imported 2026-07-24. Canonical home is the colmap_studio repo on the HONEYBADGER machine
 (2× RTX 5090 box); the itsmagicIswear parent log lives at
-`C:\Users\jonat\Desktop\CoyoteThings\itsmagicIswear\FINDINGS` (frozen)
+`C:\Users\<user>\Desktop\CoyoteThings\itsmagicIswear\FINDINGS` (frozen)
 on that machine. **Do not append here** — this copy exists so the
 RealityScan documentation effort can cite the COLMAP side of the Q-05
 preprocessing reconciliation and the cross-engine Zeuss anomaly (Q-07)
@@ -16,7 +21,7 @@ completely separate workflows (see COLMAP_CROSSOVER.md).
 Merged 2026-07-24 from two parallel research projects:
 - **colmap_studio** (this repo): NA173/H2103a zone work, RH0041/42 Lake Ontario
   monolith, camera-model forensics, coordinate-system bugs, app tooling.
-- **itsmagicIswear** (`C:\Users\jonat\Desktop\CoyoteThings\itsmagicIswear\FINDINGS`, now frozen):
+- **itsmagicIswear** (`C:\Users\<user>\Desktop\CoyoteThings\itsmagicIswear\FINDINGS`, now frozen):
   Sea-thru / underwater preprocessing, stereo-rig handling, mapper & solver
   selection on the LilyJean wreck. Its `F-*` IDs are preserved verbatim here.
 
@@ -30,12 +35,12 @@ different workflow — kept separate by design).
 
 **Machine context (all entries):** HONEYBADGER — 2× RTX 5090 (sm_120), Threadripper
 7980X (64c/128t), Windows 11, no admin. COLMAP 4.1.1 official CUDA
-(`C:\Users\jonat\colmap\bin\colmap.exe`) + self-built CASPAR_ENABLED
-(`C:\Users\jonat\colmap-caspar\colmap.exe`), both commit a0d785f (2026-07-17).
+(`C:\Users\<user>\colmap\bin\colmap.exe`) + self-built CASPAR_ENABLED
+(`C:\Users\<user>\colmap-caspar\colmap.exe`), both commit a0d785f (2026-07-17).
 
 **Dataset shorthand:**
 - **zone_9** — NA173/H2103a deep-sea wreck zone, 2,656 images, 4 physical
-  cameras, UTM priors, `C:\Users\jonat\colmap_work\zone_9`.
+  cameras, UTM priors, `C:\Users\<user>\colmap_work\zone_9`.
 - **LilyJean** — wreck, 3,607 rectified Voyis stereo pairs @1 fps, 2816×2816,
   turbid green water, artificial light. Rig baseline 0.16969684810099406 m,
   fx=fy=1895.6747569500258, cx=1444.9779663085938, cy=1386.6773681640625

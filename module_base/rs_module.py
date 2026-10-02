@@ -100,10 +100,3 @@ class RSModule(abc.ABC):
     def _finish_loading_bar(self, bar: tqdm) -> None:
         bar.n = bar.total
         bar.refresh()
-
-    def get_progress(self) -> float:
-        # bars created with total=0 (nothing to do) count as complete
-        bars = [bar for bar in self.loading_bars if bar.total]
-        if not bars:
-            return 1.0 if self.loading_bars else 0.0
-        return sum(bar.n / bar.total for bar in bars) / len(bars)

@@ -80,7 +80,7 @@ COMPONENT_EXTENSIONS = ('.rsalign', '.rcalign')
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.heif')
 
 # Escalation ladder - one variable per rung. Order is revisited by the
-# D7 probe verdict (testing/MERGE_TEST_PLAN.md "D7 probe wave"): if
+# D7 probe verdict (tests/MERGE_TEST_PLAN.md "D7 probe wave"): if
 # align-rematch is the only content-capable mechanism for duplicate-path
 # zones, put it first via rs_settings merge.ladder="content_first".
 LADDERS = {
@@ -187,11 +187,17 @@ def measure_input_scales(inputs: list[dict], union_log: str, logger,
     """
     nav = scale_oracle.load_nav_positions(union_log)
     out = {}
+    solved_by_dir: dict[str, dict] = {}
     for m in inputs:
         key = component_analysis.component_key(m)
         comp_dir = os.path.dirname(m.get('rsalign', '')) or '.'
         try:
-            stats = scale_oracle.scale_for_images(m.get('images', []), comp_dir, nav)
+            directory_key = os.path.normcase(os.path.abspath(comp_dir))
+            if directory_key not in solved_by_dir:
+                solved_by_dir[directory_key] = scale_oracle.load_solved_positions(
+                    os.path.join(comp_dir, 'identity_r0'))
+            stats = scale_oracle.scale_for_images(
+                m.get('images', []), comp_dir, nav, solved=solved_by_dir[directory_key])
         except OSError as exc:
             logger.warning('Scale measurement failed for %s: %s', key, exc)
             stats = None

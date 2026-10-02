@@ -22,12 +22,13 @@ previous expedition, dive, data location and results root as defaults.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .workspace import Workspace, _find_flight_logs
+from .workspace import StageStatus, Workspace, _find_flight_logs, _load_json
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -35,7 +36,8 @@ _quiet = logging.getLogger("wildscan.session")
 _quiet.addHandler(logging.NullHandler())
 _quiet.propagate = False
 
-VIDEO_EXTS = {".mov", ".mp4", ".avi", ".mkv", ".mts"}
+# The extraction module accepts these containers; detection must match it.
+VIDEO_EXTS = {".mov", ".mp4"}
 NAV_HINTS = ("datatable", "nav", "flight", "rumi")
 NAV_EXTS = {".csv", ".txt", ".tsv"}
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
@@ -106,7 +108,7 @@ class CameraScan:
             suggestion = OFFICIAL_CAMERAS.get(prefix.upper()[:1])
             hint = f" - looks like {suggestion}" if suggestion else ""
             lines.append(f"UNRECOGNISED camera '{prefix}': {count:,} images "
-                         f"(e.g. {example}) - will ask{hint}")
+                         f"(e.g. {example}) - optional camera notes{hint}")
         return lines
 
 
@@ -121,6 +123,8 @@ def scan_cameras(image_dir: str | Path, sample_per_dir: int = 200) -> CameraScan
 
     from modules import camera_registry
     scan = CameraScan()
+    if not str(image_dir).strip():
+        return scan
     root = Path(image_dir)
     if not root.is_dir():
         return scan
@@ -146,9 +150,8 @@ def scan_cameras(image_dir: str | Path, sample_per_dir: int = 200) -> CameraScan
 
 
 def camera_questions(scan: CameraScan, saved: dict[str, str]) -> list["Question"]:
-    """One block of questions per UNRECOGNISED camera prefix: the official
-    name (suggested from the letter table), lens, and - always -
-    lever arm and tilt. Answers are recorded for the pipeline maintainers
+    """Optional notes per unrecognised camera prefix: name, lens and any
+    measured lever arm or tilt. Answers are recorded for the maintainers
     (camera_registry/MOUNTS stay the runtime truth) and become the next
     session's defaults."""
     questions: list[Question] = []
@@ -160,20 +163,20 @@ def camera_questions(scan: CameraScan, saved: dict[str, str]) -> list["Question"
         questions += [
             Question("cameras", f"{base}_name",
                      f"Unrecognised camera '{prefix}' ({count} images, e.g. "
-                     f"{example}). Official camera name",
-                     "text", saved.get(f"{base}_name", suggested),
-                     required=True),
+                     f"{example}). Camera name, if known (optional; "
+                     f"suggestion: {suggested or 'none'})",
+                     "text", saved.get(f"{base}_name", "")),
             Question("cameras", f"{base}_lens",
                      f"'{prefix}' lens (e.g. fisheye 16mm / rectilinear 24mm)",
                      "text", saved.get(f"{base}_lens", "")),
             Question("cameras", f"{base}_lever",
                      f"'{prefix}' lever arm from vehicle centre, metres "
-                     "forward/lateral/down (e.g. 1.0/0.0/1.0)",
-                     "text", saved.get(f"{base}_lever", ""), required=True),
+                     "forward/lateral/down (optional measured value; leave blank if unknown)",
+                     "text", saved.get(f"{base}_lever", "")),
             Question("cameras", f"{base}_tilt",
                      f"'{prefix}' tilt (camera pitch down from horizontal, "
-                     "degrees)",
-                     "number", saved.get(f"{base}_tilt", ""), required=True),
+                     "degrees; optional measured value)",
+                     "number", saved.get(f"{base}_tilt", "")),
         ]
     return questions
 
@@ -213,6 +216,8 @@ class RawDataScan:
 def scan_raw_data(location: str | Path) -> RawDataScan:
     """Read-only census of a cruise data folder (bounded depth, cheap)."""
     scan = RawDataScan()
+    if not location or isinstance(location, str) and not location.strip():
+        return scan
     root = Path(location)
     if not root.is_dir():
         return scan
@@ -253,7 +258,7 @@ def _settings():
 
 
 _PERSISTED_FIELDS = ("expedition", "dive", "cruise_folder", "raw_images_dir",
-                     "video_path", "processed_data", "results_base",
+                     "video_path", "processed_data", "results_root", "results_base",
                      "continue_automatically")
 
 
@@ -279,6 +284,7 @@ def save_last_run(session: "Session") -> None:
     store.set("wildscan", "raw_images_dir", session.raw_images_dir)
     store.set("wildscan", "video_path", session.video_path)
     store.set("wildscan", "processed_data", session.processed_data)
+    store.set("wildscan", "results_root", session.results_root)
     store.set("wildscan", "results_base", str(Path(session.results_root).parent))
     store.set("wildscan", "continue_automatically",
               session.continue_automatically)
@@ -329,23 +335,29 @@ def default_session() -> Session:
         raw_images_dir=last.get("raw_images_dir", ""),
         video_path=last.get("video_path", ""),
         processed_data=last.get("processed_data", ""),
+        results_root=last.get("results_root", ""),
         continue_automatically=(last.get("continue_automatically", "false")
                                 .lower() == "true"),
         answers=dict(last.get("answers", {})),
     )
     base = last.get("results_base", "")
-    if base and s.label:
+    if not s.results_root and base and s.label:
         s.results_root = str(Path(base) / s.label.lower())
     return s
 
 
-def default_enabled(ws: Workspace) -> list[str]:
+def default_enabled(ws: Workspace,
+                    statuses: dict[str, StageStatus] | None = None) -> list[str]:
     """Resume-aware pre-selection: stages already DONE are unticked, the
     rest ticked - RC_Main pre-selected everything; a resumable portal
     pre-selects what remains."""
-    statuses = ws.detect()
+    if statuses is None:
+        statuses = ws.detect()
+    interrupted = _load_json(ws.root / "interrupted_stage.json").get("stages", [])
+    if not isinstance(interrupted, list):
+        interrupted = []
     return [k for k in ALL_STAGES
-            if statuses.get(k) is None or statuses[k].status != "done"]
+            if k in interrupted or statuses.get(k) is None or statuses[k].status != "done"]
 
 
 # ---------------------------------------------------------------- questions
@@ -355,10 +367,12 @@ class Question:
     stage: str                   # stage key it belongs to
     arg: str                     # cli_long
     prompt: str                  # the parameter's own description (RC_Main)
-    kind: str                    # text | path | file | number | bool
+    kind: str                    # text | path | file | video | number | bool
     default: str = ""
     required: bool = False
     choices: tuple[str, ...] = ()
+    value_type: type = str
+    label: str = ""
 
     def validate(self, value: str) -> str | None:
         value = value.strip()
@@ -371,18 +385,26 @@ class Question:
             return f"{value} is not a directory"
         if self.kind == "file" and not Path(value).is_file():
             return f"{value} is not a file"
+        if self.kind == "video":
+            path = Path(value)
+            if not (path.is_file() or path.is_dir()):
+                return "Choose a video file or a folder of recordings."
+            if path.is_file() and path.suffix.lower() not in VIDEO_EXTS:
+                return "Choose a .mp4 or .mov recording."
         if self.kind == "number":
             try:
-                float(value)
+                parsed = self.value_type(value) if self.value_type is int else float(value)
             except ValueError:
-                return "must be a number"
+                return "Enter a whole number." if self.value_type is int else "Enter a number."
+            if self.value_type is not int and not math.isfinite(parsed):
+                return "Enter a finite number."
         if self.kind == "bool" and value.lower() not in ("true", "false"):
             return "true or false"
         return None
 
 
 _KIND_BY_NAME = {
-    "image_input_video": "file",
+    "image_input_video": "video",
     "geo_input_image_dir": "path",
     "geo_input_flight_log": "file",
     "pre_input_image_dir": "path",
@@ -390,6 +412,7 @@ _KIND_BY_NAME = {
     "batch_flight_log_path": "file",
     "rs_input_image_dir": "path",
     "rs_flight_log_path": "file",
+    "rs_flight_log_params": "file",
 }
 # geo_input_type is REQUIRED (audit 2026-08-07): it has default_value None,
 # so a blank answer used to be accepted, dropped from argv, and only
@@ -511,6 +534,12 @@ def _detection_prefills(session: Session, scan: RawDataScan) -> dict[str, str]:
     batch_src = ws.preprocessed if ws.preprocessed.is_dir() else raw
     if batch_src:
         out["b_input"] = str(batch_src)
+    alignment_src = ws.batched if ws.batched.is_dir() else batch_src
+    if alignment_src:
+        out["r_input"] = str(alignment_src)
+    # Each zone discovers its own navigation. An old explicit override must
+    # never replace the current input's logs or invent priors for bare images.
+    out["r_flight_log"] = ""
     logs = _find_flight_logs(ws.raw_images) or _find_flight_logs(ws.root)
     logs = [p for p in logs if ws.batched not in p.parents]
     if not logs and processed["utm_logs"]:
@@ -534,8 +563,8 @@ def build_questions(session: Session, scan: RawDataScan) -> list[Question]:
     questions: list[Question] = []
 
     # Camera identification comes FIRST: parse the imagery's camera names;
-    # recognised families carry priors on file; every unrecognised prefix
-    # asks for the official name plus lever/tilt (project decision).
+    # recognised families carry priors on file; unrecognised prefixes may
+    # record optional notes without inventing measured camera priors.
     image_source = detected.get("g_input") or session.raw_images_dir
     if image_source:
         cam_scan = scan_cameras(image_source)
@@ -559,16 +588,16 @@ def build_questions(session: Session, scan: RawDataScan) -> list[Question]:
             if kind is None:
                 kind = ("bool" if p.type is bool
                         else "number" if p.type in (int, float) else "text")
-            default = (detected.get(p.cli_long)
-                       or session.answers.get(p.cli_long)
-                       or ("" if p.default_value is None
-                           else str(p.default_value)))
+            default = (detected[p.cli_long] if p.cli_long in detected
+                       else session.answers.get(p.cli_long,
+                           "" if p.default_value is None else str(p.default_value)))
             questions.append(Question(
                 stage=key, arg=p.cli_long,
                 prompt=(p.description or p.name).strip(),
                 kind=kind, default=default,
-                required=name in _REQUIRED,
-                choices=_CHOICES_BY_NAME.get(name, ())))
+                required=name in _REQUIRED or p.default_value is None,
+                choices=_CHOICES_BY_NAME.get(name, ()),
+                value_type=p.type, label=p.name))
     return questions
 
 
@@ -580,6 +609,9 @@ class StageCommand:
     argv: list[str]
     env: dict[str, str]
     needs_realityscan: bool = False
+    workspace: str | None = None
+    stages: tuple[str, ...] = ()
+    cwd: str | None = None
 
     @property
     def display(self) -> str:
@@ -591,7 +623,23 @@ def build_commands(session: Session) -> list[StageCommand]:
     (in-process hand-off preserved - portal only), then each post stage as
     its own command with a gate between them."""
     commands: list[StageCommand] = []
+    caller_cwd = Path.cwd()
+    # Absolute paths survive the native workflow's separate working directory.
+    # abspath preserves aliases so downstream alias guards can still inspect them.
+    for name in ('cruise_folder', 'raw_images_dir', 'video_path',
+                 'processed_data', 'results_root'):
+        value = getattr(session, name).strip()
+        if value:
+            setattr(session, name, os.path.abspath(os.path.join(caller_cwd, value)))
     chain = [k for k in CHAIN_STAGES if k in session.enabled]
+    path_args = {'output_dir'}
+    for module in _module_registry().values():
+        for name, parameter in module.get_parameters().items():
+            if _KIND_BY_NAME.get(name) in ('path', 'file', 'video'):
+                path_args.add(parameter.cli_long)
+    for arg, value in session.answers.items():
+        if arg in path_args and value.strip():
+            session.answers[arg] = os.path.abspath(os.path.join(caller_cwd, value.strip()))
     ws = session.workspace()
 
     # RealityScan machine constants (RS_INSTANCE / RS_CACHE_DIR /
@@ -623,7 +671,7 @@ def build_commands(session: Session) -> list[StageCommand]:
                 continue
             if arg not in accepted:
                 continue
-            if value.strip():
+            if value.strip() or arg in ('r_flight_log', 'r_project_label'):
                 argv += [f"--{arg}", value.strip()]
         # The forced model flags belong to RealityScan Alignment, so they
         # are only legal when 'align' is in the chain; they used to be
@@ -639,7 +687,7 @@ def build_commands(session: Session) -> list[StageCommand]:
             env.update(rs_env)
         commands.append(StageCommand(
             stage=" + ".join(MODULE_DISPLAY[k] for k in chain),
-            argv=argv, env=env, needs_realityscan=needs_rs))
+            argv=argv, env=env, needs_realityscan=needs_rs, stages=tuple(chain)))
 
     if "merge" in session.enabled:
         argv = [sys.executable, str(REPO / "merge_zones.py"),
@@ -669,7 +717,7 @@ def build_commands(session: Session) -> list[StageCommand]:
         commands.append(StageCommand(
             stage="Merge Components", argv=argv,
             env={"PYTHONIOENCODING": "utf-8", **rs_env},
-            needs_realityscan=True))
+            needs_realityscan=True, stages=("merge",)))
 
     if "model" in session.enabled:
         commands.append(StageCommand(
@@ -677,7 +725,7 @@ def build_commands(session: Session) -> list[StageCommand]:
             argv=[sys.executable, str(REPO / "run_models.py"),
                   "--workspace", session.results_root],
             env={"PYTHONIOENCODING": "utf-8", **rs_env},
-            needs_realityscan=True))
+            needs_realityscan=True, stages=("model",)))
 
     if "export" in session.enabled:
         # Through the python driver -> RealityScanCLI.run_batch_script,
@@ -700,7 +748,7 @@ def build_commands(session: Session) -> list[StageCommand]:
                   "--names", str(names_file),
                   "--log_dir", str(ws.root / "logs")],
             env={"PYTHONIOENCODING": "utf-8", **rs_env},
-            needs_realityscan=True))
+            needs_realityscan=True, stages=("export",)))
 
     if "publish" in session.enabled:
         argv = [sys.executable, str(REPO / "publish_batch.py"),
@@ -722,8 +770,11 @@ def build_commands(session: Session) -> list[StageCommand]:
             argv.append("--dry-run")
         commands.append(StageCommand(
             stage="Publish (Cesium / Nira)", argv=argv,
-            env={"PYTHONIOENCODING": "utf-8"}))
+            env={"PYTHONIOENCODING": "utf-8"}, stages=("publish",)))
 
+    for command in commands:
+        command.cwd = str(caller_cwd)
+        command.workspace = os.path.abspath(ws.root)
     return commands
 
 

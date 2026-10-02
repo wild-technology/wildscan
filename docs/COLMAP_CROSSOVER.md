@@ -1,14 +1,20 @@
 # COLMAP crossover — inventory & open reconciliation (2026-07-24)
 
+> **Historical research context.** This records the July 2026 cross-project
+> questions and machine state. It does not report today's running jobs or
+> determine whether a current WildScan dataset is ready. Personal directory
+> prefixes are generalized; the referenced project names remain unchanged.
+> See the [documentation index](README.md) for current guidance.
+
 COLMAP and RealityScan are COMPLETELY DIFFERENT workflows. This doc
 exists to keep COLMAP material out of the RealityScan fact base while
 tracking the one place the two lines genuinely interact (preprocessing
 scope). Nothing here feeds the active pipeline; ARCHITECTURE.md hard rule:
-do not resurrect `archive/colmap/` into it.
+do not resurrect [archive/colmap/](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/colmap/) into it.
 
-## 1. COLMAP material in this repo (all archived, reference-only)
+## 1. Historical COLMAP material (archived, reference-only)
 
-`archive/colmap/` (see `archive/README.md`):
+[archive/colmap/](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/colmap/) (see [archive/README.md](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/README.md)):
 
 | File | Purpose |
 |---|---|
@@ -31,7 +37,7 @@ The operator delivered the merged COLMAP fact base (colmap_studio ⊕
 itsmagicIswear, C-*/F-* IDs) in-session on 2026-07-24; frozen copy:
 `docs/COLMAP_FINDINGS_UNIFIED.md`. Canonical home is the colmap_studio
 repo on the HONEYBADGER machine; the itsmagicIswear parent
-(`C:\Users\jonat\Desktop\CoyoteThings\itsmagicIswear\FINDINGS`) is
+(`C:\Users\<user>\Desktop\CoyoteThings\itsmagicIswear\FINDINGS`) is
 frozen there. The RealityScan repo on that machine is checked out as
 `Desktop\CoyoteThings\RS_main` (the fact base's F-20260723-33/34 cite
 it by that name).
@@ -74,5 +80,6 @@ Second-hand (from the missing fact base, quoted in status log):
 
 ## 5. Operational note
 
-the NA167 notes records that an unrelated user COLMAP
-python job may be running on the Honeybadger box — leave it alone.
+At the recorded date, the NA167 notes reported an unrelated COLMAP Python job
+on the Honeybadger box and instructed operators to leave it alone. This is
+historical machine state, not a statement about a current process.

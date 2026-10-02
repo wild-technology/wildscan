@@ -1,5 +1,12 @@
 # Workflow walkthrough — raw images to final project (H2023 example)
 
+> **Historical worked example — 2026-07-24.** This records the H2023 workflow
+> and proposals at that date. Use [Analyze a dataset](ANALYZE_A_DATASET.md) for
+> current onboarding and [Setup and run](SETUP-AND-RUN.md) for current commands.
+> The common image pool and later growth/resume changes supersede parts of
+> the implementation described below; the recorded counts remain evidence
+> from this dataset, not expected results for a new survey.
+
 Plain-language end-to-end path, written 2026-07-24, using
 H2023 as the worked example: 4,598 usable images (Port P231C* + Cinema
 C231C*; Starboard excluded), nav from the ROVDataConcat Kalman table,
@@ -7,15 +14,16 @@ wreck in TWO physical pieces (bow + main hull). Zone criteria in the
 example: 2,000 images/zone + 20% overlap → ~3 zones of ~2,000 with
 ~400-image shared bands (the real H2023 run's density batcher gave
 4,540 + 976 — uneven zones are normal). Items marked [QUEUED] are in
-status log's workflow-evaluation queue, not yet built; everything else
-runs today. Deep rationale: docs/merge-growth-strategy-2026-07.md,
-docs/settings-evaluation-2026-07.md; facts cited: FINDINGS.
+the workflow-evaluation queue as of that date; unmarked steps describe the
+then-current implementation. Deep rationale:
+[merge growth strategy](merge-growth-strategy-2026-07.md) and
+[settings evaluation](settings-evaluation-2026-07.md); facts cited: FINDINGS.
 
 ## Stage 0 — Raw images -> georeferenced images
 
 - Start: D:\H2023 raw dumps. Movies (S231C* = Starboard) excluded;
   stills sorted per camera.
-- geoall.py matches every image to the nav table by timestamp (stage-2
+- georeference_survey.py matches every image to the nav table by timestamp (stage-2
   Kalman file *final_datatable.csv), applies each camera's mount
   offset (Port: 1 m fwd + 1 m down; Cinema: 45 deg down, 1 m fwd), and
   writes ONE flight log: image basename -> UTM position + orientation

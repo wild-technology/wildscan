@@ -1,0 +1,30 @@
+name: Bug report
+description: Report a reproducible problem with installation or a workflow.
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Windows version, Python version, WildScan commit, installation method, and RealityScan version if relevant.
+      placeholder: Windows 11, Python 3.13, commit ..., editable Git checkout
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the command or screen, selected stages, and a small example when possible.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and observed results
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Remove credentials and private dataset paths before sharing logs.
+      render: text

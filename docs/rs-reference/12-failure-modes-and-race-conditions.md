@@ -23,7 +23,7 @@ that avoid these failures in the first place (`11-automation-patterns.md`,
 
 1. [The governing rule: exit status is not evidence](#1-the-governing-rule-exit-status-is-not-evidence)
 2. [Codes: exit codes, process-result codes, err:NNNN, process IDs](#2-codes-exit-codes-process-result-codes-errnnnn-process-ids)
-3. [F-01…F-17, F-79 — Silent-success failures at the RealityScan boundary](#3-f-01f-17-f-79--silent-success-failures-at-the-realityscan-boundary)
+3. [F-01…F-17, F-79, F-85…F-88 — Silent-success failures at the RealityScan boundary](#3-f-01f-17-f-79-f-85f-88--silent-success-failures-at-the-realityscan-boundary)
 4. [F-18…F-26, F-82 — Instrument blindness: when the oracle is the thing that broke](#4-f-18f-26-f-82--instrument-blindness-when-the-oracle-is-the-thing-that-broke)
 5. [F-27…F-34 — Delegation, wait and teardown races](#5-f-27f-34--delegation-wait-and-teardown-races)
 6. [F-35…F-38, F-78 — `#timeout` stalls and other hangs](#6-f-35f-38-f-78--timeout-stalls-and-other-hangs)
@@ -146,7 +146,7 @@ Codes that appear only in `RealityScan.log` (channel C), with no distinct marker
 | `err:18002` | "The file contains N images which are not in the current scene" (flight-log import); surfaces as `0x820000FF` | [VERIFIED: FINDINGS 2026-07-21] |
 | `err:5601` | Model name not found (`-selectModel` on a renamed-away model); surfaces as `0x80070057` | [VERIFIED: FINDINGS 2026-07-29] |
 | `err:5605` | No component selected; surfaces as `0x80070057` | [VERIFIED: docs/code-review-2026-07] |
-| `MSS_STR001` | Internal reconstruction error, printed as `Processing failed: Unexpected program state. [Internal error MSS_STR001]`; surfaces as `0x8000FFFF` | [VERIFIED: NA167 B8; `testing/results/z14_forensic_rslog.txt` line 1491-1493] |
+| `MSS_STR001` | Internal reconstruction error, printed as `Processing failed: Unexpected program state. [Internal error MSS_STR001]`; surfaces as `0x8000FFFF` | [VERIFIED: NA167 B8; `docs/validation/results/z14_forensic_rslog.txt` line 1491-1493] |
 
 **When a code is ambiguous — and `0x8000FFFF` always is — the only remedy is to snapshot
 `%LOCALAPPDATA%\Temp\RealityScan.log` inside the driver, immediately after the failing
@@ -653,7 +653,7 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
 - **Symptom.** The asset tiles to `COMPLETE`, lands at the right latitude and longitude,
   looks right in plan view, and is **wrong in depth by a fixed amount** — 72.7 m at NA168
   H2080, 70.4 m in the Solomon Sea, 27.1 m the *other* way in the Gulf of Mexico.
-- **Cause.** The exported Z is a depth below the **sea surface** (`geoall.py:320` writes
+- **Cause.** The exported Z is a depth below the **sea surface** (`georeference_survey.py:320` writes
   `-abs(kalman_depth)`), i.e. an orthometric height on the geoid. Cesium — and any
   ellipsoid-referenced consumer — reads it as height above the **WGS84 ellipsoid**. Every
   CRS in the chain is 2D, so nothing ever declares which. The gap is the geoid undulation N.
@@ -680,7 +680,7 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
   `TransformerGroup(...).unavailable_operations` is non-empty and names the missing grid.
 - **Mitigation.** Build every vertical transformer with `allow_ballpark=False`, which raises
   `ProjError` instead. Enable `PROJ_NETWORK=ON` or install the grid with
-  `projsync --file us_nga_egm08_25.tif`.
+  `python -m pyproj sync --file us_nga_egm08_25.tif`.
 - **Detection test.** Transform a point at a known-non-zero undulation and assert the delta
   is non-zero — e.g. `(-157.08, 18.81)` must return roughly `+6.6 m`. *A clean `0.000` is
   the fallback's signature, not a correct answer.*
@@ -1274,10 +1274,10 @@ with no documented meaning. Everything below is [UNDOCUMENTED] behaviour establi
     [\0x13011\0x13010\0x10001\0x4999\0x10001]
   Reconstruction failed after 1452.842 seconds.
   ```
-  (`testing/results/z14_forensic_rslog.txt` lines 1490–1496; the bracketed trace line is
+  (`docs/validation/results/z14_forensic_rslog.txt` lines 1490–1496; the bracketed trace line is
   emitted twice, and the `quit` follows immediately.) Note the reproduction count rose as
   the cells ran and the sources were written at different moments —
-  `NA167 notes` B8 says 2/2, `testing/FINDINGS` #17 says 3/3, #27 is the fourth,
+  `NA167 notes` B8 says 2/2, `historical FINDINGS log` #17 says 3/3, #27 is the fourth,
   and `MERGE_STRATEGY_REPORT` and FINDINGS both settle on **4/4**. Cite 4/4.
 - **Cause.** A RealityScan solver bug. The **data is formally exonerated**: full-pixel
   decode of all 1,476 frames, zero MD5 duplicates, zero near-black/featureless frames by
@@ -1660,7 +1660,7 @@ a downstream operation silently targets the wrong object.
   [VERIFIED: FINDINGS 2026-07-27/28; status log 2026-07-27] [UNDOCUMENTED: no Epic coverage
   of reparse-point behaviour]
 - **Detection test (cheap, run before every harvest-dependent run).** This is
-  `assert_harvestable()` in `archive/campaign_drivers/run_h2024_v2.py`, reproduced in essence:
+  `assert_harvestable()` in [archive/campaign_drivers/run_h2024_v2.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/run_h2024_v2.py), reproduced in essence:
   ```python
   def is_reparse(path: str) -> bool:
       if os.path.islink(path):
@@ -1794,7 +1794,7 @@ the substrate. Every trap below was hit in practice.
   line contains a non-ASCII copyright glyph (`RealityScan 2.2.0.119430 ... 2026 Epic Games,
   Inc.`), so a parser that opens it in the console codepage can fail on line 1. Read it
   with an explicit encoding and `errors='replace'`.
-  [VERIFIED: `testing/results/z14_forensic_rslog.txt` line 1]
+  [VERIFIED: `docs/validation/results/z14_forensic_rslog.txt` line 1]
 
 ### F-66 — `isatty()` LIES under hidden consoles
 - **Symptom, in its full three-supersession form.** "The batcher spends ~3 h in zone
@@ -2150,7 +2150,7 @@ Every `[OPEN]` in this document, with the cheapest probe that would settle it.
 
 | # | Question | Entry | Cheapest probe |
 |---|---|---|---|
-| O-1 | What is the internal reason for `MSS_STR001`? | F-41 | Not settleable locally — **report to Epic** with `testing/results/z14_forensic_rslog.txt`. Never done (status log P1 item 8). |
+| O-1 | What is the internal reason for `MSS_STR001`? | F-41 | Not settleable locally — **report to Epic** with `docs/validation/results/z14_forensic_rslog.txt`. Never done (status log P1 item 8). |
 | O-2 | Is the 2–3 camera deficit after a fusion a real solver drop or a harvest artifact? | F-46 | Re-import `cluster_*_m_c0.rsalign` **from its original export location** into a spare instance and census it. 3,740 = artifact; 3,738 = real loss. Artifacts already on disk; do **not** use `rslog.txt` (F-40). |
 | O-3 | What are the exact semantics of `Finalizing N component(s)`? | F-20 | Two tiny imports, one `-mergeComponents`, count the result. Queued probe (a); never run. |
 | O-4 | Is `merged5`'s `cluster_1_a3_c0` a single component or a rigid glue container of 8 objects? | F-20 family | Re-import it from its original location and census. Queued probe (b). |

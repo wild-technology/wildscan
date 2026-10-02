@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import sys
 import re
 from datetime import datetime
 
@@ -38,21 +37,3 @@ def parse_timestamp(filename: str) -> datetime:
     """
     ts_str = parse_timestamp_str(filename)
     return datetime.strptime(ts_str, "%Y%m%dT%H%M%SZ")
-
-# ——————————————————————————————————————————————————————————————
-# Frame‐number extraction (unchanged)
-# ——————————————————————————————————————————————————————————————
-
-def parse_frame_number_str(filename: str) -> str:
-    """
-    Extracts a frame number string from a filename (e.g. 'frame123').
-    """
-    match = re.search(r'frame(\d+)', filename or "")
-    return match.group(1) if match else ""
-
-def parse_frame_number(filename: str) -> int:
-    """
-    Extracts a frame number integer from a filename, or sys.maxsize if none.
-    """
-    s = parse_frame_number_str(filename)
-    return int(s) if s.isdigit() else sys.maxsize
