@@ -257,16 +257,15 @@ Reserved section `"realityscan"`:
 All keys are optional; omit the file entirely for auto-detection and
 defaults.
 
-## How RealityScan execution works (read before touching it)
+## RealityScan execution
 
-**Every** RealityScan run goes through one execution layer —
+RealityScan workflows use a shared execution layer —
 `modules/realityscan_interface/realityscan_cli.py` on the Python side and
 the shared `:run` pattern in the `RS_CLI/Scripts/*.bat` workflow scripts.
-Do not add new code that shells out to RealityScan directly; reuse this
-layer so monitoring and race-condition handling stay uniform.
+Developer rules for this layer are in [Architecture](ARCHITECTURE.md) and
+[Contributing](CONTRIBUTING.md).
 
-The design (informed by hard-won lessons — see
-[Lessons learned](#lessons-learned)):
+Execution follows these rules:
 
 1. `startRealityScan.bat` boots one persistent instance named
    `RS1` (`-setInstanceName`), or attaches to it with a fresh scene if it
@@ -373,15 +372,8 @@ of corrupting each other.
 Collected from prior iterations of this repo (some of which only survive in
 git history — see `git log`):
 
-- **Delegation pickup race**: `-waitCompleted` returns prematurely when
-  called before the instance has picked up the queued command. Mitigation
-  (the `:run` pattern): `-delegateTo` → grace delay → `-waitCompleted`
-  twice with a second grace between them. Never infer completion from
-  `results_<instance>.log` growth — RealityScan 2.2 emits heartbeat
-  processes through the same trigger, so a log-growth gate races ahead of
-  a running `-align` (that check existed and was removed). The results
-  log is history/diagnostics; `errors_<instance>.txt` is the abort
-  trigger.
+- **Delegation pickup race**: use the delegation and completion checks
+  described in [RealityScan execution](#realityscan-execution).
 - **No operation timeouts**: 10+ hour alignments are normal on these
   datasets. Startup and shutdown verification are bounded; the defaults live
   in `modules/realityscan_interface/realityscan_cli.py` and can be overridden in settings.
