@@ -35,7 +35,6 @@ from modules.wildsync_intake.intake import (
     IntakeError,
     find_run_directories,
     image_variant,
-    load_manifest,
     node_directories,
     split_run_paths,
 )
@@ -62,9 +61,7 @@ MODULE_DISPLAY = {
     "align": "RealityScan Alignment",
 }
 
-STAGE_TITLES = {key: CENSUS_TITLES[key] for key in ALL_STAGES
-                if key in CENSUS_TITLES}
-STAGE_TITLES["intake"] = MODULE_DISPLAY["intake"]
+STAGE_TITLES = {key: CENSUS_TITLES[key] for key in ALL_STAGES}
 
 # The results layout the pipeline itself creates under the results root -
 # shown to the operator so "auto-created structure" is explicit, created by
@@ -240,44 +237,10 @@ def default_session() -> Session:
     )
 
 
-def detect_intake(ws: Workspace) -> StageStatus:
-    """Status of the Wild Sync Intake stage from its manifest in raw_images/."""
-    try:
-        manifest = load_manifest(str(ws.raw_images))
-    except ValueError as exc:
-        return StageStatus("intake", "partial", "intake manifest is not complete",
-                           [str(exc)])
-    if manifest is None:
-        return StageStatus("intake", "pending", "no Wild Sync intake manifest")
-    try:
-        matched = manifest["images"]["matched"]
-        runs = len(manifest["sources"])
-        variant = manifest["variant"]
-    except (KeyError, TypeError) as exc:
-        return StageStatus("intake", "partial",
-                           "intake manifest is missing a field",
-                           [f"missing {exc}"])
-    return StageStatus("intake", "done",
-                       f"{matched:,} {variant} images from {runs} run(s)")
-
-
 def stage_statuses(ws: Workspace) -> dict[str, StageStatus]:
     """The census for every stage the portal drives, intake first."""
     census = ws.detect()
-    statuses = {"intake": detect_intake(ws)}
-    interrupted = _load_json(ws.root / "interrupted_stage.json")
-    stages = interrupted.get("stages")
-    if (interrupted.get("cancelled") is True and isinstance(stages, list)
-            and "intake" in stages):
-        prior = statuses["intake"]
-        statuses["intake"] = StageStatus(
-            "intake", "blocked" if prior.status in ("pending", "blocked")
-            else "partial", "interrupted run - retry required",
-            [prior.summary, *prior.details])
-    for key in ALL_STAGES:
-        if key in census:
-            statuses[key] = census[key]
-    return {key: statuses[key] for key in ALL_STAGES if key in statuses}
+    return {key: census[key] for key in ALL_STAGES}
 
 
 def default_enabled(ws: Workspace,

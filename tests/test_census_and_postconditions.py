@@ -40,8 +40,13 @@ sys.path.insert(0, REPO_ROOT)
 
 import finish_model  # noqa: E402
 from modules import export_deliverables  # noqa: E402
-from modules.workspace_census import (MODEL_REPORT_NAMES, Workspace,  # noqa: E402
-                                      _records)
+from modules.workspace_census import (  # noqa: E402
+    MODEL_REPORT_NAMES,
+    STAGE_ORDER,
+    STAGE_TITLES,
+    Workspace,
+    _records,
+)
 
 MERGE_REPORT = {
     'input_scales': {},
@@ -97,37 +102,67 @@ def test_the_legacy_report_names_still_census(tmp_path):
 
 # ------------------------------------------------------ empty-artifact gates
 
-def test_a_zero_row_flight_log_is_not_done(tmp_path):
-    ws = tmp_path / 'cruise'
-    (ws / 'raw_images').mkdir(parents=True)
-    (ws / 'raw_images' / 'flight_log_53N_UTM.txt').write_text(
-        'filename;X (East);Y (North)\n', encoding='utf-8')
-    status = Workspace(ws).detect()['georeference']
-    assert status.status == 'blocked'
-    assert '0 rows' in status.summary
+def _intake_manifest(ws, payload):
+    raw = ws / 'raw_images'
+    raw.mkdir(parents=True, exist_ok=True)
+    (raw / 'wildsync_intake.json').write_text(
+        payload if isinstance(payload, str) else json.dumps(payload),
+        encoding='utf-8')
 
 
-def test_a_log_covering_a_fraction_of_the_imagery_is_partial(tmp_path):
-    ws = tmp_path / 'cruise'
+def test_the_census_stages_follow_the_module_chain():
+    assert STAGE_ORDER == ['intake', 'preprocess', 'batch', 'align',
+                           'merge', 'model', 'export', 'publish']
+    assert STAGE_TITLES['intake'] == 'Wild Sync Intake'
+    assert set(STAGE_TITLES) == set(STAGE_ORDER)
+
+
+def test_intake_without_a_manifest_is_pending(tmp_path):
+    ws = tmp_path / 'workspace'
     raw = ws / 'raw_images'
     raw.mkdir(parents=True)
-    for i in range(10):
-        (raw / f'img_{i}.jpg').write_bytes(b'j')
-    (raw / 'flight_log_53N_UTM.txt').write_text(
-        'filename;X (East);Y (North)\nimg_0.jpg;1;2\n', encoding='utf-8')
-    assert Workspace(ws).detect()['georeference'].status == 'partial'
+    (raw / 'Cam1_20260820_192501.00.card.JPG').write_bytes(b'j')
+    status = Workspace(ws).detect()['intake']
+    assert status.status == 'pending', status.summary
 
 
-def test_a_full_log_is_done(tmp_path):
-    ws = tmp_path / 'cruise'
-    raw = ws / 'raw_images'
-    raw.mkdir(parents=True)
-    for i in range(4):
-        (raw / f'img_{i}.jpg').write_bytes(b'j')
-    rows = ''.join(f'img_{i}.jpg;1;2\n' for i in range(4))
-    (raw / 'flight_log_53N_UTM.txt').write_text(
-        'filename;X (East);Y (North)\n' + rows, encoding='utf-8')
-    assert Workspace(ws).detect()['georeference'].status == 'done'
+def test_a_complete_intake_manifest_is_done(tmp_path):
+    ws = tmp_path / 'workspace'
+    _intake_manifest(ws, {
+        'schema': 1, 'status': 'complete', 'variant': 'card',
+        'sources': [{'run_id': '260820_1925_transect-01'}],
+        'images': {'matched': 12}})
+    status = Workspace(ws).detect()['intake']
+    assert status.status == 'done', status.summary
+    assert status.summary == '12 card images from 1 run(s)'
+
+
+@pytest.mark.parametrize('payload', [
+    '{',
+    {'schema': 1, 'status': 'running', 'variant': 'card',
+     'sources': [], 'images': {'matched': 0}},
+    {'schema': 99, 'status': 'complete', 'variant': 'card',
+     'sources': [], 'images': {'matched': 0}},
+    {'schema': 1, 'status': 'complete', 'variant': 'card'},
+])
+def test_an_intake_manifest_that_fails_to_load_is_not_done(tmp_path, payload):
+    ws = tmp_path / 'workspace'
+    _intake_manifest(ws, payload)
+    status = Workspace(ws).detect()['intake']
+    assert status.status == 'partial', status.summary
+
+
+def test_an_interrupted_intake_needs_a_retry(tmp_path):
+    ws = tmp_path / 'workspace'
+    _intake_manifest(ws, {
+        'schema': 1, 'status': 'complete', 'variant': 'card',
+        'sources': [{'run_id': '260820_1925_transect-01'}],
+        'images': {'matched': 12}})
+    (ws / 'interrupted_stage.json').write_text(json.dumps(
+        {'cancelled': True, 'stages': ['intake']}), encoding='utf-8')
+    status = Workspace(ws).detect()['intake']
+    assert status.status == 'partial'
+    assert 'interrupted' in status.summary
 
 
 def test_image_free_zone_folders_are_not_done(tmp_path):
