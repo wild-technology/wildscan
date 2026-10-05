@@ -2,22 +2,22 @@
 
 The portal mirrors the flow the pipeline has had since RC_Main:
 
-    1. expedition / dive / data location / results root   (this module)
+    1. Wild Sync run directory (or a folder of runs) and workspace  (this module)
     2. checkbox stage selection, everything sensible pre-selected
     3. ONE question at a time, in module order, each parameter's own
        DESCRIPTION as the prompt, honouring disable_when_module_active
     4. parameter summary, then run - with gates between stages
 
-This file owns the non-UI halves: raw-data auto-detection, results-root
-structure, last-run persistence, the question list, and command assembly.
-It is a PORTAL ONLY - the pipeline scripts are untouched, and chained
-modules run in a single main.py invocation exactly as they always have
-(the in-process hand-off between Batch Directory and Alignment IS the
-current data handling; splitting them would change behaviour).
+This file owns the non-UI halves: run-directory detection and the camera
+scan, results-root structure, last-run persistence, the question list, and
+command assembly. It is a PORTAL ONLY - the pipeline scripts are untouched,
+and chained modules run in a single main.py invocation exactly as they
+always have (the in-process hand-off between Batch Directory and Alignment
+IS the current data handling; splitting them would change behaviour).
 
 Last-run answers persist via the pipeline's own SettingsStore under the
 'wildscan' section of rs_settings.json, so the next session opens with the
-previous expedition, dive, data location and results root as defaults.
+previous run directories and workspace as defaults.
 """
 from __future__ import annotations
 
@@ -28,6 +28,19 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from modules import camera_registry
+from modules.calibration_sidecars import MODES as CALIBRATION_MODES
+from modules.wildsync_intake.intake import (
+    VARIANTS,
+    IntakeError,
+    find_run_directories,
+    image_variant,
+    load_manifest,
+    node_directories,
+    split_run_paths,
+)
+
+from .workspace import STAGE_TITLES as CENSUS_TITLES
 from .workspace import StageStatus, Workspace, _find_flight_logs, _load_json
 
 REPO = Path(__file__).resolve().parent.parent
@@ -36,29 +49,28 @@ _quiet = logging.getLogger("wildscan.session")
 _quiet.addHandler(logging.NullHandler())
 _quiet.propagate = False
 
-# The extraction module accepts these containers; detection must match it.
-VIDEO_EXTS = {".mov", ".mp4"}
-NAV_HINTS = ("datatable", "nav", "flight", "rumi")
-NAV_EXTS = {".csv", ".txt", ".tsv"}
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
-
-# Pipeline module chain, in RC_Main's order, plus the post-align stages the
+# Pipeline module chain, in main.py's order, plus the post-align stages the
 # portal drives as separate commands.
-CHAIN_STAGES = ["preprocess", "batch", "align"]
+CHAIN_STAGES = ["intake", "preprocess", "batch", "align"]
 POST_STAGES = ["merge", "model", "export", "publish"]
 ALL_STAGES = CHAIN_STAGES + POST_STAGES
 
 MODULE_DISPLAY = {
+    "intake": "Wild Sync Intake",
     "preprocess": "Preprocess Images",
     "batch": "Batch Directory",
     "align": "RealityScan Alignment",
 }
 
+STAGE_TITLES = {key: CENSUS_TITLES[key] for key in ALL_STAGES
+                if key in CENSUS_TITLES}
+STAGE_TITLES["intake"] = MODULE_DISPLAY["intake"]
+
 # The results layout the pipeline itself creates under the results root -
 # shown to the operator so "auto-created structure" is explicit, created by
 # the MODULES, never by the portal.
 RESULTS_LAYOUT = [
-    ("raw_images/", "extracted or copied survey imagery"),
+    ("raw_images/", "images copied in by Wild Sync Intake, flight log, manifest"),
     ("preprocessed_images/", "CLAHE output (align + texture source)"),
     ("batched_images_by_zone/", "per-zone trees + batch_inputs.json"),
     ("aligned_components/", "per-zone .rsalign + identity manifests"),
@@ -69,182 +81,102 @@ RESULTS_LAYOUT = [
 ]
 
 
-# ----------------------------------------------------------------- cameras
+# ------------------------------------------------------- run directories
 
-# The operator's official camera table (2026-07-29) - suggestions offered when
-# an unrecognised filename prefix matches a letter. The PIPELINE's camera
-# truth stays in modules/camera_registry.py; the portal only identifies,
-# asks, and records.
-# superseded-by modules/cameras.json cameras/families - pending migration step (c+)
-OFFICIAL_CAMERAS = {
-    "Z": "Zeuss 24mm rectilinear zoom (Standard Science Camera)",
-    "C": "Cinema (fisheye; 16mm) - Widefield Camera Array",
-    "P": "Port (fisheye; 16mm) - Widefield Camera Array",
-    "S": "Starboard (fisheye; 16mm) - Widefield Camera Array",
-    "U": "Upper (fisheye; 16mm)",
-    "M": "Mid (fisheye; 16mm)",
-    "L": "Lower (24mm zoom rectilinear lens)",
-}
+@dataclass(frozen=True)
+class CameraCount:
+    """One camera node folder of a run: frame files per image variant."""
+    node: str
+    camera: str                  # camera key from modules/cameras.json, or ""
+    card: int = 0
+    review: int = 0
+    raw: int = 0
+    hidden_files: int = 0
+
+    def summary_line(self) -> str:
+        who = (f"{self.node} ({self.camera})" if self.camera
+               else f"{self.node} (matches no camera in modules/cameras.json)")
+        return (f"{who}: {self.card:,} card, {self.review:,} review, "
+                f"{self.raw:,} RAW (RAW is not an input)")
+
+
+@dataclass(frozen=True)
+class RunInfo:
+    """A detected Wild Sync run directory."""
+    path: Path
+    has_run_json: bool
+    cameras: tuple[CameraCount, ...] = ()
+
+    @property
+    def run_id(self) -> str:
+        return self.path.name
 
 
 @dataclass
-class CameraScan:
-    """Camera identities parsed from the imagery filenames."""
-    known: dict = field(default_factory=dict)     # family -> (count, example)
-    unknown: dict = field(default_factory=dict)   # prefix -> (count, example)
-
-    def summary_lines(self) -> list[str]:
-        from modules import camera_registry
-        lines = []
-        for fam, (count, example) in sorted(self.known.items()):
-            cam = camera_registry.CAMERAS.get(
-                camera_registry.FAMILY_CAMERA.get(fam, ""), None)
-            desc = cam.key if cam else fam
-            lines.append(f"camera {desc}: {count:,} images "
-                         f"({fam}, e.g. {example}) - priors on file")
-        for prefix, (count, example) in sorted(self.unknown.items()):
-            suggestion = OFFICIAL_CAMERAS.get(prefix.upper()[:1])
-            hint = f" - looks like {suggestion}" if suggestion else ""
-            lines.append(f"UNRECOGNISED camera '{prefix}': {count:,} images "
-                         f"(e.g. {example}) - optional camera notes{hint}")
-        return lines
-
-
-_PREFIX_RE = None
-
-
-def scan_cameras(image_dir: str | Path, sample_per_dir: int = 200) -> CameraScan:
-    """Parse camera identities from filenames: the registry decides KNOWN
-    (priors on file); anything else groups by its leading alpha prefix and
-    becomes a question."""
-    import re as _re
-
-    from modules import camera_registry
-    scan = CameraScan()
-    if not str(image_dir).strip():
-        return scan
-    root = Path(image_dir)
-    if not root.is_dir():
-        return scan
-    prefix_re = _re.compile(r"^([A-Za-z]+)")
-    for dirpath, _dirs, files in os.walk(root):
-        taken = 0
-        for name in files:
-            if Path(name).suffix.lower() not in IMAGE_EXTS:
-                continue
-            taken += 1
-            if taken > sample_per_dir:
-                break
-            fam = camera_registry.family(name)
-            if fam:
-                count, example = scan.known.get(fam, (0, name))
-                scan.known[fam] = (count + 1, example)
-            else:
-                m = prefix_re.match(name)
-                prefix = (m.group(1) if m else "?").lower()
-                count, example = scan.unknown.get(prefix, (0, name))
-                scan.unknown[prefix] = (count + 1, example)
-    return scan
-
-
-def camera_questions(scan: CameraScan, saved: dict[str, str]) -> list["Question"]:
-    """Optional notes per unrecognised camera prefix: name, lens and any
-    measured lever arm or tilt. Answers are recorded for the maintainers
-    (camera_registry/MOUNTS stay the runtime truth) and become the next
-    session's defaults."""
-    questions: list[Question] = []
-    for prefix in sorted(scan.unknown):
-        count, example = scan.unknown[prefix]
-        letter = prefix.upper()[:1]
-        suggested = OFFICIAL_CAMERAS.get(letter, "")
-        base = f"cam_{prefix}"
-        questions += [
-            Question("cameras", f"{base}_name",
-                     f"Unrecognised camera '{prefix}' ({count} images, e.g. "
-                     f"{example}). Camera name, if known (optional; "
-                     f"suggestion: {suggested or 'none'})",
-                     "text", saved.get(f"{base}_name", "")),
-            Question("cameras", f"{base}_lens",
-                     f"'{prefix}' lens (e.g. fisheye 16mm / rectilinear 24mm)",
-                     "text", saved.get(f"{base}_lens", "")),
-            Question("cameras", f"{base}_lever",
-                     f"'{prefix}' lever arm from vehicle centre, metres "
-                     "forward/lateral/down (optional measured value; leave blank if unknown)",
-                     "text", saved.get(f"{base}_lever", "")),
-            Question("cameras", f"{base}_tilt",
-                     f"'{prefix}' tilt (camera pitch down from horizontal, "
-                     "degrees; optional measured value)",
-                     "number", saved.get(f"{base}_tilt", "")),
-        ]
-    return questions
-
-
-# ---------------------------------------------------------------- detection
-
-@dataclass
-class RawDataScan:
-    """What the data location actually holds - drives prefills."""
-    videos: list[Path] = field(default_factory=list)
-    nav_files: list[Path] = field(default_factory=list)
-    image_count: int = 0
-    image_dirs: list[Path] = field(default_factory=list)
-    utm_logs: list[Path] = field(default_factory=list)
+class RunDataScan:
+    """What the run-directory field actually holds - drives the preview."""
+    runs: list[RunInfo] = field(default_factory=list)
+    problems: list[str] = field(default_factory=list)
 
     def summary_lines(self) -> list[str]:
         lines = []
-        if self.videos:
-            lines.append(f"{len(self.videos)} video(s): "
-                         + ", ".join(v.name for v in self.videos[:3])
-                         + (" ..." if len(self.videos) > 3 else ""))
-        if self.nav_files:
-            lines.append(f"{len(self.nav_files)} nav candidate(s): "
-                         + ", ".join(n.name for n in self.nav_files[:3]))
-        if self.image_count:
-            lines.append(f"{self.image_count:,} images in "
-                         f"{len(self.image_dirs)} folder(s)")
-        if self.utm_logs:
-            lines.append(f"georeferenced flight log present: "
-                         f"{self.utm_logs[0].name}")
+        for run in self.runs:
+            lines.append(f"run {run.run_id}"
+                         + ("" if run.has_run_json else " (no run.json)"))
+            lines += [f"  {cam.summary_line()}" for cam in run.cameras]
+        lines += self.problems
         if not lines:
-            lines.append("nothing recognised yet - point me at the cruise "
-                         "data folder")
+            lines.append("nothing recognised yet - point me at a Wild Sync "
+                         "run directory")
         return lines
 
 
-def scan_raw_data(location: str | Path) -> RawDataScan:
-    """Read-only census of a cruise data folder (bounded depth, cheap)."""
-    scan = RawDataScan()
-    if not location or isinstance(location, str) and not location.strip():
-        return scan
-    root = Path(location)
-    if not root.is_dir():
-        return scan
-    image_dirs: dict[Path, int] = {}
-    for dirpath, dirnames, files in os.walk(root):
-        depth = len(Path(dirpath).relative_to(root).parts)
-        if depth >= 3:
-            dirnames[:] = []
-        images_here = 0
-        for name in files:
-            ext = Path(name).suffix.lower()
-            low = name.lower()
-            path = Path(dirpath) / name
-            if ext in VIDEO_EXTS:
-                scan.videos.append(path)
-            elif ext in NAV_EXTS and any(h in low for h in NAV_HINTS):
-                if low.startswith("flight_log") and low.endswith("_utm.txt"):
-                    scan.utm_logs.append(path)
-                else:
-                    scan.nav_files.append(path)
-            elif ext in IMAGE_EXTS:
-                images_here += 1
-        if images_here:
-            image_dirs[Path(dirpath)] = images_here
-    scan.image_count = sum(image_dirs.values())
-    scan.image_dirs = sorted(image_dirs, key=lambda p: -image_dirs[p])
-    # Prefer *final_datatable* nav files.
-    scan.nav_files.sort(key=lambda p: ("final_datatable" not in p.name.lower(),
-                                       p.name.lower()))
+def scan_cameras(run_dir: str | Path) -> tuple[CameraCount, ...]:
+    """Frame files per camera node and image variant of one run directory.
+
+    Node folders, variants and frame suffixes come from the intake module's
+    own helpers; hidden files (names starting with '.', such as macOS '._*'
+    copies) are never frames, exactly as in the intake.
+    """
+    counts = []
+    for node_dir in node_directories(str(run_dir)):
+        node = os.path.basename(node_dir)
+        family = next((f for f in camera_registry.REGISTRY.families
+                       if f.name.lower() == node.lower()), None)
+        found = {"card": 0, "review": 0, "raw": 0}
+        hidden = 0
+        for name in os.listdir(node_dir):
+            if name.startswith("."):
+                hidden += 1
+                continue
+            variant = image_variant(name)
+            if variant in found and os.path.isfile(os.path.join(node_dir, name)):
+                found[variant] += 1
+        counts.append(CameraCount(node, family.camera if family else "",
+                                  hidden_files=hidden, **found))
+    return tuple(counts)
+
+
+def scan_run_data(location: str | Path) -> RunDataScan:
+    """Read-only census of the run-directory field: each ';'-separated path
+    is a Wild Sync run directory or a folder of them (the intake's own
+    rule). Anything else is reported as a problem."""
+    scan = RunDataScan()
+    seen: set[Path] = set()
+    for path in split_run_paths(str(location)):
+        try:
+            runs = find_run_directories([path])
+        except IntakeError as exc:
+            scan.problems.append(str(exc))
+            continue
+        for run in runs:
+            run_path = Path(run)
+            if run_path in seen:
+                continue
+            seen.add(run_path)
+            scan.runs.append(RunInfo(run_path,
+                                     (run_path / "run.json").is_file(),
+                                     scan_cameras(run_path)))
     return scan
 
 
@@ -255,9 +187,7 @@ def _settings():
     return SettingsStore()
 
 
-_PERSISTED_FIELDS = ("expedition", "dive", "cruise_folder", "raw_images_dir",
-                     "video_path", "processed_data", "results_root", "results_base",
-                     "continue_automatically")
+_PERSISTED_FIELDS = ("run_dirs", "results_root", "continue_automatically")
 
 
 def load_last_run() -> dict:
@@ -274,16 +204,10 @@ def load_last_run() -> dict:
     return out
 
 
-def save_last_run(session: "Session") -> None:
+def save_last_run(session: Session) -> None:
     store = _settings()
-    store.set("wildscan", "expedition", session.expedition)
-    store.set("wildscan", "dive", session.dive)
-    store.set("wildscan", "cruise_folder", session.cruise_folder)
-    store.set("wildscan", "raw_images_dir", session.raw_images_dir)
-    store.set("wildscan", "video_path", session.video_path)
-    store.set("wildscan", "processed_data", session.processed_data)
+    store.set("wildscan", "run_dirs", session.run_dirs)
     store.set("wildscan", "results_root", session.results_root)
-    store.set("wildscan", "results_base", str(Path(session.results_root).parent))
     store.set("wildscan", "continue_automatically",
               session.continue_automatically)
     store.set("wildscan", "answers", dict(session.answers))
@@ -293,55 +217,67 @@ def save_last_run(session: "Session") -> None:
 
 @dataclass
 class Session:
-    expedition: str = ""
-    dive: str = ""
-    # Raw data - three separate lines (decision 2026-07-29): the cruise dive
-    # folder (video + nav as delivered), a folder of raw stills, and/or a
-    # specific video. Any subset may be filled.
-    cruise_folder: str = ""
-    raw_images_dir: str = ""
-    video_path: str = ""
-    # Processed data - a results-SHAPED location where ROVDataConcat has
-    # already run (datatables exist) but the pipeline stages have not.
-    processed_data: str = ""
+    # One Wild Sync run directory, or a folder of them; several paths are
+    # separated by ';' (the intake's own convention).
+    run_dirs: str = ""
     results_root: str = ""
     continue_automatically: bool = False
     enabled: list[str] = field(default_factory=list)
     answers: dict[str, str] = field(default_factory=dict)   # cli_long -> value
 
-    @property
-    def label(self) -> str:
-        """The expedition_dive label the pipeline's daily saves use."""
-        bits = [b for b in (self.expedition.strip(), self.dive.strip()) if b]
-        return "_".join(bits).upper()
-
     def workspace(self) -> Workspace:
         return Workspace(self.results_root)
-
-    def suggested_results_root(self, base: str | None) -> str:
-        if not (self.expedition or self.dive):
-            return base or ""
-        return str(Path(base or str(REPO.parent)) / self.label.lower())
 
 
 def default_session() -> Session:
     last = load_last_run()
-    s = Session(
-        expedition=last.get("expedition", ""),
-        dive=last.get("dive", ""),
-        cruise_folder=last.get("cruise_folder", ""),
-        raw_images_dir=last.get("raw_images_dir", ""),
-        video_path=last.get("video_path", ""),
-        processed_data=last.get("processed_data", ""),
+    return Session(
+        run_dirs=last.get("run_dirs", ""),
         results_root=last.get("results_root", ""),
         continue_automatically=(last.get("continue_automatically", "false")
                                 .lower() == "true"),
         answers=dict(last.get("answers", {})),
     )
-    base = last.get("results_base", "")
-    if not s.results_root and base and s.label:
-        s.results_root = str(Path(base) / s.label.lower())
-    return s
+
+
+def detect_intake(ws: Workspace) -> StageStatus:
+    """Status of the Wild Sync Intake stage from its manifest in raw_images/."""
+    try:
+        manifest = load_manifest(str(ws.raw_images))
+    except ValueError as exc:
+        return StageStatus("intake", "partial", "intake manifest is not complete",
+                           [str(exc)])
+    if manifest is None:
+        return StageStatus("intake", "pending", "no Wild Sync intake manifest")
+    try:
+        matched = manifest["images"]["matched"]
+        runs = len(manifest["sources"])
+        variant = manifest["variant"]
+    except (KeyError, TypeError) as exc:
+        return StageStatus("intake", "partial",
+                           "intake manifest is missing a field",
+                           [f"missing {exc}"])
+    return StageStatus("intake", "done",
+                       f"{matched:,} {variant} images from {runs} run(s)")
+
+
+def stage_statuses(ws: Workspace) -> dict[str, StageStatus]:
+    """The census for every stage the portal drives, intake first."""
+    census = ws.detect()
+    statuses = {"intake": detect_intake(ws)}
+    interrupted = _load_json(ws.root / "interrupted_stage.json")
+    stages = interrupted.get("stages")
+    if (interrupted.get("cancelled") is True and isinstance(stages, list)
+            and "intake" in stages):
+        prior = statuses["intake"]
+        statuses["intake"] = StageStatus(
+            "intake", "blocked" if prior.status in ("pending", "blocked")
+            else "partial", "interrupted run - retry required",
+            [prior.summary, *prior.details])
+    for key in ALL_STAGES:
+        if key in census:
+            statuses[key] = census[key]
+    return {key: statuses[key] for key in ALL_STAGES if key in statuses}
 
 
 def default_enabled(ws: Workspace,
@@ -350,7 +286,7 @@ def default_enabled(ws: Workspace,
     rest ticked - RC_Main pre-selected everything; a resumable portal
     pre-selects what remains."""
     if statuses is None:
-        statuses = ws.detect()
+        statuses = stage_statuses(ws)
     interrupted = _load_json(ws.root / "interrupted_stage.json").get("stages", [])
     if not isinstance(interrupted, list):
         interrupted = []
@@ -365,7 +301,7 @@ class Question:
     stage: str                   # stage key it belongs to
     arg: str                     # cli_long
     prompt: str                  # the parameter's own description (RC_Main)
-    kind: str                    # text | path | file | video | number | bool
+    kind: str                    # text | path | file | rundirs | number | bool
     default: str = ""
     required: bool = False
     choices: tuple[str, ...] = ()
@@ -383,12 +319,11 @@ class Question:
             return f"{value} is not a directory"
         if self.kind == "file" and not Path(value).is_file():
             return f"{value} is not a file"
-        if self.kind == "video":
-            path = Path(value)
-            if not (path.is_file() or path.is_dir()):
-                return "Choose a video file or a folder of recordings."
-            if path.is_file() and path.suffix.lower() not in VIDEO_EXTS:
-                return "Choose a .mp4 or .mov recording."
+        if self.kind == "rundirs":
+            try:
+                find_run_directories(split_run_paths(value))
+            except IntakeError as exc:
+                return str(exc)
         if self.kind == "number":
             try:
                 parsed = self.value_type(value) if self.value_type is int else float(value)
@@ -402,6 +337,7 @@ class Question:
 
 
 _KIND_BY_NAME = {
+    "ws_run_dirs": "rundirs",
     "pre_input_image_dir": "path",
     "batch_input_image_dir": "path",
     "batch_flight_log_path": "file",
@@ -414,7 +350,10 @@ _KIND_BY_NAME = {
 _REQUIRED: set[str] = set()
 # Answers constrained to a fixed set - validated at the question, not four
 # screens later.
-_CHOICES_BY_NAME: dict[str, tuple[str, ...]] = {}
+_CHOICES_BY_NAME: dict[str, tuple[str, ...]] = {
+    "ws_variant": VARIANTS,
+    "ws_calibration": tuple(CALIBRATION_MODES),
+}
 # Alignment answers the portal fixes instead of asking: RealityScan's own
 # console display stays off.
 _FORCED_ANSWERS = {"r_display_output": "false"}
@@ -428,8 +367,11 @@ def _module_registry() -> dict:
         from modules.image_batcher.batch_directory import BatchDirectory
         from modules.preprocess_images.preprocess_images import PreprocessImages
         from modules.realityscan_interface.realityscan_interface import (
-            RealityScanAlignment)
+            RealityScanAlignment,
+        )
+        from modules.wildsync_intake.wildsync_intake import WildSyncIntake
         _MODULES = {
+            "intake": WildSyncIntake(_quiet),
             "preprocess": PreprocessImages(_quiet),
             "batch": BatchDirectory(_quiet),
             "align": RealityScanAlignment(_quiet),
@@ -466,56 +408,16 @@ def chain_arg_names(chain: list[str]) -> set[str]:
     return names
 
 
-def scan_processed_data(location: str | Path) -> dict[str, list[Path]]:
-    """A results-shaped location where ROVDataConcat already ran: find its
-    datatables and any georeferenced flight logs (read-only)."""
-    out: dict[str, list[Path]] = {"datatables": [], "utm_logs": []}
-    root = Path(location)
-    if not root.is_dir():
-        return out
-    for dirpath, dirnames, files in os.walk(root):
-        depth = len(Path(dirpath).relative_to(root).parts)
-        if depth >= 3:
-            dirnames[:] = []
-        for name in files:
-            low = name.lower()
-            if low.endswith(".csv") and "datatable" in low:
-                out["datatables"].append(Path(dirpath) / name)
-            elif low.startswith("flight_log") and low.endswith("_utm.txt"):
-                out["utm_logs"].append(Path(dirpath) / name)
-    # *final_datatable* first.
-    out["datatables"].sort(key=lambda p: ("final_datatable" not in p.name.lower(),
-                                          p.name.lower()))
-    return out
-
-
-def _detection_prefills(session: Session, scan: RawDataScan) -> dict[str, str]:
+def _detection_prefills(session: Session) -> dict[str, str]:
     """Auto-detected answers, keyed by cli_long. Only offered as defaults -
-    every one still passes through its question. Source priority: the
-    operator's explicit lines (video / raw images / processed data) beat the
-    cruise-folder scan."""
+    every one still passes through its question."""
     ws = session.workspace()
     out: dict[str, str] = {}
-    if session.video_path and Path(session.video_path).is_file():
-        out["i_input"] = session.video_path
-    elif scan.videos:
-        out["i_input"] = str(scan.videos[0])
-    raw = (Path(session.raw_images_dir)
-           if session.raw_images_dir and Path(session.raw_images_dir).is_dir()
-           else None)
-    if raw is None and ws.raw_images.is_dir():
-        raw = ws.raw_images
-    if raw is None and scan.image_dirs:
-        raw = scan.image_dirs[0]
+    if session.run_dirs.strip():
+        out["w_input"] = session.run_dirs.strip()
+    raw = ws.raw_images if ws.raw_images.is_dir() else None
     if raw:
-        out["g_input"] = str(raw)
         out["p_input"] = str(raw)
-    processed = scan_processed_data(session.processed_data) \
-        if session.processed_data else {"datatables": [], "utm_logs": []}
-    if processed["datatables"]:
-        out["g_flight_log"] = str(processed["datatables"][0])
-    elif scan.nav_files:
-        out["g_flight_log"] = str(scan.nav_files[0])
     batch_src = ws.preprocessed if ws.preprocessed.is_dir() else raw
     if batch_src:
         out["b_input"] = str(batch_src)
@@ -527,33 +429,21 @@ def _detection_prefills(session: Session, scan: RawDataScan) -> dict[str, str]:
     out["r_flight_log"] = ""
     logs = _find_flight_logs(ws.raw_images) or _find_flight_logs(ws.root)
     logs = [p for p in logs if ws.batched not in p.parents]
-    if not logs and processed["utm_logs"]:
-        logs = processed["utm_logs"]
-    if not logs and scan.utm_logs:
-        logs = scan.utm_logs
     if logs:
         out["b_flight_log_path"] = str(logs[0])
-    out["r_project_label"] = session.label
+    out["r_project_label"] = ""
     return out
 
 
-def build_questions(session: Session, scan: RawDataScan) -> list[Question]:
+def build_questions(session: Session) -> list[Question]:
     """RC_Main's question list: per enabled chain module, in order, each
     prompt_user parameter - SKIPPING any whose disable_when_module_active
     names another enabled module (the upstream module will hand the value
     over in-process, exactly as the pipeline already does)."""
     enabled_displays = {MODULE_DISPLAY[k] for k in session.enabled
                         if k in MODULE_DISPLAY}
-    detected = _detection_prefills(session, scan)
+    detected = _detection_prefills(session)
     questions: list[Question] = []
-
-    # Camera identification comes FIRST: parse the imagery's camera names;
-    # recognised families carry priors on file; unrecognised prefixes may
-    # record optional notes without inventing measured camera priors.
-    image_source = detected.get("g_input") or session.raw_images_dir
-    if image_source:
-        cam_scan = scan_cameras(image_source)
-        questions += camera_questions(cam_scan, session.answers)
 
     for key in CHAIN_STAGES:
         if key not in session.enabled:
@@ -603,6 +493,12 @@ class StageCommand:
         return " ".join(a if " " not in a else f'"{a}"' for a in self.argv)
 
 
+def _anchor_run_dirs(value: str, cwd: Path) -> str:
+    """Run-directory paths made absolute against ``cwd``, joined with ';'."""
+    return ";".join(os.path.abspath(os.path.join(cwd, part))
+                    for part in split_run_paths(value))
+
+
 def build_commands(session: Session) -> list[StageCommand]:
     """The run plan: ONE main.py invocation for every enabled chain module
     (in-process hand-off preserved - portal only), then each post stage as
@@ -611,20 +507,24 @@ def build_commands(session: Session) -> list[StageCommand]:
     caller_cwd = Path.cwd()
     # Absolute paths survive the native workflow's separate working directory.
     # abspath preserves aliases so downstream alias guards can still inspect them.
-    for name in ('cruise_folder', 'raw_images_dir', 'video_path',
-                 'processed_data', 'results_root'):
-        value = getattr(session, name).strip()
-        if value:
-            setattr(session, name, os.path.abspath(os.path.join(caller_cwd, value)))
+    if session.results_root.strip():
+        session.results_root = os.path.abspath(
+            os.path.join(caller_cwd, session.results_root.strip()))
+    session.run_dirs = _anchor_run_dirs(session.run_dirs, caller_cwd)
     chain = [k for k in CHAIN_STAGES if k in session.enabled]
     path_args = {'output_dir'}
+    run_dir_args = set()
     for module in _module_registry().values():
         for name, parameter in module.get_parameters().items():
-            if _KIND_BY_NAME.get(name) in ('path', 'file', 'video'):
+            if _KIND_BY_NAME.get(name) in ('path', 'file'):
                 path_args.add(parameter.cli_long)
+            elif _KIND_BY_NAME.get(name) == 'rundirs':
+                run_dir_args.add(parameter.cli_long)
     for arg, value in session.answers.items():
         if arg in path_args and value.strip():
             session.answers[arg] = os.path.abspath(os.path.join(caller_cwd, value.strip()))
+        elif arg in run_dir_args:
+            session.answers[arg] = _anchor_run_dirs(value, caller_cwd)
     ws = session.workspace()
 
     # RealityScan machine constants (RS_INSTANCE / RS_CACHE_DIR /
@@ -650,10 +550,6 @@ def build_commands(session: Session) -> list[StageCommand]:
         # "unrecognized arguments" before a single stage ran.
         accepted = chain_arg_names(chain)
         for arg, value in session.answers.items():
-            # cam_* answers are the portal's camera record (persisted for
-            # the maintainers and the next run), never main.py arguments.
-            if arg.startswith("cam_"):
-                continue
             if arg not in accepted:
                 continue
             if value.strip() or arg in ('r_flight_log', 'r_project_label'):
@@ -678,8 +574,8 @@ def build_commands(session: Session) -> list[StageCommand]:
                 "--components_root", str(ws.aligned),
                 "--images_root", str(ws.batched),
                 "--output", str(ws.root / "merged"),
-                "--name", f"{session.label or ws.root.name}_Assembly",
-                "--project_label", session.label,
+                "--name", f"{ws.root.name}_Assembly",
+                "--project_label", "",
                 "--min_size", "50", "--target", "0.95",
                 "--visible", "true", "--auto_model", "false",
                 "--ladder", "merge_first", "--merge_scope", "neighbour",
@@ -737,7 +633,7 @@ def build_commands(session: Session) -> list[StageCommand]:
     if "publish" in session.enabled:
         argv = [sys.executable, str(REPO / "publish_batch.py"),
                 "--workspace", session.results_root,
-                "--prefix", session.label or ws.root.name]
+                "--prefix", ws.root.name]
         # Placement comes from each mesh's own .rsInfo sidecar, which records
         # what the exporter actually did. The flight log is pinned here as the
         # INDEPENDENT nav check on that reading - and pinned rather than left
@@ -769,7 +665,7 @@ def workspace_flight_log(ws: Workspace) -> Path | None:
     The merge output is searched first: the exported components were built
     against the merge's union log.
     """
-    from modules.flight_logs import crs_for_flight_log  # noqa: PLC0415
+    from modules.flight_logs import crs_for_flight_log
     candidates = list(_find_flight_logs(ws.raw_images)) or \
         list(_find_flight_logs(ws.root))
     merge = ws.latest_merge()
@@ -787,52 +683,9 @@ def workspace_input_crs(ws: Workspace) -> str | None:
     No longer what places an asset - that comes from each mesh's `.rsInfo`
     sidecar - but still the quickest way to state a workspace's zone.
     """
-    from modules.flight_logs import crs_for_flight_log  # noqa: PLC0415
+    from modules.flight_logs import crs_for_flight_log
     log = workspace_flight_log(ws)
     return crs_for_flight_log(str(log)) if log else None
-
-
-def write_camera_records(session: Session) -> Path | None:
-    """Persist the portal's per-camera answers beside the results.
-
-    The wizard asks for a new camera's official name, lens, LEVER ARM and
-    TILT as REQUIRED answers and then drops every cam_* key when building
-    main.py's argv - by design (they are records, not pipeline arguments;
-    the runtime truth is modules/cameras.json + MOUNTS). Collecting a
-    required answer and leaving it only in rs_settings.json meant the
-    measurement the operator just took was effectively lost
-    (audit 2026-08-07). Writing them into the workspace keeps them with
-    the dive they describe and gives the maintainer the exact text to port
-    into cameras.json / MOUNTS.
-
-    Returns the file path, or None when there were no camera answers.
-    """
-    records = {k: v for k, v in session.answers.items()
-               if k.startswith("cam_") and str(v).strip()}
-    if not records or not session.results_root:
-        return None
-    import json  # noqa: PLC0415
-    root = Path(session.results_root)
-    root.mkdir(parents=True, exist_ok=True)
-    path = root / "camera_records.json"
-    payload = {
-        "_comment": [
-            "Camera identities the WildScan operator supplied for filename",
-            "prefixes the registry did not recognise. These are RECORDS,",
-            "not runtime settings: the pipeline's camera truth is",
-            "modules/cameras.json (optics/calibration groups) and",
-            "modules/georeference/georeference_images.py MOUNTS (lever arm,",
-            "tilt, pitch accuracy). Until a prefix is added there, its",
-            "images get NO pitch prior at all - deliberately, so no run",
-            "invents a mount that was never measured.",
-        ],
-        "expedition": session.expedition,
-        "dive": session.dive,
-        "cameras": records,
-    }
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2, sort_keys=True)
-    return path
 
 
 def prepare_results_root(session: Session) -> list[str]:
@@ -849,7 +702,7 @@ def export_names_file(session: Session) -> None:
     merge = ws.latest_merge()
     if not merge:
         return
-    from .workspace import _load_json, _records  # noqa: PLC0415
+    from .workspace import _load_json, _records
     rep = _load_json(merge / "merge_report.json")
     names = [c.get("key", "").split("/")[-1]
              for rec in _records(rep, "clusters")

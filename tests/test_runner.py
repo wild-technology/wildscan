@@ -4,10 +4,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-from pathlib import Path
 import sys
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -162,7 +162,7 @@ def test_cancel_marker_is_anchored_to_the_explicit_child_cwd(tmp_path, monkeypat
     sink = Sink()
     runner = CommandRunner(sink)
     runner.start(StageCommand('fixture', [sys.executable, '-B', '-c', child], {},
-                              workspace='results', stages=('extract',), cwd=str(caller)))
+                              workspace='results', stages=('intake',), cwd=str(caller)))
     try:
         wait_for(ready)
         runner.terminate()
@@ -176,7 +176,7 @@ def test_cancel_marker_is_anchored_to_the_explicit_child_cwd(tmp_path, monkeypat
 
 
 def test_manual_command_keeps_the_default_checkout_cwd(tmp_path, monkeypatch):
-    from wildscan.runner import LogLine, REPO
+    from wildscan.runner import REPO, LogLine
 
     monkeypatch.chdir(tmp_path)
     sink = Sink()
@@ -204,11 +204,11 @@ def test_retry_clears_only_matching_stage_interruption(tmp_path, marker):
 
 def test_retry_preserves_unfinished_stages(tmp_path):
     path = tmp_path / "interrupted_stage.json"
-    path.write_text(json.dumps({"stages": ["extract", "georeference"]}), encoding="utf-8")
+    path.write_text(json.dumps({"stages": ["intake", "preprocess"]}), encoding="utf-8")
     sink = Sink()
     runner = CommandRunner(sink)
     runner.start(StageCommand("fixture", [sys.executable, "-c", "pass"], {},
-                              workspace=str(tmp_path), stages=("georeference",)))
+                              workspace=str(tmp_path), stages=("preprocess",)))
     assert sink.finished.wait(5)
     assert path.exists()
 

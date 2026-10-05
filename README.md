@@ -139,8 +139,6 @@ preparing a dive.
 For an existing results folder, choose **View results** to inspect its
 pipeline and component tables without starting a processing run.
 
-![WildScan stage picker with extraction unselected for existing still images](docs/images/dataset-stages.svg)
-
 The screenshot shows the actual interface with a labelled sample of 24 still
 images and one navigation CSV. No native processing has run.
 
