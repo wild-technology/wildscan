@@ -114,25 +114,29 @@ def test_planned_paths_and_child_cwd_stay_with_the_intake_folder(tmp_path, monke
 
     caller = tmp_path / 'intake with spaces'
     caller.mkdir()
-    raw = caller / 'raw clip.mov'
-    raw.write_text('fixture input', encoding='utf-8')
+    raw = caller / 'raw images'
+    raw.mkdir()
+    (raw / 'Cam1_20260820_192542.42.jpg').write_text('fixture input',
+                                                     encoding='utf-8')
     results = caller / 'results'
     results.mkdir()
     monkeypatch.chdir(caller)
-    plan = build_commands(Session(results_root='results', enabled=['extract'],
-                                  answers={'i_input': raw.name}))[0]
+    plan = build_commands(Session(results_root='results', enabled=['preprocess'],
+                                  answers={'p_input': raw.name}))[0]
     assert plan.cwd == str(caller)
     assert plan.workspace == str(results)
     assert Path(plan.argv[1]).is_absolute()
-    input_path = plan.argv[plan.argv.index('--i_input') + 1]
+    input_path = plan.argv[plan.argv.index('--p_input') + 1]
     output_path = plan.argv[plan.argv.index('--output_dir') + 1]
     child = ("from pathlib import Path; import os,sys; "
              "assert Path.cwd() == Path(sys.argv[3]); "
              "root=Path(sys.argv[2]); root.mkdir(exist_ok=True); "
-             "(root/'copied.txt').write_text(Path(sys.argv[1]).read_text(),encoding='utf-8')")
+             "(root/'copied.txt').write_text("
+             "(Path(sys.argv[1])/'Cam1_20260820_192542.42.jpg').read_text(),"
+             "encoding='utf-8')")
     plan.argv = [sys.executable, '-B', '-c', child, input_path, output_path, str(caller)]
     marker = results / 'interrupted_stage.json'
-    marker.write_text(json.dumps({'stages': ['extract']}), encoding='utf-8')
+    marker.write_text(json.dumps({'stages': ['preprocess']}), encoding='utf-8')
     other = tmp_path / 'other'
     other.mkdir()
     monkeypatch.chdir(other)

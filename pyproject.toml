@@ -40,9 +40,9 @@ dependencies = [
     "inquirer>=3.4",         # main.py - interactive module chain prompts
     "matplotlib>=3.11",      # modules/image_batcher - batch plots
     "numpy>=2.5",
-    "opencv-python>=5.0",    # extract_images / preprocess_images (CLAHE, WB)
+    "opencv-python>=5.0",    # preprocess_images (CLAHE, WB)
     "pandas>=3.0",
-    "Pillow>=12.3",          # georeference (EXIF/JPEG)
+    "Pillow>=12.3",          # calibration_sidecars - image size and EXIF focal length
     "pyproj>=3.7",           # cesium_placement - EGM2008 geoid, CRS transforms
     "requests>=2.33.0",      # publish_cesium.py - ion REST
     "rich>=15.0",            # wildscan TUI
@@ -52,7 +52,6 @@ dependencies = [
     "shapely>=2.1",
     "textual>=8.2",          # wildscan TUI
     "tqdm>=4.69",
-    "utm>=0.8",              # georeference - UTM <-> WGS84
 ]
 
 [project.optional-dependencies]
@@ -82,8 +81,6 @@ packages = [
     "wildscan",
     "module_base",
     "modules",
-    "modules.extract_images",
-    "modules.georeference",
     "modules.image_batcher",
     "modules.preprocess_images",
     "modules.realityscan_interface",

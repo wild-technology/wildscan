@@ -192,8 +192,8 @@ Exceptions that must NOT be renamed:
 - `docs/validation/` — historical experiment plans. Dated plans retain
   their original command paths; use the current script locations above.
 - `main.py` — interactive orchestrator over the `RSModule` framework
-  (`module_base/rs_module.py`): Extract Images → Georeference → Preprocess
-  Images → Batch Directory → RealityScan Alignment. `RS_MODULES` /
+  (`module_base/rs_module.py`): Preprocess Images → Batch Directory →
+  RealityScan Alignment. `RS_MODULES` /
   `RS_NO_INTERACTIVE` env vars select modules without a TTY; a module
   reporting Success=False stops the chain (exit 1).
 - `wildscan/` — TUI interaction portal
@@ -314,13 +314,12 @@ Exceptions that must NOT be renamed:
   use, the dive's nav envelope, and a determinant test that rules out
   mirrored readings), then converts the anchor's SEA-SURFACE depth to an
   ELLIPSOIDAL height through EGM2008 and localises the mesh into East-North-Up
-  metres. **The vertical is the whole point:** the georeference stage writes
+  metres. **The vertical is the whole point:** the flight log carries
   `-abs(depth)`, i.e. a depth below the sea surface, and Cesium reads
   every height as above the ellipsoid — the gap is the geoid undulation, up to
   +72.7 m on this repo's own data. PROJ silently applies a ZERO correction
   when the geoid grid is missing, so every transformer here passes
   `allow_ballpark=False`.
-- `modules/file_metadata_parser.py` — image metadata extraction.
 - `module_base/settings_store.py` — persists last-entered prompt answers to
   `rs_settings.json` (repo root, gitignored) and offers them as defaults.
   All user-facing path prompts must go through it.

@@ -164,7 +164,7 @@ working copies or the pipeline's prepared zone tree.
 
 | Path | Purpose |
 |---|---|
-| `main.py` | Interactive orchestrator: Extract Images → Georeference → Preprocess Images → Batch Directory → RealityScan Alignment (per-zone `AlignZone.bat`; `RS_MODULES`/`RS_NO_INTERACTIVE` env vars for non-interactive runs; a failed module stops the chain) |
+| `main.py` | Interactive orchestrator: Preprocess Images → Batch Directory → RealityScan Alignment (per-zone `AlignZone.bat`; `RS_MODULES`/`RS_NO_INTERACTIVE` env vars for non-interactive runs; a failed module stops the chain) |
 | `wildscan/` | WildScan, the interactive TUI portal over the whole pipeline (`wildscan [workspace]`): session setup, resume-aware stage picking, parameter wizard, live run screen, pipeline census + final-components browser — always launching stages through the canonical drivers |
 | `merge_zones.py` | Iterative component-merge driver: imports every per-zone component into a fresh scene and escalates mechanism/flags (georef merge → align+rematch → +High overlap) until the registration target is met; writes `merge_report.json` |
 | `grow_zone.py` | Within-zone component growth driver: on a zone's ORIGINAL aligned scene, checkpointed global re-align → rigid `-mergeComponents` → per-component grow passes, each accepted or rolled back on the never-shrink invariant; writes `grow_report.json` |
@@ -177,7 +177,7 @@ working copies or the pipeline's prepared zone tree.
 | `decimate_images.py` | Copy a percentage of images to a new folder (dataset thinning) |
 | `module_base/` | Framework: `RSModule` base class, `Parameter`, `SettingsStore` |
 | `modules/realityscan_interface/` | Everything that talks to RealityScan — see below |
-| `modules/extract_images/`, `modules/georeference/`, `modules/preprocess_images/`, `modules/image_batcher/` | Pipeline modules used by `main.py` |
+| `modules/preprocess_images/`, `modules/image_batcher/` | Pipeline modules used by `main.py` |
 | `tests/` | Offline pytest regression tests and fixtures |
 | `scripts/validation/` | Explicit manual checks: the preprocessing check |
 | `docs/validation/` | Dated experiment plans |
