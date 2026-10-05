@@ -277,8 +277,10 @@ Exceptions that must NOT be renamed:
   ONLY way any stage locates a log on disk) and per-cruise CRS generation
   (`write_flight_log_params`: UTM zone parsed from the log's filename tag →
   EPSG → FlightLogParams XML; never hand-edit the template's zone).
-  Consumers match by NORMALIZED BASENAME. RealityScan's flight-log import
-  behavior is documented in
+  Consumers match by NORMALIZED BASENAME. It also holds the 13-column
+  flight-log writer (`write_flight_log`) and RealityScan's orientation
+  convention (`realityscan_orientation`: pitch 0 = looking straight down).
+  RealityScan's flight-log import behavior is documented in
   `docs/rs-reference/06-georeferencing-flightlogs-and-scale.md`.
 - `modules/calibration_sidecars.py` — per-eye approximate calibration XMPs
   from manufacturer values, plus the sensor registry. The A/B/C ladder

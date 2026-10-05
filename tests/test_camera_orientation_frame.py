@@ -1,22 +1,23 @@
 """The RealityScan orientation frame: pitch 0 = nadir, 90 = horizontal.
 
-This conversion decides which way every camera in every solve is claimed to
-point. The georeference module's `_convert_to_rc_orientation` is the one
+This conversion decides which way every camera is claimed to point in the
+flight log. ``modules.flight_logs.realityscan_orientation`` is the one
 implementation; these tests pin it.
 
-The convention is not a house choice, it is RealityScan's:
+The pitch convention is RealityScan's, not a house choice:
 `-renderMeshFromCustomPositionYPR` documents a camera at `(0,0,150)` with
 `yaw=pitch=roll=0` looking **down**, so **pitch 0 is nadir** on a scale where
 90 is horizontal. [OFFICIAL: appbasics/allcommands; docs/rs-reference/13 6.4]
 
-    rc_pitch = 90 + (vehicle_pitch - mount_down_tilt)
+    yaw   = (heading + declination + yaw_offset) mod 360
+    pitch = 90 + (vehicle_pitch - mount_down_tilt)
+    roll  = vehicle_roll
 
-Read it as: start horizontal (90), tilt the camera down by its mount angle,
-then add whatever the vehicle itself is doing.
+Read the pitch as: start horizontal (90), tilt the camera down by its mount
+angle, then add whatever the vehicle itself is doing.
 """
 from __future__ import annotations
 
-import logging
 import os
 import sys
 
@@ -25,19 +26,14 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from modules.georeference.georeference_images import (  # noqa: E402
-    ASSUMED_MOUNT_DEFAULTS, GeoreferenceImages, MOUNTS,
-    NO_ASSUMED_MOUNT_FAMILIES)
+from modules.flight_logs import realityscan_orientation  # noqa: E402
 
 
-def _to_rc(heading, vehicle_pitch, roll, tilt, decl):
-    module = GeoreferenceImages(logging.getLogger('quiet'))
-    return module._convert_to_rc_orientation(heading, vehicle_pitch, roll,
-                                             tilt, decl)
-
-
-def convert(heading=0.0, vehicle_pitch=0.0, roll=0.0, tilt=0.0, decl=0.0):
-    return _to_rc(heading, vehicle_pitch, roll, tilt, decl)
+def convert(heading=0.0, vehicle_pitch=0.0, roll=0.0, tilt=0.0, decl=0.0,
+            yaw_offset=0.0):
+    return realityscan_orientation(heading, vehicle_pitch, roll,
+                                   down_tilt_deg=tilt, declination_deg=decl,
+                                   yaw_offset_deg=yaw_offset)
 
 
 # --------------------------------------------------------------------------
@@ -47,10 +43,9 @@ def convert(heading=0.0, vehicle_pitch=0.0, roll=0.0, tilt=0.0, decl=0.0):
 @pytest.mark.parametrize('tilt,expected,what', [
     (0.0, 90.0, 'a camera looking straight along the vehicle axis is HORIZONTAL'),
     (90.0, 0.0, 'a camera tilted 90 deg down is NADIR - pitch 0'),
-    (10.0, 80.0, 'the house convention: 10 deg down from horizontal'),
-    (45.0, 45.0, 'Cinema under WCA names'),
-    (30.0, 60.0, 'Zeuss'),
-    (70.0, 20.0, 'legacy camupper'),
+    (10.0, 80.0, '10 deg down from horizontal'),
+    (45.0, 45.0, 'half way down'),
+    (70.0, 20.0, 'steeply down'),
 ])
 def test_mount_tilt_maps_onto_the_nadir_scale(tilt, expected, what):
     _yaw, pitch, _roll = convert(vehicle_pitch=0.0, tilt=tilt)
@@ -58,8 +53,8 @@ def test_mount_tilt_maps_onto_the_nadir_scale(tilt, expected, what):
 
 
 def test_pitch_is_referenced_to_nadir_not_to_horizontal():
-    """The refuted claim, now pinned: if this were measured FROM horizontal,
-    a nadir camera would come out at 90 rather than 0."""
+    """If this were measured FROM horizontal, a nadir camera would come out
+    at 90 rather than 0."""
     _y, nadir, _r = convert(tilt=90.0)
     _y, horizontal, _r = convert(tilt=0.0)
     assert nadir == pytest.approx(0.0)
@@ -68,18 +63,31 @@ def test_pitch_is_referenced_to_nadir_not_to_horizontal():
 
 
 def test_vehicle_attitude_composes_with_the_mount():
-    """'Inline with the vehicle's rotation': the mount is an offset FROM the
-    vehicle's own pitch, not a replacement for it."""
+    """The mount is an offset FROM the vehicle's own pitch, not a
+    replacement for it."""
     # Vehicle nose-up 5 deg lifts the camera 5 deg on the nadir scale.
     assert convert(vehicle_pitch=5.0, tilt=10.0)[1] == pytest.approx(85.0)
     # Vehicle nose-down 5 deg pushes it toward nadir.
     assert convert(vehicle_pitch=-5.0, tilt=10.0)[1] == pytest.approx(75.0)
 
 
+def test_a_nadir_mount_passes_the_vehicle_pitch_through():
+    for vehicle_pitch in (-7.5, 0.0, 3.25):
+        assert convert(vehicle_pitch=vehicle_pitch, tilt=90.0)[1] == \
+            pytest.approx(vehicle_pitch)
+
+
 def test_yaw_is_true_heading_and_wraps():
     assert convert(heading=350.0, decl=20.0)[0] == pytest.approx(10.0)
     assert convert(heading=10.0, decl=-20.0)[0] == pytest.approx(350.0)
     assert 0.0 <= convert(heading=359.9, decl=0.5)[0] < 360.0
+
+
+def test_yaw_offset_turns_the_image_top_relative_to_the_heading():
+    assert convert(heading=90.0, yaw_offset=90.0)[0] == pytest.approx(180.0)
+    assert convert(heading=10.0, yaw_offset=-30.0)[0] == pytest.approx(340.0)
+    assert convert(heading=350.0, decl=5.0, yaw_offset=15.0)[0] == \
+        pytest.approx(10.0)
 
 
 def test_roll_passes_through_untouched():
@@ -91,46 +99,38 @@ def test_roll_passes_through_untouched():
 # --------------------------------------------------------------------------
 
 def test_missing_vehicle_pitch_yields_no_pitch_prior():
-    assert _to_rc(10.0, None, 0.0, 10.0, 0.0)[1] is None
+    assert convert(vehicle_pitch=None, tilt=90.0)[1] is None
 
 
 def test_missing_mount_tilt_yields_no_pitch_prior():
-    """`convert_to_rc_orientation` is the last line of defence: whatever the
-    caller decided about assumed mounts, a None tilt here must not become 0."""
-    assert _to_rc(10.0, 0.0, 0.0, None, 0.0)[1] is None
+    """Whatever the caller decided about mounts, a None tilt must not
+    become 0."""
+    assert convert(vehicle_pitch=0.0, tilt=None)[1] is None
 
 
 def test_missing_heading_yields_no_yaw():
-    assert _to_rc(None, 0.0, 0.0, 10.0, 0.0)[0] is None
+    assert convert(heading=None, tilt=90.0)[0] is None
 
 
-# --------------------------------------------------------------------------
-# the assumed mount
-# --------------------------------------------------------------------------
-
-def test_the_assumed_mount_lands_10_degrees_below_horizontal():
-    """End to end: the house convention expressed in RealityScan's frame."""
-    tilt = ASSUMED_MOUNT_DEFAULTS['pitch']
-    assert convert(vehicle_pitch=0.0, tilt=tilt)[1] == pytest.approx(80.0)
+def test_missing_roll_yields_no_roll():
+    assert convert(roll=None)[2] is None
 
 
-def test_measured_mounts_are_unchanged_by_the_assumption():
-    """Regression guard: adding the fallback must not have moved any mount
-    that was actually measured."""
-    assert MOUNTS['zeuss']['pitch'] == 30.0
-    assert MOUNTS['legacy_camupper']['pitch'] == 70.0
-    assert MOUNTS['legacy_cammid']['pitch'] == 20.0
-    assert MOUNTS['legacy_camlower']['pitch'] == 10.0
-    assert MOUNTS['wca_port']['pitch'] == 0.0
-    assert MOUNTS['wca_cinema']['pitch'] == 45.0
-    assert MOUNTS['wca_starboard'] is None
-    for family in NO_ASSUMED_MOUNT_FAMILIES:
-        assert MOUNTS[family] is None
+@pytest.mark.parametrize('bad', [float('nan'), float('inf'), float('-inf')])
+def test_non_finite_inputs_yield_no_prior(bad):
+    assert convert(heading=bad, vehicle_pitch=bad, roll=bad, tilt=90.0) == \
+        (None, None, None)
 
 
-def test_port_sits_at_the_documented_degeneracy_boundary():
-    """Port's 0 deg mount puts it at ~90 deg on the nadir scale, within 2 deg
-    of the yaw/roll singularity flagged in docs/rs-reference/13 6.4. Pinned
-    so the hazard is visible rather than rediscovered."""
-    pitch = convert(vehicle_pitch=-2.0, tilt=MOUNTS['wca_port']['pitch'])[1]
-    assert abs(pitch - 90.0) < 5.0
+def test_the_angles_are_independent():
+    """One missing angle does not drop the others."""
+    yaw, pitch, roll = convert(heading=None, vehicle_pitch=1.0, roll=2.0,
+                               tilt=90.0)
+    assert (yaw, pitch, roll) == (None, pytest.approx(1.0), pytest.approx(2.0))
+
+
+def test_declination_and_yaw_offset_must_be_numbers():
+    with pytest.raises(ValueError, match='declination'):
+        convert(decl=None)
+    with pytest.raises(ValueError, match='yaw offset'):
+        convert(yaw_offset=float('nan'))
