@@ -48,7 +48,8 @@ class WildSyncIntake(RSModule):
                          'with their flight_log.csv), or a folder of run '
                          'directories; separate several with ";". Only read, '
                          'never modified'),
-            prompt_user=True
+            prompt_user=True,
+            required=True
         )
 
         additional_params['ws_variant'] = Parameter(

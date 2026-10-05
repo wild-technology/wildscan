@@ -38,7 +38,7 @@ def initialize_modules(logger) -> dict[str, RSModule]:
         'RealityScan Alignment': RealityScanAlignment(logger)
     }
 
-    no_interactive = os.environ.get('RS_NO_INTERACTIVE', '').strip().lower() in ('1', 'true', 'yes', 'y')
+    no_interactive = _no_interactive()
     modules_env = os.environ.get('RS_MODULES')
     if no_interactive or modules_env:
         if modules_env:
@@ -88,7 +88,8 @@ def initialize_parameters(modules) -> dict[str, Parameter]:
         type=str,
         default_value=None,
         description='Path to the output directory',
-        prompt_user=True
+        prompt_user=True,
+        required=True
     )
 
     params['continue_automatically'] = Parameter(
@@ -168,17 +169,32 @@ def parse_arguments(argv, params, logger) -> None:
 
     Prompted values are persisted to rs_settings.json (section "main") and
     offered as the default on the next run - press enter to reuse them.
+
+    With RS_NO_INTERACTIVE set, nothing is prompted: a missing value takes
+    its stored or default value, and required values that have neither are
+    reported together, naming their flags, before the process exits with
+    status 2. The same error ends a prompt that finds stdin closed with no
+    value to fall back on for a required parameter.
     """
     str_to_bool = _str_to_bool
     parser = build_arg_parser(params)
     args = parser.parse_args(argv[1:])
+    no_interactive = _no_interactive()
 
     settings = SettingsStore()
+    missing: list[Parameter] = []
 
     for p in params.values():
         val = getattr(args, p.cli_long, None)
         if val is None and p.prompt_user:
             last_value = settings.get('main', p.cli_long, p.get_default_value())
+            if no_interactive:
+                if last_value is None and p.required:
+                    missing.append(p)
+                    continue
+                logger.info(f'Non-interactive: {p.get_name()} = {last_value}')
+                p.set_value(last_value)
+                continue
             prompt = f'{p.get_description()}'
             if last_value is not None:
                 prompt += f' [{last_value}]'
@@ -191,10 +207,11 @@ def parse_arguments(argv, params, logger) -> None:
                 else:
                     val = p.get_type()(inp)
             except EOFError:
-                # Unattended run (stdin closed / hidden console): take the
-                # stored default silently - same convention as the module
-                # prompts (Windows trap registry: isatty() lies, input()
-                # must always be EOF-safe).
+                # stdin is closed (an unattended or hidden console): take
+                # the stored value, or report the value as missing.
+                if last_value is None and p.required:
+                    missing.append(p)
+                    continue
                 logger.info(f'Non-interactive: {p.get_name()} = {last_value}')
                 val = last_value
             except ValueError:
@@ -205,6 +222,18 @@ def parse_arguments(argv, params, logger) -> None:
         if val is None and not p.prompt_user:
             val = p.get_default_value()
         p.set_value(val)
+
+    if missing:
+        flags = ', '.join(f'--{p.cli_long} ({p.get_name()})' for p in missing)
+        parser.exit(2, f'{parser.prog}: error: no value for {flags}; '
+                       'pass the flag(s) on the command line (prompting is '
+                       'off or stdin is closed)\n')
+
+
+def _no_interactive() -> bool:
+    """True when RS_NO_INTERACTIVE asks for a run without any prompt."""
+    return os.environ.get('RS_NO_INTERACTIVE', '').strip().lower() in (
+        '1', 'true', 'yes', 'y')
 
 def update_parameters(params, modules) -> None:
     """

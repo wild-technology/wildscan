@@ -8,8 +8,11 @@ class Parameter:
     description: str = None
     prompt_user: bool = None
     disable_when_module_active: str = None
+    # A required parameter has no usable empty value: when it is missing and
+    # cannot be prompted for, main.py stops with an error naming its flag.
+    required: bool = False
 
-    def __init__(self, name, cli_short, cli_long, type, default_value, description=None, prompt_user=True, disable_when_module_active=None):
+    def __init__(self, name, cli_short, cli_long, type, default_value, description=None, prompt_user=True, disable_when_module_active=None, required=False):
         self.name = name
         self.cli_short = cli_short
         self.cli_long = cli_long
@@ -19,6 +22,7 @@ class Parameter:
         self.type = type
         self.prompt_user = prompt_user
         self.disable_when_module_active = disable_when_module_active
+        self.required = required
     
     def get_name(self) -> str:
         return self.name
