@@ -2,10 +2,10 @@
 """Silence-is-not-success across the census and the deliverable drivers.
 
 The workspace census is the resume signal for run_models and the WildScan
-portal, and it counted the wrong things (audit 2026-08-07):
+portal, and it counted the wrong things:
 
   - run_models writes models_report.json (both modes); the census read
-    only the retired H2024 names, so a fully modelled workspace read
+    only the retired legacy names, so a fully modelled workspace read
     "pending / no model reports" and the portal re-ticked 'model' on every
     resume - re-booting RealityScan for SaveProjectCopy.bat each time
   - a header-only flight log read 'done | 0 rows'
@@ -74,7 +74,7 @@ def _merged(ws, report=None, gate=True):
 def test_models_report_json_is_read(tmp_path):
     """The name run_models ACTUALLY writes. A workspace with a valid merge
     report plus exactly that file reported 'pending / no model reports'."""
-    ws = tmp_path / 'cruise'
+    ws = tmp_path / 'workspace'
     ws.mkdir()
     _merged(ws)
     (ws / 'models_report.json').write_text(json.dumps({'models': [
@@ -87,11 +87,11 @@ def test_models_report_json_is_read(tmp_path):
 
 
 def test_the_legacy_report_names_still_census(tmp_path):
-    """Old H2024 workspaces must keep working - the new name is ADDED."""
+    """Older workspaces must keep working - the new name is ADDED."""
     assert 'models_report.json' in MODEL_REPORT_NAMES
     assert 'final_report.json' in MODEL_REPORT_NAMES
     assert 'fused_models_report.json' in MODEL_REPORT_NAMES
-    ws = tmp_path / 'cruise'
+    ws = tmp_path / 'workspace'
     ws.mkdir()
     _merged(ws)
     (ws / 'fused_models_report.json').write_text(json.dumps({'components': [
@@ -168,7 +168,7 @@ def test_an_interrupted_intake_needs_a_retry(tmp_path):
 def test_image_free_zone_folders_are_not_done(tmp_path):
     """The fingerprint blessed an empty tree for reuse and the census
     called it done - alignment was then handed empty folders."""
-    ws = tmp_path / 'cruise'
+    ws = tmp_path / 'workspace'
     batched = ws / 'batched_images_by_zone'
     for zone in ('zone_1', 'zone_2'):
         (batched / zone).mkdir(parents=True)
@@ -179,7 +179,7 @@ def test_image_free_zone_folders_are_not_done(tmp_path):
 
 
 def test_one_empty_zone_among_full_ones_is_partial(tmp_path):
-    ws = tmp_path / 'cruise'
+    ws = tmp_path / 'workspace'
     batched = ws / 'batched_images_by_zone'
     for zone in ('zone_1', 'zone_2'):
         (batched / zone).mkdir(parents=True)
@@ -191,7 +191,7 @@ def test_one_empty_zone_among_full_ones_is_partial(tmp_path):
 
 
 def test_full_zones_are_done(tmp_path):
-    ws = tmp_path / 'cruise'
+    ws = tmp_path / 'workspace'
     batched = ws / 'batched_images_by_zone'
     for zone in ('zone_1', 'zone_2'):
         (batched / zone).mkdir(parents=True)
@@ -205,7 +205,7 @@ def test_full_zones_are_done(tmp_path):
 def test_a_partial_export_is_measured_against_the_merge_report(tmp_path):
     """Measured: 1 exported component with 6 finals declared read
     'done | 1 component(s) exported'."""
-    ws = tmp_path / 'cruise'
+    ws = tmp_path / 'workspace'
     ws.mkdir()
     _merged(ws)
     d = ws / 'exports' / 'zone_1_c0' / 'obj'
@@ -217,7 +217,7 @@ def test_a_partial_export_is_measured_against_the_merge_report(tmp_path):
 
 
 def test_a_complete_export_is_done(tmp_path):
-    ws = tmp_path / 'cruise'
+    ws = tmp_path / 'workspace'
     ws.mkdir()
     _merged(ws)
     for comp in ('zone_1_c0', 'zone_2_c0'):
@@ -232,7 +232,7 @@ def test_a_complete_export_is_done(tmp_path):
 def test_the_gate_file_alone_is_not_merge_success(tmp_path):
     """merge_zones wrote EVALUATION_READY before checking the assembly
     result, so the census could read a never-saved project as done."""
-    ws = tmp_path / 'cruise'
+    ws = tmp_path / 'workspace'
     ws.mkdir()
     report = json.loads(json.dumps(MERGE_REPORT))
     report['assembly']['workflow_success'] = False
@@ -244,7 +244,7 @@ def test_the_gate_file_alone_is_not_merge_success(tmp_path):
 
 def test_a_report_without_an_assembly_block_still_censuses(tmp_path):
     """Older reports have no 'assembly' key - absent is not failure."""
-    ws = tmp_path / 'cruise'
+    ws = tmp_path / 'workspace'
     ws.mkdir()
     report = {k: v for k, v in MERGE_REPORT.items() if k != 'assembly'}
     _merged(ws, report)
@@ -263,7 +263,7 @@ def test_a_report_without_an_assembly_block_still_censuses(tmp_path):
 def test_a_wrong_shape_merge_report_never_raises(tmp_path, report):
     """_load_json guarded I/O and JSON errors but not SHAPE:
     `AttributeError: 'str' object has no attribute 'get'`."""
-    ws = tmp_path / 'cruise'
+    ws = tmp_path / 'workspace'
     merge = ws / 'final_assembly'
     (merge / 'assembly').mkdir(parents=True)
     (merge / 'merge_report.json').write_text(json.dumps(report),
@@ -476,8 +476,7 @@ def test_run_models_refuses_a_merge_report_with_no_final_components(tmp_path):
     """A merge report that declares nothing final gave `finals == []`, and
     the loop below it ran zero iterations, wrote a models_report.json with
     an empty 'models' list and returned 0 - the do-nothing-reports-success
-    shape, one level up from the workflow (audit-verification 2026-08-07:
-    the guard shipped with no test)."""
+    shape, one level up from the workflow."""
     merge = tmp_path / 'final_assembly'
     (merge / 'assembly').mkdir(parents=True)
     (merge / 'assembly' / 'Assembly.rsproj').write_bytes(b'p')
@@ -518,8 +517,7 @@ def test_publish_resolves_the_input_crs_from_the_workspace(tmp_path):
     """The OBJ exports carry raw UTM metres (MvsExportIsGeoreferenced,
     scale 1.0, no offset), so publishing them with no CRS puts the asset in
     the wrong part of the world. The portal pins --input-crs; the
-    STANDALONE driver has to resolve it itself, and that half shipped
-    untested (audit-verification 2026-08-07)."""
+    STANDALONE driver has to resolve it itself."""
     pb = _publish_ws(tmp_path, ['raw_images/flight_log_54L_UTM.txt'])
     assert pb.resolve_input_crs(tmp_path) == 'EPSG:32754'
 
@@ -547,9 +545,9 @@ def test_publish_refuses_disagreeing_zones_rather_than_picking_one(tmp_path):
 def test_the_publish_driver_passes_the_georeferencing_downstream(tmp_path):
     """End to end through main(): the georeferencing input was only
     forwarded when the OPERATOR typed it, so every portal-free publish
-    shipped without one (audit-verification 2026-08-07).
+    shipped without one.
 
-    The mechanism changed on 2026-08-31: placement now comes from each
+    Placement now comes from each
     mesh's own .rsInfo sidecar, and the flight log is forwarded instead as
     the INDEPENDENT nav check on that reading. What must not regress is that
     the driver resolves it itself and passes it on.
@@ -557,7 +555,7 @@ def test_the_publish_driver_passes_the_georeferencing_downstream(tmp_path):
     _publish_ws(tmp_path, ['raw_images/flight_log_54L_UTM.txt'])
     proc = subprocess.run(
         [sys.executable, os.path.join(REPO_ROOT, 'publish_batch.py'),
-         '--workspace', str(tmp_path), '--prefix', 'NA167', '--dry-run'],
+         '--workspace', str(tmp_path), '--prefix', 'transect-01', '--dry-run'],
         capture_output=True, text=True, stdin=subprocess.DEVNULL,
         cwd=REPO_ROOT)
     combined = proc.stdout + proc.stderr

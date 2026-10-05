@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Unit tests for RealityScanCLI attach mode (run_attach_script).
 
-Attach mode exists because of the ON2026 near-miss (status log 2026-08-07):
-the mesh was reconstructed interactively in a GUI session, and every
-boot-path workflow opens with startRealityScan.bat, whose already-running
-branch issues "-newScene -deleteAutosave" - destroying the very scene the
-workflow was asked to finish. These tests pin the safety properties:
+Attach mode exists because a mesh reconstructed interactively in a GUI
+session must survive the scripted finish: every boot-path workflow opens
+with startRealityScan.bat, whose already-running branch issues
+"-newScene -deleteAutosave" - destroying the very scene the workflow was
+asked to finish. These tests pin the safety properties:
 
 1. refuses to run when -getStatus fails (never boots an instance);
 2. never invokes startRealityScan.bat / -newScene / -quit;
@@ -14,8 +14,7 @@ workflow was asked to finish. These tests pin the safety properties:
    (ModelToFinal.bat: %1);
 5. parses the -getStatus live line correctly, including a negative
    (signed 32-bit) sticky lastError, via a temp FILE - never a pipe
-   (the GUI child of a 'start ""' boot inherits captured pipes;
-   Windows trap recorded 2026-08-07).
+   (the GUI child of a 'start ""' boot inherits captured pipes).
 
 No RealityScan: the executable is a stub that answers -getStatus with a
 canned status line and records every invocation (same no-real-tool

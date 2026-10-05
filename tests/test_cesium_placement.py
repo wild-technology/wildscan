@@ -1,8 +1,8 @@
 """Cesium ion placement: CRS, frame resolution and the vertical datum.
 
-Every case here traces to something found on real data (2026-08-31):
+Every case here traces to something found on real data:
 
-- the NA168 H2080 OBJ sits in a local frame ~350 km from its site, so the
+- a real exported OBJ sits in a local frame ~350 km from its site, so the
   ``transformToModel`` reading is load-bearing and must be DERIVED, not
   assumed - the matrix has no single obvious reading;
 - the pipeline's Z is a depth below the SEA SURFACE while ion reads every
@@ -29,8 +29,8 @@ from modules.cesium_placement import (  # noqa: E402
     msl_to_ellipsoidal, nav_envelope_from_flight_log, parse_rsinfo,
     read_obj_vertices, resolve_to_global, rewrite_obj_local, to_local_enu)
 
-# The real NA168 H2080 sidecar matrix, verbatim.
-NA168_MATRIX = ("0 0 1 348355.8364815 1 0 0 396321.994618801 "
+# A real RealityScan sidecar matrix, verbatim.
+SITE_MATRIX = ("0 0 1 348355.8364815 1 0 0 396321.994618801 "
                 "0 1 0 -587.41083970014 0 0 0 1")
 
 RSINFO_ELEMENT = """<Model globalCoordinateSystem="+proj=utm +zone=53 +datum=WGS84 +units=m +no_defs"
@@ -40,7 +40,7 @@ RSINFO_ELEMENT = """<Model globalCoordinateSystem="+proj=utm +zone=53 +datum=WGS
   <Header magic="5786959" version="1"/>
 </Model>
 <ModelExport exportBinary="1"/>
-""" % NA168_MATRIX
+""" % SITE_MATRIX
 
 RSINFO_ATTRIBUTE = """<Model globalCoordinateSystem="+proj=utm +zone=4 +datum=WGS84 +units=m +no_defs"
    globalCoordinateSystemName="epsg:32604 - WGS 84 / UTM zone 4N" exportCoordinateSystemType="1"
@@ -83,7 +83,7 @@ def test_sidecar_without_model_tag_is_an_error(tmp_path):
 
 
 def test_malformed_matrix_is_refused_not_guessed(tmp_path):
-    bad = RSINFO_ELEMENT.replace(NA168_MATRIX, "1 0 0 0 0 1 0 0")
+    bad = RSINFO_ELEMENT.replace(SITE_MATRIX, "1 0 0 0 0 1 0 0")
     with pytest.raises(PlacementError, match="expected"):
         parse_rsinfo(write(tmp_path, "m.obj.rsInfo", bad))
 
@@ -106,10 +106,10 @@ def test_find_rsinfo_returns_none_when_absent(tmp_path):
 
 
 # --------------------------------------------------------------------------
-# frame resolution - the NA168 case
+# frame resolution - the real-sidecar case
 # --------------------------------------------------------------------------
 
-def na168_vertices(n=64):
+def site_vertices(n=64):
     """Model-frame points that map to the real site under the true reading."""
     rng = np.random.default_rng(0)
     # True global site: E ~348355, N ~396320, Z ~ -585.
@@ -123,9 +123,9 @@ def na168_vertices(n=64):
                  depth - 348355.8364815]
 
 
-def test_resolves_the_real_na168_frame(tmp_path):
+def test_resolves_the_real_site_frame(tmp_path):
     info = parse_rsinfo(write(tmp_path, "m.obj.rsInfo", RSINFO_ELEMENT))
-    vertices = na168_vertices()
+    vertices = site_vertices()
     out, interp = resolve_to_global(vertices, info)
     assert interp is not None
     assert out[:, 0].min() > 348_000 and out[:, 0].max() < 349_000
@@ -150,10 +150,10 @@ def test_geometry_outside_the_declared_crs_is_refused(tmp_path):
 
 
 def test_nav_envelope_can_veto_a_crs_valid_reading(tmp_path):
-    """The CRS area of use is coarse; the dive's own nav is the tighter
+    """The CRS area of use is coarse; the survey's own nav is the tighter
     oracle and must be able to reject."""
     info = parse_rsinfo(write(tmp_path, "m.obj.rsInfo", RSINFO_ELEMENT))
-    vertices = na168_vertices()
+    vertices = site_vertices()
     wrong = {"east": (500000.0, 500100.0),
              "north": (100000.0, 100100.0),
              "alt": (-10.0, 0.0)}
@@ -179,9 +179,9 @@ def test_reflections_are_rejected_before_scoring(tmp_path):
 
 def test_resolution_does_not_need_a_flight_log(tmp_path):
     """Nav is a second opinion, not a prerequisite - proven on the real
-    NA168 matrix, which resolves identically with and without it."""
+    sidecar matrix, which resolves identically with and without it."""
     info = parse_rsinfo(write(tmp_path, "m.obj.rsInfo", RSINFO_ELEMENT))
-    vertices = na168_vertices()
+    vertices = site_vertices()
     without, interp_a = resolve_to_global(vertices, info)
     envelope = {"east": (348265.0, 349295.3),
                 "north": (396250.0, 396914.2),
@@ -195,7 +195,7 @@ def test_resolution_does_not_need_a_flight_log(tmp_path):
 def test_apply_interpretation_is_pure(tmp_path):
     from modules.cesium_placement import Interpretation
     info = parse_rsinfo(write(tmp_path, "m.obj.rsInfo", RSINFO_ELEMENT))
-    vertices = na168_vertices(8)
+    vertices = site_vertices(8)
     before = vertices.copy()
     apply_interpretation(vertices, info.transform,
                          Interpretation("row-major", "Mv", (1, 2, 0)))
@@ -334,7 +334,7 @@ def make_objs(tmp_path, names):
 
 
 def test_whole_wins_over_its_by_parts_twin(tmp_path):
-    """Publishing both would submit the same geometry twice: NA168 H2080 has
+    """Publishing both would submit the same geometry twice: a real export has
     178,269 vertices whole against 180,002 across nine parts."""
     from publish_cesium import select_objs
     make_objs(tmp_path, ["m.obj", "m_0000000.obj", "m_0000001.obj"])
@@ -416,7 +416,7 @@ def test_export_preset_applies_no_hidden_shift_or_scale(name):
 
 def test_companions_follow_mtl_references_not_the_whole_folder(tmp_path):
     """Copying every texture in the folder would ship the unused by-parts set
-    too - 326 MB against 74 MB on NA168 H2080."""
+    too - 326 MB against 74 MB on a real export."""
     from publish_cesium import referenced_companions
     obj = write(tmp_path, "m.obj", "mtllib m.mtl\nv 0 0 0\n")
     write(tmp_path, "m.mtl", "newmtl a\nmap_Kd m_diffuse.jpg\n")

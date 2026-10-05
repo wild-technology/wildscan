@@ -5,8 +5,8 @@ The peel harvest is a PowerShell `Get-ChildItem -Recurse`, which does NOT
 descend into junction CHILDREN, and RealityScan writes no XMP sidecars when a
 scene's images resolve through a reparse point. Handing merge_zones.py an
 image root whose children are junctions therefore yields an empty peel on
-every attempt - indistinguishable from a legitimately empty scene, and it
-silently discarded two full merge runs on 2026-07-27/28 (FINDINGS).
+every attempt - indistinguishable from a legitimately empty scene, so a
+whole merge run is silently wasted.
 
 `assert_harvestable` exists so that failure mode costs seconds, not hours.
 These tests pin it. They create a real NTFS junction via `mklink /J`, which
@@ -44,7 +44,7 @@ def make_junction(link: str, target: str) -> bool:
 
 def test_a_plain_directory_tree_is_harvestable(tmp_path):
     root = tmp_path / 'images'
-    (root / 'zone_1' / 'cinema').mkdir(parents=True)
+    (root / 'zone_1' / 'ilx_left').mkdir(parents=True)
     (root / 'zone_2' / 'port').mkdir(parents=True)
     harvest_guard.assert_harvestable(str(root), LOG)   # must not raise
 
@@ -70,15 +70,15 @@ def test_a_junction_child_is_refused(tmp_path):
 
 
 def test_a_nested_junction_is_also_refused(tmp_path):
-    """A junction one level down (zone_1/cinema) blinds the harvest exactly
-    like a top-level one - the guard must scan recursively (final review)."""
-    real = tmp_path / 'real' / 'cinema'
+    """A junction one level down (zone_1/ilx_left) blinds the harvest exactly
+    like a top-level one - the guard must scan recursively."""
+    real = tmp_path / 'real' / 'ilx_left'
     real.mkdir(parents=True)
     (real / 'a.jpg').write_bytes(b'x')
 
     root = tmp_path / 'view'
     (root / 'zone_1').mkdir(parents=True)
-    if not make_junction(str(root / 'zone_1' / 'cinema'), str(real)):
+    if not make_junction(str(root / 'zone_1' / 'ilx_left'), str(real)):
         pytest.skip('cannot create an NTFS junction here')
 
     with pytest.raises(RuntimeError, match='reparse-point children'):

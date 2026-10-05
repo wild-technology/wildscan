@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Merge union log and merge exit codes.
 
-merge_zones.build_union_flight_log (audit 2026-08-07):
+merge_zones.build_union_flight_log:
   - the coordinate system for the whole merge came from zone_logs[0] in
     os.walk order, while the ROWS were read in sorted() order. One stray
     untagged or foreign-zone *_UTM.txt anywhere under images_root decided

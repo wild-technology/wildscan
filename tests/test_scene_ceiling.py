@@ -1,7 +1,7 @@
-"""Merge-scene camera ceiling (C-20260802-01) - the pure verdict that
-refuses over-envelope merge attempts BEFORE RealityScan time is spent.
-The recorded incident: a ~44k-camera scene died at 319.5 GB commit after
-5.6 unattended hours; a 34,105-camera scene fit at 262 GB.
+"""Merge-scene camera ceiling - the pure verdict that refuses
+over-envelope merge attempts BEFORE RealityScan time is spent.
+A ~44k-camera scene ran out of memory (319.5 GB commit) after hours of
+unattended work; a 34,105-camera scene fit at 262 GB.
 """
 import os
 import sys
@@ -25,7 +25,7 @@ def test_under_ceiling_is_not_refused():
 
 
 def test_the_recorded_oom_scene_is_refused():
-    # attempt 2 of 2026-08-01: fused core + 5 zone components = ~43.8k cams
+    # the out-of-memory scene: fused core + 5 zone components = ~43.8k cams
     subset = [_m(29_302), _m(4_442), _m(2_846), _m(2_347), _m(2_260), _m(2_650)]
     refuse, total = scene_ceiling_verdict(subset, 34_000)
     assert refuse and total == 43_847

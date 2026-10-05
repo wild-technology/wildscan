@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Alignment resume, per-zone honesty, and rollback safety.
 
-Alignment (audit 2026-08-07):
+Alignment:
   - an align-only resume - the state default_enabled() produces once
     batching is done - passed the batched ROOT as rs_input_image_dir, and
     -addFolder's recursion fused EVERY zone into ONE scene. Measured with
@@ -10,9 +10,8 @@ Alignment (audit 2026-08-07):
   - 'Zones Failed: 9' with one success returned Success=True and exit 0.
   - a zone skipped for holding no images appeared in NO tally.
   - the calibration-sidecar repair sat AFTER the failure/no-component
-    returns, i.e. it was skipped precisely when the operator re-runs -
-    re-opening the FINDINGS 2026-07-25 defect (796 of 4,540 images left
-    with no calibration prior, which CONFOUNDED PD-4/PD-4a).
+    returns, i.e. it was skipped precisely when the operator re-runs,
+    leaving images with no calibration prior.
   - a re-run rmtree'd the previous run's zone output - saved .rsproj and
     every exported .rsalign, GPU-hours - on a logger.warning, and the only
     backup (the dated RC_projects copy) is OFF by default.
@@ -168,14 +167,14 @@ def test_zone_subfolders_detection(tmp_path):
         ['zone_1', 'zone_2']
     # A per-zone flight log is enough even without the zone_ prefix.
     other = tmp_path / 'other'
-    (other / 'dive_a').mkdir(parents=True)
-    (other / 'dive_a' / 'flight_log_53N_UTM.txt').write_text(
+    (other / 'segment_a').mkdir(parents=True)
+    (other / 'segment_a' / 'flight_log_53N_UTM.txt').write_text(
         LOG_HEADER, encoding='utf-8')
     assert RealityScanAlignment.zone_subfolders(str(other))
     # Per-CAMERA subfolders are NOT zones.
     plain = tmp_path / 'plain'
     (plain / 'port').mkdir(parents=True)
-    (plain / 'cinema').mkdir()
+    (plain / 'ilx_left').mkdir()
     assert RealityScanAlignment.zone_subfolders(str(plain)) == []
     assert RealityScanAlignment.zone_subfolders(str(tmp_path / 'nope')) == []
 
@@ -201,7 +200,7 @@ def _chained_params(tmp_path):
 def test_one_failed_zone_among_successes_fails_the_run(tmp_path, monkeypatch):
     """The decisive case: 'Zones Failed: 9' WITH one success used to
     return Success=True and exit 0 - a merged deliverable missing nine
-    tenths of the dive. `succeeded == 0` is not the right test."""
+    tenths of the survey. `succeeded == 0` is not the right test."""
     _batched(tmp_path)
     results = [WorkflowResult(True, 0, None, '', [], 0.0),
                WorkflowResult(False, 1, None, 'boom', [], 0.0)]

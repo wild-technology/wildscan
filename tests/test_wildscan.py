@@ -538,7 +538,8 @@ def test_batch_without_fingerprint_is_partial(tmp_path):
     (ws.batched / "batch_inputs.json").unlink()
     assert ws.detect()["batch"].status == "partial", (
         "unknown provenance must never read as done - the "
-        "12,679-vs-9,834 blend incident is what this glyph exists for")
+        "blended-zoning case (more images on disk than reported) is "
+        "what this glyph exists for")
 
 
 def test_merge_without_gate_is_partial(tmp_path):
