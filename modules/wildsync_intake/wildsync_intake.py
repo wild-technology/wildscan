@@ -12,11 +12,20 @@ from module_base.rs_module import RSModule
 
 from .. import camera_registry
 from ..calibration_sidecars import MODES as CALIBRATION_MODES
-from .intake import (DEFAULT_MIN_MATCH_PCT, DEFAULT_STATIC_POSITION_ACCURACY_M,
-                     DEFAULT_SURFACE_ALTITUDE_M, DEFAULT_TIME_ERR_WARN_MS,
-                     HEADING_SOURCES, VARIANTS, IntakeError, IntakeOptions,
-                     check_workspace, find_run_directories, run_intake,
-                     split_run_paths)
+from .intake import (
+    DEFAULT_MIN_MATCH_PCT,
+    DEFAULT_STATIC_POSITION_ACCURACY_M,
+    DEFAULT_SURFACE_ALTITUDE_M,
+    DEFAULT_TIME_ERR_WARN_MS,
+    HEADING_SOURCES,
+    VARIANTS,
+    IntakeError,
+    IntakeOptions,
+    check_workspace,
+    find_run_directories,
+    run_intake,
+    split_run_paths,
+)
 
 _PRIOR = camera_registry.PRIOR_ACCURACY
 
