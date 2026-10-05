@@ -193,8 +193,8 @@ class BatchDirectory(RSModule):
                          'zone flight log whose filename column carries those '
                          'same full paths, so every zone references the ONE '
                          'on-disk file and overlap images are genuinely shared '
-                         'cameras (project decision 2026-08-08, '
-                         'docs/FLIGHTLOG_ARCHITECTURE.md). pool requires the '
+                         'cameras (project decision 2026-08-08). pool '
+                         'requires the '
                          'align stage to add images from the .imagelist.'),
             prompt_user=False
         )
@@ -1032,8 +1032,7 @@ class BatchDirectory(RSModule):
                 # directive that created pool mode also retires them.
                 raise ValueError('batch_xmp_priors is incompatible with '
                                  "batch_zone_layout='pool' (no zone image "
-                                 'tree; XMP sidecars are retired - '
-                                 'docs/FLIGHTLOG_ARCHITECTURE.md)')
+                                 'tree to hold XMP sidecars)')
         elif flight_log_df is not None and any(
                 ntpath.isabs(str(n)) for n in flight_log_df.index):
             # A full-path master log zoned into COPY mode would write zone

@@ -515,5 +515,3 @@ Settings you typed live in `rs_settings.json` in the checkout root.
   routing index that sends any RealityScan question to the right one of its
   14 documents in a single hop. Its "facts that silently destroy a run"
   table is worth reading before your first production run.
-- `docs/WORKFLOW_WALKTHROUGH.md` — a plain-language end-to-end walkthrough
-  of one real dive, from raw images to a final project.

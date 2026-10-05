@@ -1834,7 +1834,7 @@ Do not put it in a workflow until that probe runs.
   because reprojection samples the source **surface**. The final reprojection then maps
   manifold → manifold and introduces no nodata. Residual limitation: fill areas no camera
   ever saw come out untextured under any strategy
-  [docs/settings-evaluation-2026-07 §7, 2026-07-23].
+  [ea3ad5d:docs/settings-evaluation-2026-07.md §7, 2026-07-23].
 - [VERIFIED] `-reprojectTexture` resolves both operands **by name**; with duplicate names in
   a shared project it silently maps the wrong component's texture
   [FINDINGS 2026-07-25].
@@ -1877,7 +1877,7 @@ call :run -exportModel "%comp%_HighPoly_Raw" "%out_dir%\%comp%\ply\%comp%_dense.
   a GUI-exported params XML [OFFICIAL].
 - Production passes params XMLs for a 70 %-relative "noise" pass and four 80 %-relative
   "smooth" passes with a `-cleanModel` between each
-  [VERIFIED: `GenerateModel.bat`; docs/settings-evaluation-2026-07].
+  [VERIFIED: `GenerateModel.bat`; ea3ad5d:docs/settings-evaluation-2026-07.md].
 - [OPEN] `SimplifyNoise_Params.xml` (70 % rel) and `SimplifySmooth_80per_Params.xml`
   (80 % rel) are **placeholders derived from the 50 % template**. If custom GUI presets exist
   they should be exported over these files [standing self-audit item 5, unresolved].
@@ -1906,7 +1906,7 @@ call :run -exportModel "%comp%_HighPoly_Raw" "%out_dir%\%comp%\ply\%comp%_dense.
   [FINDINGS 2026-07-23].
 - [VERIFIED] `-selectLargeTrianglesRel`'s threshold is in **multiples of the average edge
   length, not pixels**. The GUI's "30 px" intuition does not transfer; a visual check is
-  required [FINDINGS 2026-07-23; docs/settings-evaluation-2026-07]
+  required [FINDINGS 2026-07-23; ea3ad5d:docs/settings-evaluation-2026-07.md]
   [OPEN: the value `30` in `GenerateModel.bat` has never been visually validated on a real
   model].
 - A selection step that finds nothing, or a remove on an empty selection, reports
@@ -2961,6 +2961,6 @@ rest are headless and scriptable.
 
 | # | Item |
 |---|---|
-| Q31 | The deterministic standalone-alignment failure `MSS_STR001` (generic `0x8000FFFF`) on one 1,476-image zone with fully exonerated data has **never been reported to Epic**. Forensic log at `docs/validation/results/z14_forensic_rslog.txt`. |
+| Q31 | The deterministic standalone-alignment failure `MSS_STR001` (generic `0x8000FFFF`) on one 1,476-image zone with fully exonerated data has **never been reported to Epic**. Forensic log at `ea3ad5d:docs/validation/results/z14_forensic_rslog.txt`. |
 | Q32 | `-setMinComponentSize` is deprecated with **no documented replacement** while remaining required. What replaces it in the next release is unknown; nothing in the 2.2 Help says. |
 | Q33 | Whether "no re-optimization" still describes `-mergeComponents` in the current build. The staff claim is from 2021, pre-rename and outside the trust window; the observed 56-minute merge reconstruction argues against it. |

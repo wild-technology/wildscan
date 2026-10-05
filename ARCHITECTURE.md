@@ -189,9 +189,8 @@ Exceptions that must NOT be renamed:
 
 - `tests/` — offline pytest tests and fixtures; no campaign launchers.
 - `scripts/validation/` — explicit manual validation.
-- `docs/validation/` — historical experiment plans;
-  `docs/validation/results/` preserves their result evidence. Dated plans
-  retain their original command paths; use the current script locations above.
+- `docs/validation/` — historical experiment plans. Dated plans retain
+  their original command paths; use the current script locations above.
 - `main.py` — interactive orchestrator over the `RSModule` framework
   (`module_base/rs_module.py`): Extract Images → Georeference → Preprocess
   Images → Batch Directory → RealityScan Alignment. `RS_MODULES` /
@@ -278,8 +277,9 @@ Exceptions that must NOT be renamed:
   ONLY way any stage locates a log on disk) and per-cruise CRS generation
   (`write_flight_log_params`: UTM zone parsed from the log's filename tag →
   EPSG → FlightLogParams XML; never hand-edit the template's zone).
-  Consumers match by NORMALIZED BASENAME. Architecture and the P1/P3/P4
-  probe closures: `docs/FLIGHTLOG_ARCHITECTURE.md`.
+  Consumers match by NORMALIZED BASENAME. RealityScan's flight-log import
+  behavior is documented in
+  `docs/rs-reference/06-georeferencing-flightlogs-and-scale.md`.
 - `modules/calibration_sidecars.py` — per-eye approximate calibration XMPs
   from manufacturer values, plus the sensor registry. The A/B/C ladder
   verdict (prior content collapses registration) is in the engineering log.
@@ -327,11 +327,6 @@ Exceptions that must NOT be renamed:
 
 - `poses_to_flight_log.py`, `decimate_images.py` — data prep; they do not
   invoke RealityScan.
-- [archive/colmap/](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/colmap/) — retired COLMAP scripts; do not resurrect into the
-  active pipeline. The live COLMAP work is the separate `colmap_studio`
-  project, whose fact base is frozen at `docs/COLMAP_FINDINGS_UNIFIED.md`
-  and whose crossover with this pipeline is tracked in
-  `docs/COLMAP_CROSSOVER.md`.
 - [Archived campaign drivers](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/)
   and [superseded workflows](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/legacy_scripts/)
   remain citation targets in the original Git snapshot. Retired files are
@@ -368,12 +363,8 @@ Exceptions that must NOT be renamed:
    cross the boundary as files (`.complist`/`.imagelist`); settings as
    `key:value` (converted inside the workflow).
 9. `docs/rs-reference/` is the RealityScan documentation of record —
-   consult it before writing any new workflow. The historical test matrices
-   (`docs/validation/merge_test_plan.md`,
-   `docs/validation/alignment_merge_hardening_plan.md`,
-   `docs/validation/priors_distortion_test_plan.md`) track design assumptions not
-   settled by documentation; cells graduate into the engineering log with
-   results.
+   consult it before writing any new workflow. Design assumptions that no
+   documentation settles are recorded there as open questions.
 
 ## History notes
 

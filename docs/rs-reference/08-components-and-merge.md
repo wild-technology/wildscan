@@ -75,7 +75,7 @@ containment-based deletion is legal [VERIFIED-as-decision: FINDINGS 2026-07-24].
 
 **Consequence for automation:** rename deterministically *before* every export
 (`<zone>_c<K>`, `<tag>_a<attempt>_c<K>`), and correlate a manifest to a scene component by
-**image set**, never by name [VERIFIED-as-design: docs/MERGE_REWORK_RECOMMENDATIONS Q6].
+**image set**, never by name [VERIFIED-as-design: ea3ad5d:docs/MERGE_REWORK_RECOMMENDATIONS.md Q6].
 
 ### 1.3 Alignment fragmentation is nondeterministic
 
@@ -498,8 +498,8 @@ Related keys, for completeness (full inventory in `03-settings-keys.md`):
 
 | Key | Type / default | Official prose | Use here |
 |---|---|---|---|
-| `sfmMergeGeoreferencedComponents` | bool / `false` | merge georeferenced components without visual overlap | `false` in pass-1 zone aligns (auto-fusing disjoint pockets by georeference would freeze bad geometry invisibly); `true` on every merge-ladder rung [VERIFIED-as-decision: docs/settings-evaluation-2026-07.md §4] |
-| `sfmForceComponentRematch` | bool / `false` | "the application realigns images and cameras to find better connections. It uses existing camera poses to search for new matches" | `false` in pass-1 zone aligns (a merge-stage tool, wasted per zone); `true` on the align-mode merge rungs [OFFICIAL: appbasics/alignsettings] + [VERIFIED-as-policy: docs/settings-evaluation-2026-07.md §4; merge_zones.LADDERS] |
+| `sfmMergeGeoreferencedComponents` | bool / `false` | merge georeferenced components without visual overlap | `false` in pass-1 zone aligns (auto-fusing disjoint pockets by georeference would freeze bad geometry invisibly); `true` on every merge-ladder rung [VERIFIED-as-decision: ea3ad5d:docs/settings-evaluation-2026-07.md §4] |
+| `sfmForceComponentRematch` | bool / `false` | "the application realigns images and cameras to find better connections. It uses existing camera poses to search for new matches" | `false` in pass-1 zone aligns (a merge-stage tool, wasted per zone); `true` on the align-mode merge rungs [OFFICIAL: appbasics/alignsettings] + [VERIFIED-as-policy: ea3ad5d:docs/settings-evaluation-2026-07.md §4; merge_zones.LADDERS] |
 | `sfmImagesOverlap` | Low/Medium/High | "Defines how many common features are expected between images" | `Medium` in production. **`High` as a merge-ladder rung is not defensible** — it only widens candidate-pair search, so it can help only where components share content the matcher skipped; zero-overlap components never fuse under any rung, and the hull fused on every rung, so matching was never the constraint [VERIFIED: FINDINGS 2026-07-27] |
 | `sfmEnableCameraPrior` | bool | "prior positions for the images are used in the alignment process and for georeferencing the scene" | `true` throughout; it is what makes components georeferenced in the first place. Composes with the merge flag: (a) is per-camera during alignment, (b) is per-component post-solve; (b) without (a) is inert [INFERRED from Help prose + design reasoning; never isolated by a cell] |
 | `aligFeaturesMode` / `-setFeatureSource 0\|1\|2` | 0 = merge using overlaps, 1 = use component features, 2 = use all image features | Help ties these to "a new alignment of components", set per selected input: `0` uses solely images/points common to all components and "extremely speeds up the reconstruction process, as well as reduces computer memory consumption"; `1` is "the most common and fastest type"; `2` is "the slowest process of all these, recommended for a small number of camera poses" [OFFICIAL: appbasics/components] | **CLI-accessible** (`-setFeatureSource`, composed with `-selectImage` / `-selectAllImages`) — the earlier "GUI-only" conclusion is [SUPERSEDED: NA167 B11, 2026-07-23]. **Consumed by ALIGN, not by Merge Components** [INFERRED from the Help's "a new alignment of components" wording; never A/B'd here]. Mode `0`'s "images/points which are in common (the same in all components)" means **shared-PATH images, not duplicate copies of the same picture** — per-zone copies are different images to RealityScan's identity check [VERIFIED-as-reading: FINDINGS 2026-07-23, caveat added at the 2026-07-24 RECON]. Note `-selectImage` matches **literal full paths only** in this build (the Help documents a regexp dialect that selects nothing), so composing a per-camera selection is a per-image loop — see `02-command-reference.md` |
@@ -980,7 +980,7 @@ RealityScan** — resolves three spatially disjoint UTM clusters:
 maximal component is **3,720/4,600 = 80.9 %**, below both `--target` values ever used (0.85, 0.83):
 a maximal-fraction gate was **unreachable by construction** and would have burned the full
 three-attempt ladder (~1.7 h measured) and exited 1 on a *correct* result
-[VERIFIED: FINDINGS 2026-07-24; docs/MERGE_REWORK_RECOMMENDATIONS].
+[VERIFIED: FINDINGS 2026-07-24; ea3ad5d:docs/MERGE_REWORK_RECOMMENDATIONS.md].
 
 Consequently `--target` in `merge_zones.py` is **informational only, never a gate**, and
 convergence (a full ladder cycle with no fusion) is the terminal condition.

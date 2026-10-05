@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Within-zone component growth driver.
 
-Implements the within-zone half of the "Revised order of operations"
-(docs/merge-growth-strategy-2026-07.md) on ONE zone's ORIGINAL aligned
-scene (features cached, image identity intact - never a scene rebuilt
+Implements the within-zone half of the revised merge/growth order of
+operations on ONE zone's ORIGINAL aligned scene (features cached, image identity intact - never a scene rebuilt
 from component imports, which silently lacks the orphan images):
 
   1. Checkpoint: snapshot the scene bundle and export the current
@@ -43,8 +42,8 @@ All prompts default to the previous run's answers (rs_settings.json).
 RS_HEADLESS resolves through the settings store's 'realityscan' section
 (default: visible; an RS_HEADLESS already in the environment wins -
 module_base.settings_store.realityscan_env). --lock_anchor (inpPose=3 on the component
-being grown) stays OFF by default until hardening cell U18 verifies the
-locked-pose behavior.
+being grown) stays OFF by default: the locked-pose behavior has not been
+verified.
 """
 from __future__ import annotations
 
@@ -353,7 +352,7 @@ def main() -> int:
                              "zone in the flight log's filename tag")
     parser.add_argument('--lock_anchor', action='store_true',
                         help='lock the grown component poses (inpPose=3) during its '
-                             'align - EXPERIMENTAL, off until U18 verifies it')
+                             'align - EXPERIMENTAL, unverified, off by default')
     parser.add_argument('--skip_global', action='store_true',
                         help='skip the opening global re-align pass')
     parser.add_argument('--project_label', default=None,
@@ -429,8 +428,8 @@ def main() -> int:
         logger.info('per-step flight-log reload: %s', args.flight_log)
     if args.lock_anchor:
         os.environ['RS_GROW_LOCK_ANCHOR'] = '1'
-        logger.warning('lock-anchor mode is ON (inpPose=3) - unverified '
-                       'until hardening cell U18')
+        logger.warning('lock-anchor mode is ON (inpPose=3) - its '
+                       'locked-pose behavior is unverified')
     else:
         os.environ.pop('RS_GROW_LOCK_ANCHOR', None)
 

@@ -30,8 +30,7 @@ XMP positions - those are grid-anchored local-frame values, not UTM
 (finding B10 context, 2026-07-23).
 
 The manifest history list is the audit trail for every later
-accept/rollback/twin-drop decision (docs/merge-growth-strategy-2026-07.md,
-"Bookkeeping layer").
+accept/rollback/twin-drop decision.
 """
 from __future__ import annotations
 

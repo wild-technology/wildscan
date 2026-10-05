@@ -486,7 +486,7 @@ Production values in force since 2026-07-25, all 39 entries:
 
 | Key | Value | Note |
 |---|---|---|
-| `sfmDistortionModel` | `Division` | **global and all-or-nothing** — the per-camera XMP `Camera:DistortionModel` hint written by `modules/camera_registry.py` does **not** switch models per camera; every solved camera came back `xcr:DistortionModel="division"` [VERIFIED: FINDINGS 2026-07-26]. The file's own comment records the intent (fisheye Port/Starboard division, rectilinear Cinema/Zeuss brown3) that the setting cannot express. Note `docs/settings-evaluation-2026-07` §4 and FINDINGS 2026-07-23 recommend `Brown3` as the global fallback for this rig class while the shipped file still says `Division` [CONTRADICTED-internal: repo recommendation vs shipped profile; the profile is what runs] |
+| `sfmDistortionModel` | `Division` | **global and all-or-nothing** — the per-camera XMP `Camera:DistortionModel` hint written by `modules/camera_registry.py` does **not** switch models per camera; every solved camera came back `xcr:DistortionModel="division"` [VERIFIED: FINDINGS 2026-07-26]. The file's own comment records the intent (fisheye Port/Starboard division, rectilinear Cinema/Zeuss brown3) that the setting cannot express. Note `ea3ad5d:docs/settings-evaluation-2026-07.md` §4 and FINDINGS 2026-07-23 recommend `Brown3` as the global fallback for this rig class while the shipped file still says `Division` [CONTRADICTED-internal: repo recommendation vs shipped profile; the profile is what runs] |
 | `sfmEnableCameraPrior` | `true` | the GUI's "use camera priors for georeferencing" |
 | `sfmCameraPriorWeight` | `10.0` | never A/B'd |
 | `sfmCameraPriorWeightOrientation` | `10.0` | never A/B'd |
@@ -909,7 +909,7 @@ Behaviour that no key in this profile changes, and that dictates *when* you text
 triangles that any camera saw receive real blended colour. Texture *after* `-closeHoles` +
 `-cleanModel`; texturing a holey model and then reprojecting onto the closed one produces nodata
 patches, because reprojection samples the source **surface**.
-[VERIFIED-as-design-decision with mechanism: docs/settings-evaluation-2026-07 §7, 2026-07-23]
+[VERIFIED-as-design-decision with mechanism: ea3ad5d:docs/settings-evaluation-2026-07.md §7, 2026-07-23]
 
 ### 2.8 Texture-reprojection params
 
@@ -1665,7 +1665,7 @@ Two of these have direct, recorded relevance here:
   match the WCA cameras' EXIF, and it cannot distinguish two cameras with identical EXIF anyway —
   which is exactly this rig's situation (both cameras report Make `Z CAM`, Model `E2-F6`, with no
   focal length and no lens tag). Per-image XMP `Camera:CalibrationGroup` sidecars are the only
-  mechanism that separates them. [VERIFIED-by-inspection: docs/settings-evaluation-2026-07 §1,
+  mechanism that separates them. [VERIFIED-by-inspection: ea3ad5d:docs/settings-evaluation-2026-07.md §1,
   2026-07-23]
 - **`transformdb.xml` is what `MvsExportTransformationPreset` names must match.** It holds 24
   `<transform>` rows — {Blender, 3ds Max, Maya, Maya + Arnold, Unity, Unreal} × four format groups

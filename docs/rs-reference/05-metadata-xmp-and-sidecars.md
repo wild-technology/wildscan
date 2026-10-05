@@ -664,7 +664,7 @@ operationally there are two families with different plumbing:
 
 `sfmEnableCameraPrior` **is** the GUI's "use camera priors for georeferencing": pose priors
 participate *inside* the bundle adjustment and georeference the resulting components.
-It stays `true` in every production align here. [VERIFIED: docs/settings-evaluation-2026-07 §4/§5]
+It stays `true` in every production align here. [VERIFIED: ea3ad5d:docs/settings-evaluation-2026-07.md §4/§5]
 
 ### 6.2 Absolute pose modes
 
@@ -846,7 +846,7 @@ For the rig this repo drives, **neither setting is correct**:
   `Model="E2-F6"`, matching exposure data, **no focal length tag and no lens tag**,
   4244×2827, Lightroom-rendered from a full-frame sensor. RealityScan cannot tell the
   cameras apart from EXIF at all.
-  [VERIFIED-by-inspection: docs/settings-evaluation-2026-07 §1, 2026-07-23]
+  [VERIFIED-by-inspection: ea3ad5d:docs/settings-evaluation-2026-07.md §1, 2026-07-23]
 - Enabled, `appGroupCalibrationByExif=true` would collapse two cameras with different
   lenses (fisheye 14 mm and rectilinear 17 mm) into **one** calibration group.
 - Left `false`, images calibrate without any grouping — every camera self-calibrates
@@ -855,7 +855,7 @@ For the rig this repo drives, **neither setting is correct**:
 **Per-image XMP calibration sidecars are therefore the only mechanism that can separate
 EXIF-identical cameras. One group per PHYSICAL camera, never per lens type** — Port and
 Starboard share a lens *spec* but are different units with different real intrinsics.
-[VERIFIED: docs/settings-evaluation-2026-07 §1–§2]
+[VERIFIED: ea3ad5d:docs/settings-evaluation-2026-07.md §1–§2]
 
 ### 7.3 The rig table this repo encodes
 
@@ -925,7 +925,7 @@ itself untested. [VERIFIED-as-observation: FINDINGS 2026-07-26] [UNDOCUMENTED]
     came back `xcr:DistortionModel="division"` — identical to the 2,492 port records —
     despite the cinema sidecars declaring `brown3`.
     [VERIFIED: FINDINGS 2026-07-26, aggregated over 5,050 harvest records; test cell PD-2]
-  [CONTRADICTED: docs/settings-evaluation-2026-07 §3 asserted "per-image XMP overrides the
+  [CONTRADICTED: ea3ad5d:docs/settings-evaluation-2026-07.md §3 asserted "per-image XMP overrides the
   global key" / observed: the global key owns the model, in both directions]
 
 **Scope caveat that must travel with this finding.** What was declared per image in both
@@ -1452,7 +1452,7 @@ against priors *promoted* to the correct `<stem>.xmp` naming. Adding the priors 
 `cammid` + `camupper` + `camlower` into one group at "12 mm fisheye", when `camlower` is
 in fact a **rectilinear 17 mm** camera. Wrong focal, wrong model, wrong grouping — a
 confidently-asserted lie is worse than silence.
-[VERIFIED: docs/settings-evaluation-2026-07 §2]
+[VERIFIED: ea3ad5d:docs/settings-evaluation-2026-07.md §2]
 [SUPERSEDED-in-scope: the corrected per-camera values reverse the calculus; validate per
 rig before trusting either direction]
 
@@ -1538,7 +1538,7 @@ ASCII. A scan of one encoding only will miss half the table.
 
 For this rig, step 1–3 all fail: the WCA JPGs carry `Make`/`Model` and exposure data but
 **no focal length and no lens tag**, and the model string does not match any DB entry.
-[VERIFIED-by-inspection: docs/settings-evaluation-2026-07 §1]
+[VERIFIED-by-inspection: ea3ad5d:docs/settings-evaluation-2026-07.md §1]
 
 ### 12.3 GPS EXIF
 
@@ -1562,7 +1562,7 @@ control points, or directly to the camera using the camera priors, flight logs, 
 files". To use **EXIF GPS** as camera priors you must "enable the camera priors for
 georeferencing in the alignment settings … for the EXIF data to be used".
 [OFFICIAL: tutorials/georeferencing] That setting is `sfmEnableCameraPrior=true`.
-[VERIFIED: docs/settings-evaluation-2026-07 §4/§5]
+[VERIFIED: ea3ad5d:docs/settings-evaluation-2026-07.md §4/§5]
 
 **On export, "Replace GPS Exif with optimized values" (`xmpExGps`) writes the
 alignment-computed coordinates instead of the EXIF ones.** [OFFICIAL: tools/xmpalign]
@@ -1652,7 +1652,7 @@ machine**:
 they are not installed, and their `model` strings cannot match this rig's EXIF
 (`Make="Z CAM"`, `Model="E2-F6"`) anyway. The database also **cannot distinguish two
 cameras with identical EXIF**, which is the rig's actual problem.
-[VERIFIED-by-inspection: docs/settings-evaluation-2026-07 §1]
+[VERIFIED-by-inspection: ea3ad5d:docs/settings-evaluation-2026-07.md §1]
 
 Note the same install-tree/ProgramData duality applies to `flightlogs.xml`, which **was**
 hand-edited in Program Files to add a 13-column format; that edit must be re-checked after

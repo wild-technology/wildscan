@@ -1,8 +1,8 @@
 @echo off
 setlocal
 :: One within-zone growth PASS on an EXISTING zone scene, driven by
-:: grow_zone.py (docs/merge-growth-strategy-2026-07.md, "Revised order of
-:: operations", within-zone half). The scene is loaded from %1, operated
+:: grow_zone.py (the within-zone half of the merge/growth order of
+:: operations). The scene is loaded from %1, operated
 :: on, and saved back IN PLACE - checkpoint/rollback is the driver's job
 :: (it snapshots the .rsproj + its companion data folder before every
 :: mutating pass and restores them to the SAME path on rollback).
@@ -60,9 +60,8 @@ setlocal
 ::   RS_GROW_LOCK_ANCHOR  - "1": component mode only - lock the primary
 ::       component's camera poses (inpPose=3) before the align so the
 ::       well-solved component anchors the solve, and unlock (inpPose=0)
-::       after. OFF by default until hardening cell U18 verifies that
-::       locked cameras are guaranteed retained and that new images still
-::       register onto them. Lock/unlock always uses -editInputSelection
+::       after. OFF by default: it is not verified that locked cameras are
+::       guaranteed retained and that new images still register onto them. Lock/unlock always uses -editInputSelection
 ::       regardless of RS_GROW_SELECT_CMDS.
 ::
 :: The XMP census export runs in the ORIGINAL zone scene, so sidecars

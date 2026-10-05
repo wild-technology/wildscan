@@ -21,7 +21,7 @@ setlocal
 :: weakly-reconstructed but CAMERA-VISIBLE areas). The final
 :: reprojection then maps between two already-manifold models - no
 :: nodata patches. Never texture the holey model and reproject onto the
-:: closed one. (docs/settings-evaluation-2026-07.md)
+:: closed one.
 ::
 :: Models kept, each prefixed with the component name (see model_tag
 :: below): <comp>_HighPoly_Raw (generate high), <comp>_HighPoly_Textured

@@ -341,7 +341,7 @@ to this pixel budget. Binary candidates: `MvsPreviewUndistMaxPixels`,
 | Key | Type | Default | Values | Controls |
 |---|---|---|---|---|
 | `MvsGeometryGpuAccel` | bool | `true` | `true` `false` | GPU acceleration for meshing. |
-| `MvsGeometryMarginStyle` | bool | `false` | `true` `false` | Remove marginal triangles at mesh time → non-watertight mesh. **This repo leaves it at the default and removes marginal triangles post hoc instead**, with `-selectMarginalTriangles` + `-removeSelectedTriangles` in `GenerateModel.bat` `[2/8]` [VERIFIED-by-inspection: the key appears in no repo file; the post-hoc filter is the specified recipe, docs/settings-evaluation-2026-07 §7]. The two routes were never compared — **the key is not mentioned anywhere in the repo's settings evaluation** [OPEN]. |
+| `MvsGeometryMarginStyle` | bool | `false` | `true` `false` | Remove marginal triangles at mesh time → non-watertight mesh. **This repo leaves it at the default and removes marginal triangles post hoc instead**, with `-selectMarginalTriangles` + `-removeSelectedTriangles` in `GenerateModel.bat` `[2/8]` [VERIFIED-by-inspection: the key appears in no repo file; the post-hoc filter is the specified recipe, ea3ad5d:docs/settings-evaluation-2026-07.md §7]. The two routes were never compared — **the key is not mentioned anywhere in the repo's settings evaluation** [OPEN]. |
 | `mvsMinSampleDistance` | float | `0.0` | ≥ 0, in project CRS units | Minimal distance between two vertices = final model density. **Only meaningful on a scaled/georeferenced scene**; Epic warns to reset it per project. |
 | `mvsPreviewMeshStrategy` | enum | `sfm` | `sfm`, `vertexCount` | Preview strategy: use the sparse cloud, or target a vertex count. |
 | `mvsPreviewMaxVetrexCountInModel` *(sic)* | int | `10000000` | int > 0 | Preview max vertex count; only with `vertexCount`. |
@@ -625,7 +625,7 @@ Repo presets, all derived from a single 50 % GUI export:
 `SimplifyNoise_Params.xml` (70 % rel) and `SimplifySmooth_80per_Params.xml`
 (80 % rel) are **placeholders derived from the 50 % template**; if custom GUI
 presets for "noise" and "smooth" simplification exist they should be exported
-over these files [VERIFIED-as-caveat: docs/settings-evaluation-2026-07 §7;
+over these files [VERIFIED-as-caveat: ea3ad5d:docs/settings-evaluation-2026-07.md §7;
 [OPEN] standing self-audit item].
 
 Four 80 % passes compound to `0.8⁴ ≈ 40.96 %` of the post-`SimplifyNoise`
@@ -817,7 +817,7 @@ water-column haze. RealityScan **Image Layers**
 
 The production recipe textures **after** `-closeHoles` + `-cleanModel`, not
 before. The reasoning was tested against the alternatives
-[VERIFIED-as-design-decision with mechanism: docs/settings-evaluation-2026-07 §7]:
+[VERIFIED-as-design-decision with mechanism: ea3ad5d:docs/settings-evaluation-2026-07.md §7]:
 
 | Strategy | Result |
 |---|---|
@@ -2050,7 +2050,7 @@ assembly — the longest-standing open item, open since 2026-07-23, with operato
 GUI screenshots as the interim proxy), and **`componentMedianError` /
 `componentMeanError` are the candidate answer to U14** (per-component
 reprojection error headless, needed for twin-keeper choice)
-[VERIFIED-as-candidate: `docs/validation/alignment_merge_hardening_plan.md` U7/U14].
+[VERIFIED-as-candidate: `ea3ad5d:docs/validation/alignment_merge_hardening_plan.md` U7/U14].
 [OPEN] — the blocker is that `-exportReport` has **never been run here**, and
 the sibling `-exportRegistration` is known to block forever headless without a
 params file, so the cell explicitly flags a blocking risk. Note that both cells
