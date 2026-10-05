@@ -51,17 +51,25 @@ import shutil
 import tempfile
 import time
 from collections import Counter
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Sequence
 
 from .. import camera_registry
-from ..calibration_sidecars import (DECIDED_MODES, MODES as CALIBRATION_MODES,
-                                    CalibrationRefused, decide_calibration,
-                                    read_image_geometry)
+from ..calibration_sidecars import (
+    DECIDED_MODES,
+    CalibrationRefused,
+    decide_calibration,
+    read_image_geometry,
+)
+from ..calibration_sidecars import MODES as CALIBRATION_MODES
 from ..camera_registry import Mount, Registry
-from ..flight_logs import (FlightLogRow, flight_log_name,
-                           realityscan_orientation, validate_utm_zone,
-                           write_flight_log)
+from ..flight_logs import (
+    FlightLogRow,
+    flight_log_name,
+    realityscan_orientation,
+    validate_utm_zone,
+    write_flight_log,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -873,7 +881,9 @@ def run_intake(run_paths: Sequence[str], workspace: str,
                     continue
                 try:
                     geometries.append(read_image_geometry(frame.source))
-                except Exception as exc:   # Pillow raises several types
+                except (OSError, ValueError, SyntaxError) as exc:
+                    # Pillow: OSError (incl. UnidentifiedImageError) for an
+                    # unreadable file, ValueError/SyntaxError for a corrupt one.
                     unreadable.append(f'{frame.name} ({exc})')
         if unreadable:
             warn(f'{key}: {len(unreadable)} image(s) could not be read for '
