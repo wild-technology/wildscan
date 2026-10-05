@@ -1,26 +1,13 @@
-"""The documented installation routes resolve the same dependency requirements."""
+"""Declared dependencies exclude releases with known vulnerabilities.
+
+That requirements.txt equals the pyproject.toml lists is checked, with
+normalised names, in tests/test_packaging_requirements.py.
+"""
 from pathlib import Path
-import re
 import tomllib
 
 from packaging.requirements import Requirement
 import pytest
-
-
-def test_requirements_matches_project_and_dev_dependencies():
-    repo = Path(__file__).resolve().parents[1]
-    project = tomllib.loads((repo / 'pyproject.toml').read_text(encoding='utf-8'))['project']
-    expected = {Requirement(value) for value in project['dependencies']
-                + project['optional-dependencies']['dev']}
-    actual = set()
-    for line in (repo / 'requirements.txt').read_text(encoding='utf-8-sig').splitlines():
-        line = re.split(r'\s+#', line, maxsplit=1)[0].strip()
-        if line and not line.startswith('#'):
-            actual.add(Requirement(line))
-    assert actual == expected, {
-        'missing': sorted(str(value) for value in expected - actual),
-        'extra': sorted(str(value) for value in actual - expected),
-    }
 
 
 @pytest.mark.parametrize(('name', 'vulnerable_versions', 'patched_version'), [
