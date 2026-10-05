@@ -9,8 +9,8 @@
 # Requires Python 3.12+ (the minimum required by numpy>=2.5 and scipy>=1.18). The
 # pipeline is developed and run on `py -3.13`.
 #
-# Floors start from the HONEYBADGER box used for H2023/H2024/ON2026
-# (2026-08-08), with security fixes applied where needed.
+# Floors start from the environment the pipeline was last validated in,
+# with security fixes applied where needed.
 # RealityScan 2.2 itself is a separate Windows install
 # (Epic Games) and is not a pip dependency; Nira publishing needs the
 # `niraclient` checkout (Enterprise plan) via NIRACLIENT_DIR.
