@@ -1391,7 +1391,7 @@ See **F-06**. RealityScan reads and writes `<stem>.xmp` only.
   - Any stem-pairing oracle (e.g. the scale gate) has nothing to join on in a merge scene
     (F-23).
   - Ordinal sidecars are **inert as priors** (no image has an ordinal stem);
-    `camera_registry.sanitize_and_census` deletes them quietly.
+    `calibration_sidecars.sanitize_and_census` deletes them quietly.
 - **Directory semantics differ by scene type.** **ALIGN-scene `identity_r<K>` directories
   are CUMULATIVE** (rK = laps K..end); **MERGE-scene rK is component K alone.** Component
   K's own sidecars in an align scene are the stem difference rK minus rK+1.
@@ -1454,7 +1454,7 @@ See **F-06**. RealityScan reads and writes `<stem>.xmp` only.
   component (665/665), 123 of c0, 8 unregistered.
 - **Blast radius.** **PD-4 and PD-4a both re-aligned zone_1 in this state, so their
   "collapse" results (669 and 782 of 4,540) are CONFOUNDED.**
-- **Mitigation.** `camera_registry.ensure_calibration_sidecars()`.
+- **Mitigation.** `calibration_sidecars.ensure_calibration_sidecars()`.
   [VERIFIED: FINDINGS 2026-07-25]
 - **Detection test.** Compare the sidecar count against the image count per zone before
   every align.
