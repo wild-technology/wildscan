@@ -58,8 +58,6 @@ On **Choose your dataset**, fill in only the sources you have:
 | Processed navigation folder | Existing ROVDataConcat datatables or georeferenced flight logs |
 | Results root | The working workspace for this dive, or an existing workspace to inspect |
 
-![Dataset intake showing source fields, detected sample imagery and navigation, and a separate results folder](images/dataset-intake.svg)
-
 Read the detected-file summary and correct the fields if it identifies the
 wrong recording or table. A suggested file is a convenience, not an approval
 of that input. You will review the stage parameters before execution.
@@ -78,8 +76,6 @@ The stage picker shows the detected state and summary for each stage. Use
 the arrow keys to move, **Space** to select or unselect a stage, and **Enter**
 to confirm. Completed stages start unselected. If you supply stills without
 a video, extraction also starts unselected.
-
-![Stage picker with video extraction unselected for the sample's existing still images](images/dataset-stages.svg)
 
 | Stage | Purpose |
 |---|---|
@@ -161,8 +157,6 @@ verdicts, model completion, and available export formats. A dash means the
 corresponding value is unavailable. A passing scale result does not measure
 absolute positional accuracy, surface detail, seams, or texture quality.
 Review those separately before delivering or publishing a model.
-
-![Read-only status for an empty sample results folder, with pending stages and no final components](images/dataset-status.svg)
 
 In this sample, the sources have been identified but nothing has been processed.
 The status table describes the results folder, so its stages remain pending.
