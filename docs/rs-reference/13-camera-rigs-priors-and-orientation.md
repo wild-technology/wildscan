@@ -1971,8 +1971,8 @@ first-run checklist's orientation check passes. [OPEN]
 
 ### 10.7 Stereo baseline and extrinsics: data only
 
-The rig `ilx_lr1_stereo` keeps `stereo_baseline_m = 0.225425` (supplied, not measured: the
-checkerboard square size is unknown, so the stereo solve is in square units) and the left-to-right
+The rig `ilx_lr1_stereo` keeps `stereo_baseline_m = 0.225425` (measured on the rig, not estimated by
+the calibration: the checkerboard square size is unknown, so the stereo solve is in square units) and the left-to-right
 extrinsics (OpenCV convention, 1.827° relative rotation). Nothing writes rig XMP (§3.5) or turns
 them into a constraint. The cameras are not hardware-synchronised (calibration pairs within about
 60 ms), so a rig declaration assuming simultaneous exposures would be approximate in any case.

@@ -105,7 +105,7 @@
       "focal_nominal_mm": 16,
       "_focal_comment": "16 mm per camera as stated by the operator 2026-09-30. The calibration images carry no EXIF. A later survey with the same lens model (FE PZ 16-35mm F4 G) records 24 mm and 29 mm in EXIF on the two bodies - a different zoom setting, so this calibration does not apply to it.",
       "stereo_baseline_m": 0.225425,
-      "_stereo_baseline_comment": "SUPPLIED, not measured here: 225.425 mm from docs/rs-reference/13 section 3.5, confirmed by the operator. The checkerboard square size is unknown, so the solve is in square units (|T|=19.38 squares) and this baseline sets the scale; implied square 11.63 mm.",
+      "_stereo_baseline_comment": "MEASURED on the rig: 225.425 mm (docs/rs-reference/13 section 3.5). The checkerboard solve did not estimate it and was not given it: the square size is unknown, so the solve is in square units (|T|=19.38 squares) and this measured baseline sets the scale afterwards; implied square 11.63 mm.",
       "calibration_groups": "per-eye",
       "calibration_prior": "approximate",
       "extrinsics_left_to_right": {
