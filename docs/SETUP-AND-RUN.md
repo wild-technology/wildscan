@@ -348,7 +348,9 @@ What these mean and how they are applied is in
 [`2.0`], `--p_clahe_tile` [`8`], `--p_white_balance` [`false`] and
 `--p_workers` [`0` = CPU count]. Batch Directory takes `--b_target_images`
 [`3000`], `--b_min_zone` [`1000`], `--b_max_zone` [`4000`],
-`--b_overlap_percent` [`20`] and others listed by `--help`. RealityScan
+`--b_overlap_percent` [`20`], `--b_single_zone_below` [`4000`; a dataset with
+fewer images is one zone, without clustering or overlap copies] and others
+listed by `--help`. RealityScan
 Alignment takes `--r_min_component_size` [`50`; a zone with fewer images uses
 its image count, at least 2], `--r_display_output` and `--r_project_label`.
 

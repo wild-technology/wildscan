@@ -110,7 +110,9 @@ For any RealityScan command-line question, start at
 
 - `modules/preprocess_images/`: CLAHE and gray-world white balance; the
   canonical transforms, also used by `scripts/validation/check_preprocessing.py`.
-- `modules/image_batcher/batch_directory.py`: spatial zoning. The default copy
+- `modules/image_batcher/batch_directory.py`: spatial zoning. A dataset with
+  fewer images than `--b_single_zone_below` (default 4000) is one zone with no
+  clustering or overlap copies; fewer than 100 images logs a warning. The default copy
   layout puts each zone's images in per-camera subfolders with a copy of the
   zone's flight log; the pool layout (`--b_zone_layout pool`) writes an
   `.imagelist` instead and cannot be combined with calibration delivery.

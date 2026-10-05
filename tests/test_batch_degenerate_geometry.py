@@ -6,6 +6,10 @@ same X/Y. Clustering that into two zones left the second one empty: a
 folder holding only a flight log, which alignment then counted as a failed
 zone. The zone outline code also hit Qhull on the zero-area geometry.
 
+Small datasets are placed in one zone without clustering
+(b_single_zone_below), so these tests lower that threshold to reach the
+zoning code; a dataset this small also logs the small-dataset warning.
+
 Offline: real zoning and plotting on a tiny fixture, no RealityScan.
 """
 from __future__ import annotations
@@ -50,14 +54,19 @@ def _names(frames: int) -> list[str]:
     return names
 
 
-def _run(tmp_path, monkeypatch, positions):
-    """BatchDirectory.run() end to end on one image per position row."""
-    names = _names(len(positions) // 2)
+def _run(tmp_path, monkeypatch, positions, extra=None, files=True):
+    """BatchDirectory.run() end to end on one image per position row.
+
+    ``extra`` adds or overrides parameters (by default the single-zone
+    threshold is lowered to 1); with ``files`` False only the flight log is
+    written, for callers that stub the copy step."""
+    names = _names((len(positions) + 1) // 2)[:len(positions)]
     source = tmp_path / 'ws' / 'raw_images'
     source.mkdir(parents=True)
     rows = [HEADER]
     for name, (x, y) in zip(names, positions):
-        (source / name).write_bytes(b'j')
+        if files:
+            (source / name).write_bytes(b'j')
         rows.append(f'{name};{x:.6f};{y:.6f};0;1000;1000;1;15;1;-10;15;15;15')
     log = source / 'flight_log_19T_UTM.txt'
     log.write_text('\n'.join(rows) + '\n', encoding='utf-8')
@@ -76,7 +85,8 @@ def _run(tmp_path, monkeypatch, positions):
                         ('batch_kde_bandwidth', 0.0),
                         ('batch_overlap_max_distance_m', 0.0),
                         ('batch_input_image_dir', str(source)),
-                        ('batch_flight_log_path', str(log))):
+                        ('batch_flight_log_path', str(log)),
+                        *(extra or {'batch_single_zone_below': 1}).items()):
         p = Parameter(name, None, name, type(value), value, prompt_user=False)
         p.set_value(value)
         params[name] = p
@@ -117,7 +127,8 @@ def test_a_static_position_gives_one_zone_and_no_hull_error(tmp_path,
     text = '\n'.join(r.getMessage() for r in caplog.records)
     assert 'hull' not in text.lower() and 'qhull' not in text.lower()
     assert not _records(caplog, logging.ERROR)
-    warnings = [r.getMessage() for r in _records(caplog, logging.WARNING)]
+    warnings = [r.getMessage() for r in _records(caplog, logging.WARNING)
+                if 'expected to work well' not in r.getMessage()]
     assert len(warnings) == 1, warnings
     assert 'one position' in warnings[0]
 
@@ -134,7 +145,8 @@ def test_collinear_positions_zone_without_a_hull_error(tmp_path,
     assert 'qhull' not in text.lower()
     assert 'could not generate convex hull' not in text.lower()
     assert not _records(caplog, logging.ERROR)
-    assert not _records(caplog, logging.WARNING)
+    assert all('expected to work well' in r.getMessage()
+               for r in _records(caplog, logging.WARNING))
     infos = [r.getMessage() for r in _records(caplog, logging.INFO)
              if 'positions are collinear' in r.getMessage()]
     assert len(infos) == 1, infos
@@ -152,7 +164,8 @@ def test_spread_positions_still_zone_and_draw_outlines(tmp_path, monkeypatch,
     text = '\n'.join(r.getMessage() for r in caplog.records)
     assert 'one position' not in text
     assert 'positions are collinear' not in text
-    assert not _records(caplog, logging.WARNING)
+    assert all('expected to work well' in r.getMessage()
+               for r in _records(caplog, logging.WARNING))
 
 
 def test_more_clusters_than_distinct_positions_leave_no_empty_zone():
