@@ -1218,7 +1218,7 @@ Entry shape **as shipped** (root element `<cameras>`):
 [VERIFIED-by-inspection: `C:\Program Files\Epic Games\RealityScan_2.2\sensorsdb.xml`
 line 4, 2026-08-04]
 
-Entry shape **with a lens block**, from **this repository's own hand-authored copy** at
+Entry shape **with a lens block**, from **this repository's former hand-authored copy** at
 the repo root — these ROV entries are *not* in the shipped database:
 
 ```xml
@@ -1233,10 +1233,9 @@ the repo root — these ROV entries are *not* in the shipped database:
 returns **nothing** — an earlier draft of this document wrongly attributed these entries to
 the shipped file.]
 
-**The repo copy is inert.** It sits at the repository root and is not deployed to either
-location the app reads, so nothing in this pipeline has ever caused RealityScan to load a
-ZCAM entry. It is a reference artifact, not an installed one; see
-`09-xml-parameter-files.md` §"Keep a copy in the repository" for why it is kept.
+**The repo copy was inert.** It sat at the repository root and was never deployed to either
+location the app reads, so nothing in this pipeline ever caused RealityScan to load a ZCAM
+entry. The repository no longer carries a `sensorsdb.xml`.
 [VERIFIED-by-inspection: no script in the repo copies or references `sensorsdb.xml`
 (`grep -rn sensorsdb --include=*.py --include=*.bat` returns no hits), 2026-08-04]
 
@@ -1261,15 +1260,15 @@ them are the product's:
 |---|---|---|
 | `C:\ProgramData\Epic\RealityScan\sensorsdb.xml` | `8d426fc47b0643f388b3ac4d782e7428` | the documented one |
 | `C:\Program Files\Epic Games\RealityScan_2.2\sensorsdb.xml` | `8d426fc47b0643f388b3ac4d782e7428` | **byte-identical**, undocumented |
-| `wildscan\sensorsdb.xml` (repo root) | `21c71b2ef839fce3760e3ac31d53e74b` | **different file** — repo reference copy, not installed, never read |
+| `wildscan\sensorsdb.xml` (former repo root copy) | `21c71b2ef839fce3760e3ac31d53e74b` | **different file** — repo reference copy, never installed or read; no longer in the repository |
 
 [VERIFIED-by-inspection, 2026-08-04] [OPEN] Which of the two product copies the running app
 reads is untested, and invisible while they stay identical. Cheapest probe: add a
 distinctive `<camera model="PROBE-CAM" ccdWidth="9.99"/>` entry to one copy only, import a
 matching image, and see whether the prior appears.
 
-**`sensorsdb.xml` is unusable for this rig.** The repo's hand-authored ROV entries are
-keyed to NA167-era model strings ("ZCAM F6 8-15mm Fisheye Upper") that cannot match the
+**`sensorsdb.xml` is unusable for this rig.** The former repo copy's hand-authored ROV
+entries were keyed to NA167-era model strings ("ZCAM F6 8-15mm Fisheye Upper") that cannot match the
 current EXIF (`Z CAM` / `E2-F6`, §16.4), and even a matching entry could not distinguish
 two cameras with identical EXIF — matching is per *camera model*, and this rig's cameras
 report the same one. Per-image XMP is the only separator; see §16.4.
