@@ -379,7 +379,11 @@ more than one UTM zone; no matched row with a UTM position; a `utm_zone` whose
 hemisphere contradicts the row's latitude; an explicit calibration prior that
 cannot apply; and files in `raw_images/` that it did not plan or that differ
 from their source (use a fresh workspace). Re-running the same intake into the
-same workspace reuses identical copies.
+same workspace reuses identical copies. A `<stem>.xmp` beside a planned image
+that is byte for byte one of the alignment stage's own calibration sidecars for
+that image's camera (written when alignment is pointed at `raw_images/`
+directly) is not counted as unplanned and is left as it is; any other sidecar
+is.
 
 Before it copies anything, the intake writes `wildsync_intake.json` with
 status `in_progress`; the complete manifest replaces it only when the copies

@@ -48,6 +48,8 @@ cameras captured with Wild Sync. This release is breaking.
 - Wild Sync Intake marks its manifest `in_progress` before copying and
   writes the complete manifest last, so an interrupted intake is reported as
   partial and refused by alignment instead of reading as "no intake".
+- An intake re-run accepts, and leaves untouched, the pipeline's own
+  calibration sidecars beside its images in `raw_images/`.
 - `packaging` is declared as a test dependency.
 - The test suite moved from `testing/` to `tests/`.
 
