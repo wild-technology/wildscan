@@ -38,7 +38,7 @@ Counts quoted below are NUL-delimited unless stated otherwise.
 5. [Rotation and Position: conventions and frames](#5-rotation-and-position-conventions-and-frames)
 6. [Prior semantics: what each mode actually fixes](#6-prior-semantics-what-each-mode-actually-fixes)
 7. [Calibration groups and lens groups](#7-calibration-groups-and-lens-groups)
-8. [The production calibration sidecar in this repo — and the doubt about it](#8-the-production-calibration-sidecar-in-this-repo--and-the-doubt-about-it)
+8. [The element-form calibration sidecar — and the doubt about it](#8-the-element-form-calibration-sidecar--and-the-doubt-about-it)
 9. [Exporting XMP](#9-exporting-xmp)
 10. [The auto-import trap and the cleaning protocol](#10-the-auto-import-trap-and-the-cleaning-protocol)
 11. [Measured effect of priors](#11-measured-effect-of-priors)
@@ -293,9 +293,8 @@ global `sfmDistortionModel=Brown3`.
 
 ### 2.4 Encoding
 
-The Help sample carries no XML declaration. The sidecars this repo writes begin with
-`<?xml version="1.0" encoding="UTF-8"?>` and are written UTF-8 **without BOM**
-(`open(..., 'w', encoding='utf-8')` in `modules/camera_registry.py`). No BOM-related
+The Help sample carries no XML declaration, and neither do the sidecars this repo writes;
+they are written UTF-8 **without BOM** (`modules/calibration_sidecars.py`). No BOM-related
 sidecar failure has been observed — but a BOM on line 1 of a `.complist` **does** silently
 invalidate the first entry, and Windows PowerShell 5.1's `Set-Content -Encoding utf8`
 emits one, so never author sidecars with `Set-Content -Encoding utf8`.
@@ -857,10 +856,11 @@ EXIF-identical cameras. One group per PHYSICAL camera, never per lens type** —
 Starboard share a lens *spec* but are different units with different real intrinsics.
 [VERIFIED: ea3ad5d:docs/settings-evaluation-2026-07.md §1–§2]
 
-### 7.3 The rig table this repo encodes
+### 7.3 The rig table of the earlier four-camera datasets
 
-`modules/camera_registry.py` is the single source of truth. Groups, priors and focals are
-confirmed 2026-07-23/25.
+The evidence in this section was gathered on an earlier four-camera rig. The repository now
+encodes only the two ILX-LR1 cameras (`modules/cameras.json`; see
+`13-camera-rigs-priors-and-orientation.md` §10). The earlier registry, as it stood:
 
 | Physical camera | Filename families | Optics | CalibrationGroup | LensGroup | Prior | FocalLength35mm | model |
 |---|---|---|---|---|---|---|---|
@@ -957,11 +957,15 @@ to Brown and re-align to optimise. [OFFICIAL: appbasics/settings_distortion_mode
 
 ---
 
-## 8. The production calibration sidecar in this repo — and the doubt about it
+## 8. The element-form calibration sidecar — and the doubt about it
 
-### 8.1 What is actually written
+This section concerns the element-form sidecar written on the earlier four-camera datasets. The
+repository now writes the documented `xcr` 1.1 attribute form (`modules/calibration_sidecars.py`,
+`sidecar_xmp`; `13-camera-rigs-priors-and-orientation.md` §10.4).
 
-`modules/camera_registry.calibration_xmp()` produces, per image:
+### 8.1 What was written
+
+The earlier `calibration_xmp()` produced, per image:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -1133,7 +1137,7 @@ Component K's own sidecars in an align scene are the stem difference `r_K` minus
 [VERIFIED: FINDINGS 2026-07-28]
 
 Ordinal sidecars are **inert as priors** (no image has an ordinal stem), which is why
-`camera_registry.sanitize_and_census` deletes them quietly rather than restoring them.
+`calibration_sidecars.sanitize_and_census` deletes them quietly rather than restoring them.
 [VERIFIED: B10, 2026-07-23]
 
 ### 9.3 Ordinal naming and imported components
@@ -1225,7 +1229,7 @@ ungrouped camera set. **Test cells PD-4 and PD-4a both re-aligned zone_1 in that
 their "collapse" results (669 and 782 of 4,540) are CONFOUNDED.**
 [VERIFIED: FINDINGS 2026-07-25]
 
-The repair is `camera_registry.ensure_calibration_sidecars(image_root)`, called after every
+The repair is `calibration_sidecars.ensure_calibration_sidecars(image_root)`, called after every
 zone align: it walks the tree and recreates a calibration-only XMP for every
 `.jpg/.jpeg/.png/.heif` that has none, returning `(created, unknown_camera_skipped)`.
 

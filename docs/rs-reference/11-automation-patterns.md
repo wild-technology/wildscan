@@ -1185,10 +1185,10 @@ Safety properties of the loop:
   unless cleaned [VERIFIED: NA167 B7]. The harvest *moves* every pose-bearing `.xmp` out of
   the tree, which also strips the calibration sidecars: measured on fresh zone_1, **796 of
   4,540 images (17.5 %) had no sidecar at all** afterwards, confounding two later test
-  cells. `camera_registry.ensure_calibration_sidecars()` repairs it after every harvest
+  cells. `calibration_sidecars.ensure_calibration_sidecars()` repairs it after every harvest
   [VERIFIED-and-fixed: FINDINGS 2026-07-25].
 - Ordinal sidecars (`00000.xmp`) are inert as priors (no image has an ordinal stem) and are
-  deleted quietly by `camera_registry.sanitize_and_census`
+  deleted quietly by `calibration_sidecars.sanitize_and_census`
   [VERIFIED: NA167 B10 (ordinal XMP), 2026-07-23].
 
 ### 8.5 Instrument invariants — an oracle that cannot see must stop the run
@@ -1544,7 +1544,7 @@ for zone in ZONES:
         report["aborted"] = f"insufficient disk before {zone}"; flush(); return 1
     if zone_already_done(zone) and not args.force:   # resumable
         continue
-    camera_registry.ensure_calibration_sidecars(os.path.join(IMAGES_ROOT, zone))
+    calibration_sidecars.ensure_calibration_sidecars(os.path.join(IMAGES_ROOT, zone))
     env = dict(os.environ)
     env.update(RS_MODULES="RealityScan Alignment", RS_NO_INTERACTIVE="1",
                RS_HEADLESS="0", RS_INSTANCE="RS1",

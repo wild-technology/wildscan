@@ -318,7 +318,7 @@ Established here:
 - **Pose-bearing sidecars become exact-pose priors silently** on any later `-add` /
   `-addFolder` of the same images — cross-run contamination unless the tree is cleaned.
   The pipeline sanitises every sidecar back to calibration-only content after each census
-  (`camera_registry.sanitize_and_census`). [VERIFIED: NA167 B7]
+  (`calibration_sidecars.sanitize_and_census`). [VERIFIED: NA167 B7]
   [UNDOCUMENTED: the Help does not warn that an exported pose sidecar re-imports as a prior]
 - **Ordinal sidecars (`00000.xmp`, `00001.xmp`, …) are inert as priors** — no image has an
   ordinal stem — and are deleted quietly by the sanitiser.
@@ -1364,7 +1364,7 @@ those images end up with **no calibration prior at all**. Measured on fresh zone
 **796 of 4,540 images (17.5 %) had no sidecar** — the entire bow component (665/665), 123
 of c0, 8 unregistered. Any later re-align of that folder silently runs with a partially
 ungrouped camera set; two prior/distortion test cells did exactly that, so their results
-are **confounded**. Fixed by `camera_registry.ensure_calibration_sidecars()`, which
+are **confounded**. Fixed by `calibration_sidecars.ensure_calibration_sidecars()`, which
 recreates a calibration-only XMP for every image that has none.
 [VERIFIED: FINDINGS 2026-07-25]
 
@@ -1959,7 +1959,7 @@ why the image-input strategy (zones, image lists, a shared pool) exists at all.
 | Merge scene has 4,865 cameras but its union flight log 4,227 rows | per-zone **copies** — same basename, two files, one trajectory row | build zones from a common pool via `.imagelist` (§12.4) |
 | First path in a list file silently ignored | UTF-8 BOM written by PowerShell `Set-Content -Encoding utf8` | write with `UTF8Encoding($false)` or ASCII (§3) |
 | One camera of a "grouped" set solves different intrinsics | its images have a different pixel footprint (3846×2163 vs 4244×2827) | expected; a footprint change defeats the calibration group (§16.4) |
-| After an identity harvest, a re-align silently runs partly ungrouped | the harvest **moved** every pose-bearing sidecar out of the tree | `camera_registry.ensure_calibration_sidecars()` before any re-align (§16.5) |
+| After an identity harvest, a re-align silently runs partly ungrouped | the harvest **moved** every pose-bearing sidecar out of the tree | `calibration_sidecars.ensure_calibration_sidecars()` before any re-align (§16.5) |
 | Preprocessed (CLAHE) run silently reuses raw-pixel zones | enhanced copies share filenames with the raw set, and copies are skipped by name | fingerprint the image **source**, not just the flight log (§21.4) |
 
 ---
