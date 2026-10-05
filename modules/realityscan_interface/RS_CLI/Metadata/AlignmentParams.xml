@@ -4,11 +4,11 @@
   <entry key="s251l" value="0.05"/>
   <entry key="sfmMaxFeaturesPerImage" value="0xc350"/>
   <entry key="sfmForceComponentRematch" value="false"/>
-  <!-- Global fallback only: mixed rig, so the real distortion model is
-       per-camera via XMP sidecars (fisheye Port/Starboard: division;
-       rectilinear Cinema/Zeuss: brown3). Division was the NA167
-       fisheye-era global. See docs/settings-evaluation-2026-07.md. -->
-  <entry key="sfmDistortionModel" value="Division"/>
+  <!-- The distortion model is global and all-or-nothing: a per-image
+       xcr:DistortionModel in an XMP sidecar does not override it
+       (docs/rs-reference/13 section 5.4). Brown3 matches the model of
+       the camera registry and the calibration sidecars. -->
+  <entry key="sfmDistortionModel" value="Brown3"/>
   <entry key="sfmCameraPriorAccuracyRoll" value="10.0"/>
   <entry key="sfmMaxFeatureReprojectionError" value="1.29999995"/>
   <entry key="sfmMaxFeaturesPerMpx" value="0x36b0"/>
