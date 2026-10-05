@@ -156,7 +156,7 @@ class PreprocessImages(RSModule):
             cli_long='p_clahe_clip',
             type=float,
             default_value=2.0,
-            description='CLAHE clip limit (0 disables CLAHE; 2.0 won the zone_9 A/B)',
+            description='CLAHE clip limit (0 disables CLAHE; 2.0 registered best in an A/B comparison)',
             prompt_user=False
         )
 
@@ -176,7 +176,7 @@ class PreprocessImages(RSModule):
             cli_long='p_white_balance',
             type=bool,
             default_value=False,
-            description='Apply gray-world white balance before CLAHE (hurt registration in the zone_9 A/B - off by default)',
+            description='Apply gray-world white balance before CLAHE (it reduced registration in an A/B comparison - off by default)',
             prompt_user=False
         )
 

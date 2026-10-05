@@ -1,13 +1,11 @@
-' Hidden launcher for ErrorWriter.bat (2026-07-23; quoting FIXED
-' 2026-07-24 after review finding: the original composition produced a
-' malformed command line and ErrorWriter never ran - the errors-marker
-' system was inert for every run between the shim's introduction and
-' this fix; see FINDINGS).
+' Hidden launcher for ErrorWriter.bat. The command line it composes must
+' be well formed: if it is not, ErrorWriter never runs and the errors
+' marker stays silent for every run.
 '
 ' RealityScan's appProcessExecCmd hook fires for EVERY completed process
 ' (including internal heartbeats). Invoking "cmd /c ErrorWriter.bat"
 ' directly pops a visible console window each time - hundreds of
-' flashing terminal windows over a long run (operator report). wscript is a
+' flashing terminal windows over a long run. wscript is a
 ' GUI-subsystem host, so this shim runs without any console and shells
 ' the real ErrorWriter.bat hidden and synchronously (True) to preserve
 ' marker-file write ordering.

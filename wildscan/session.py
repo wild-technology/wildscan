@@ -188,7 +188,7 @@ _PERSISTED_FIELDS = ("run_dirs", "results_root", "continue_automatically")
 
 
 def load_last_run() -> dict:
-    """The previous session's answers - the new defaults (project decision)."""
+    """The previous session's answers - the new defaults."""
     store = _settings()
     out = {}
     for key in _PERSISTED_FIELDS:

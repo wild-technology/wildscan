@@ -371,7 +371,7 @@ class RealityScanAlignment(RSModule):
                 'workflow MOVES them into %s (they are not returned) and '
                 'rewrites the remaining sidecars to calibration-only content '
                 '- leftover pose sidecars auto-import as exact-pose priors on '
-                'any later add (bug B7). Copy the folder first if those '
+                'any later add. Copy the folder first if those '
                 'sidecars are yours.',
                 hygiene_root, pose_sidecars,
                 os.path.join(output_folder, 'identity_r0'))
@@ -818,7 +818,7 @@ class RealityScanAlignment(RSModule):
             except ValueError as exc:
                 self.logger.error(
                     '%s The zone is SKIPPED and counted as a failure - pass '
-                    'the intended log explicitly, or keep one cruise/zone '
+                    'the intended log explicitly, or keep one dataset/zone '
                     'per directory.', exc)
                 skipped_zones.append(
                     (local_input_folder, 'flight logs disagree on UTM zone'))
