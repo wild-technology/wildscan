@@ -45,6 +45,9 @@ cameras captured with Wild Sync. This release is breaking.
   otherwise fails the zone before RealityScan starts.
 - In a Wild Sync intake workspace, a zone without its flight log fails
   instead of being aligned without navigation priors.
+- Wild Sync Intake marks its manifest `in_progress` before copying and
+  writes the complete manifest last, so an interrupted intake is reported as
+  partial and refused by alignment instead of reading as "no intake".
 - `packaging` is declared as a test dependency.
 - The test suite moved from `testing/` to `tests/`.
 
