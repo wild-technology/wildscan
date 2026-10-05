@@ -467,8 +467,9 @@ def test_fingerprint_records_calibration_only_when_given(tmp_path):
 
 def test_one_stereo_pair_aligns_with_the_default_minimum(tmp_path,
                                                          monkeypatch):
-    """Two images, default Min Component Size: the threshold drops to the
-    scene's image count, so a component holding both cameras counts."""
+    """Two images, default Min Component Size: the threshold drops to half
+    the scene but never below 2, so a component holding both cameras
+    counts."""
     ws = _workspace(tmp_path, {'ilx_left': 'groups', 'ilx_right': 'groups'},
                     frames=FRAMES[:1])
     module, calls = _module(tmp_path, monkeypatch, ws,
@@ -476,6 +477,38 @@ def test_one_stereo_pair_aligns_with_the_default_minimum(tmp_path,
     output = module.run()
     assert output['Success'] is True, output
     assert calls[0][1][5] == '2'
+
+
+@pytest.mark.parametrize('configured, images, expected', [
+    (50, 30, 15),
+    (50, 12, 6),
+    (50, 3, 2),
+    (50, 2, 2),
+    (50, 1, 2),
+    (50, 50, 50),
+    (50, 400, 50),
+    (4, 6, 4),
+    (10, 9, 5),
+])
+def test_small_scene_threshold_is_half_the_scene(configured, images, expected):
+    """A scene smaller than the configured minimum exports components that
+    hold at least half of it (never fewer than 2 cameras), so one camera
+    that fails to register no longer fails the zone."""
+    assert ri_mod.small_scene_min_component_size(configured, images) == expected
+
+
+def test_a_small_scene_exports_components_of_half_its_images(tmp_path,
+                                                             monkeypatch,
+                                                             logs):
+    frames = tuple(f'20260820_1925{n:02d}.42' for n in range(10, 16))
+    ws = _workspace(tmp_path, None, frames=frames)
+    assert len(_images(ws)) == 12
+    module, calls = _module(tmp_path, monkeypatch, ws,
+                            logging.getLogger('align-calibration-test'))
+    module.run()
+    assert calls[0][1][5] == '6'
+    assert any('>= 6 cameras' in m and 'configured 50' in m
+               for m in logs.messages), logs.messages
 
 
 def test_a_large_scene_keeps_the_configured_minimum(tmp_path, monkeypatch):
@@ -503,6 +536,8 @@ def test_no_exported_component_is_explained(tmp_path, monkeypatch, logs):
     message = next(m for m in logs.messages if 'no component of >=' in m)
     assert 'RealityScan finished' in message
     assert '(2 image(s) in the scene)' in message
+    assert 'no component of >= 2 cameras' in message
+    assert 'threshold used for this scene; configured 50' in message
     assert '--r_min_component_size' in message
 
 

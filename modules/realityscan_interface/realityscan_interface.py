@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import shutil
 import time
@@ -39,6 +40,20 @@ def flight_log_params_template(metadata_dir: str,
 
 
 SCENE_EXTENSIONS = ('.rsproj', '.rcproj')
+
+
+def small_scene_min_component_size(configured: int, image_count: int) -> int:
+    """Export threshold (cameras) for a scene of ``image_count`` images.
+
+    A scene at least as large as ``configured`` keeps it. A smaller scene
+    exports components holding at least half of its images, never fewer
+    than 2 cameras: ``min(configured, max(2, ceil(n / 2)))``. Equal to the
+    image count, one camera that failed to register meant no export and a
+    failed zone.
+    """
+    if image_count <= 0 or image_count >= configured:
+        return configured
+    return min(configured, max(2, math.ceil(image_count / 2)))
 
 
 class RealityScanAlignment(RSModule):
@@ -103,9 +118,10 @@ class RealityScanAlignment(RSModule):
             default_value=50,
             description=('Smallest component (in cameras) exported after a '
                          'zone align. A scene with fewer images than this '
-                         'uses its image count instead (at least 2), so a '
-                         'small stereo dataset can still export a component '
-                         'holding all of its cameras. CONSEQUENCE: '
+                         'exports components holding at least half of its '
+                         'images instead (never fewer than 2 cameras), so a '
+                         'small dataset still exports when a few cameras fail '
+                         'to register. CONSEQUENCE: '
                          'components under this threshold are silently '
                          'discarded before the merge or model stage ever '
                          'sees them - for thin features that fragment into '
@@ -254,16 +270,17 @@ class RealityScanAlignment(RSModule):
 
         # A scene smaller than the export threshold could never export a
         # component, however well it aligned.
+        configured_min_component_size = min_component_size
         image_paths = self.__image_paths(input_folder)
-        if image_paths and len(image_paths) < min_component_size:
-            lowered = min(min_component_size, max(2, len(image_paths)))
-            if lowered != min_component_size:
-                self.logger.info(
-                    'Scene %s has %d image(s), fewer than the minimum '
-                    'component size of %d cameras - exporting components of '
-                    '>= %d cameras instead', scene_name, len(image_paths),
-                    min_component_size, lowered)
-                min_component_size = lowered
+        lowered = small_scene_min_component_size(min_component_size,
+                                                 len(image_paths))
+        if lowered != min_component_size:
+            self.logger.info(
+                'Scene %s has %d image(s), fewer than the configured minimum '
+                'component size (configured %d) - exporting components of '
+                '>= %d cameras (at least half the scene, never fewer than 2)',
+                scene_name, len(image_paths), min_component_size, lowered)
+            min_component_size = lowered
 
         # Every trajectory is imported in the UTM zone its own filename
         # names; refuse an untagged log before anything on disk is moved.
@@ -477,13 +494,14 @@ class RealityScanAlignment(RSModule):
 
         if not component_files:
             self.logger.error(
-                'RealityScan finished, but no component of >= %d cameras was '
+                'RealityScan finished, but no component of >= %d cameras '
+                '(threshold used for this scene; configured %d) was '
                 'exported for %s (%d image(s) in the scene): no group of that '
                 'many cameras aligned together. Check the alignment log %s; '
                 'to keep smaller components, lower Min Component Size '
                 '(--r_min_component_size).',
-                min_component_size, input_folder, len(image_paths),
-                result.log_path)
+                min_component_size, configured_min_component_size,
+                input_folder, len(image_paths), result.log_path)
             return {'Success': False, 'Component Count': 0,
                     'Registered Cameras': 0}, {'Success': scene_success}
 

@@ -33,6 +33,9 @@ cameras captured with Wild Sync. This release is breaking.
 - Flight logs are imported in their UTM zone only.
 - The app's stage list and dataset selection follow the Wild Sync Intake
   chain.
+- A zone with fewer images than the minimum component size exports
+  components holding at least half of its images (at least 2 cameras),
+  instead of requiring every image to register.
 - `packaging` is declared as a test dependency.
 - The test suite moved from `testing/` to `tests/`.
 
