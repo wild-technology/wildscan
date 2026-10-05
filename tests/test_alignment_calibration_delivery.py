@@ -310,6 +310,38 @@ def test_an_unusable_manifest_fails_before_anything_is_aligned(
     assert any('nothing was aligned' in m for m in logs.messages), logs.messages
 
 
+@pytest.mark.parametrize('in_run', [False, True])
+def test_a_missing_flight_log_fails_the_zone_when_there_is_an_intake(
+        tmp_path, monkeypatch, logs, in_run):
+    ws = _workspace(tmp_path, {'ilx_left': 'off', 'ilx_right': 'off'})
+    (ws / 'batched_images_by_zone' / 'zone_1' / 'flight_log_19T_UTM.txt').unlink()
+    extra = ({'ws_run_dirs': _param('ws_run_dirs', 'runs')} if in_run
+             else None)
+    module, calls = _module(tmp_path, monkeypatch, ws,
+                            logging.getLogger('align-calibration-test'),
+                            extra_params=extra, min_size=2)
+    output = module.run()
+    assert output['Success'] is False
+    assert calls == []
+    errors = [c.get('Error', '') for c in output['Components'].values()]
+    assert any('No flight log' in e and 'Wild Sync intake' in e
+               and 'not aligned' in e for e in errors), errors
+    assert not any('aligning WITHOUT' in m for m in logs.messages)
+
+
+def test_a_missing_flight_log_without_an_intake_aligns_without_priors(
+        tmp_path, monkeypatch, logs):
+    ws = _workspace(tmp_path, None)
+    (ws / 'batched_images_by_zone' / 'zone_1' / 'flight_log_19T_UTM.txt').unlink()
+    module, calls = _module(tmp_path, monkeypatch, ws,
+                            logging.getLogger('align-calibration-test'),
+                            min_size=2)
+    assert module.run()['Success'] is True
+    assert len(calls) == 1 and calls[0][1][2] == ''
+    assert any('aligning WITHOUT georeferencing priors' in m
+               for m in logs.messages), logs.messages
+
+
 def test_the_pool_layout_with_calibration_is_refused(tmp_path, monkeypatch,
                                                      logs):
     ws = _workspace(tmp_path, {'ilx_left': 'groups', 'ilx_right': 'groups'})

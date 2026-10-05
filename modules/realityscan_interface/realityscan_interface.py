@@ -109,7 +109,9 @@ class RealityScanAlignment(RSModule):
             default_value='',
             description=('Optional flight log file. Leave blank to discover '
                          'the input folder or each zone\'s own log; without '
-                         'a matching log, alignment runs without navigation priors.'),
+                         'a matching log, alignment runs without navigation '
+                         'priors - except in a Wild Sync intake workspace, '
+                         'where a zone without its log fails.'),
             prompt_user=True,
             disable_when_module_active=['Batch Directory', 'Wild Sync Intake']
         )
@@ -220,7 +222,8 @@ class RealityScanAlignment(RSModule):
     def __align_zone(self, input_folder, output_folder, scene_name,
                      flight_log_path, flight_log_params_path,
                      display_output=False, min_component_size=50,
-                     calibration_modes: Mapping[str, str] | None = None):
+                     calibration_modes: Mapping[str, str] | None = None,
+                     require_flight_log: bool = False):
         """Align one zone as one scene via AlignZone.bat and export ALL its
         components (>= min_component_size cameras) plus a registration
         census. No model generation here: models are built once, on the
@@ -290,6 +293,16 @@ class RealityScanAlignment(RSModule):
         # names; refuse an untagged log before anything on disk is moved.
         if flight_log_path and os.path.isfile(flight_log_path):
             require_utm_zone(flight_log_path)
+        elif require_flight_log:
+            # The intake writes a log row for every image it takes in, so
+            # a zone of an intake workspace without one was not prepared
+            # from it; aligning it without priors would be a different run.
+            raise ValueError(
+                f'No flight log for {input_folder} (looked for: '
+                f'{flight_log_path or "none"}) although this workspace has a '
+                'Wild Sync intake, which writes one for every image. Re-run '
+                'Batch Directory (or the intake) so the zone carries its log; '
+                'the zone was not aligned.')
 
         hygiene_root = os.path.abspath(os.environ.get('RS_ALIGN_POOL_DIR') or input_folder)
         target_root = os.path.normcase(os.path.realpath(output_folder))
@@ -423,8 +436,9 @@ class RealityScanAlignment(RSModule):
                 os.path.join(output_folder, 'identity_r0'))
 
         if flight_log_path is None or not os.path.isfile(flight_log_path):
-            # Never fail the run, but never be silent about it either:
-            # aligning without a trajectory is a materially different run.
+            # Without an intake (refused above with one), never fail the
+            # run, but never be silent about it either: aligning without a
+            # trajectory is a materially different run.
             self.logger.warning(
                 'No flight log found for %s (looked for: %s) - aligning WITHOUT '
                 'georeferencing priors', input_folder, flight_log_path or 'none')
@@ -813,6 +827,10 @@ class RealityScanAlignment(RSModule):
             return {'Success': False}
         manifest_path = os.path.join(self.params['output_dir'].get_value(),
                                      RAW_IMAGES, MANIFEST_NAME)
+        # With an intake in the picture every zone must carry its flight
+        # log: a missing one fails the zone instead of aligning it without
+        # priors.
+        intake_present = modes is not None or 'ws_run_dirs' in self.params
         if modes is None:
             self.logger.info('No Wild Sync intake manifest at %s - aligning '
                              'without calibration sidecars', manifest_path)
@@ -985,7 +1003,8 @@ class RealityScanAlignment(RSModule):
                     input_folder, zone_output_dir, zone_name,
                     item_flight_log_path, item_flight_log_params_path,
                     item_display_output, min_component_size=min_comp,
-                    calibration_modes=modes)
+                    calibration_modes=modes,
+                    require_flight_log=intake_present)
                 output_data['Components'][zone_output_dir] = component_data
                 output_data['Scenes'][scene_path] = scene_data
             except Exception as e:
