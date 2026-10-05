@@ -1185,8 +1185,8 @@ following the image-layer naming convention. Per-image, the mask layer's availab
 alignment, meshing and texturing is set independently in the Selected input panel.
 [OFFICIAL: tools/mask]
 
-**No mask has ever been driven through this CLI.** `timestamp_rename.py` (formerly
-the misnamed `masking.py`) is a standalone data-prep script and does not invoke RealityScan; there is no empirical masking result
+**No mask has ever been driven through this CLI.** The former `timestamp_rename.py` (once
+the misnamed `masking.py`) was a standalone data-prep script that never invoked RealityScan; there is no empirical masking result
 of any kind here, and a staff caution against over-masking is recorded only second-hand.
 [OPEN: nothing in FINDINGS records a masked run]
 

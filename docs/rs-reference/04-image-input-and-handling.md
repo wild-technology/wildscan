@@ -1630,9 +1630,9 @@ to the project. Instead, they are exported directly alongside the depth maps."
   F-20260723-31, quoted in status log); it is relevant to turbid underwater imagery where a
   mask can remove the only textured pixels in a frame.
   [VERIFIED-second-hand; not reproduced here]
-- **The former `masking.py` was never a masking tool.** It renames
-  `cam*_YYYYMMDDTHHMMSSZ.jpg` to a timestamp-first form and validates JPEG integrity with
-  PIL, and has been renamed `timestamp_rename.py` accordingly. Do not mistake it for mask
+- **The former `masking.py` was never a masking tool.** It renamed
+  `cam*_YYYYMMDDTHHMMSSZ.jpg` to a timestamp-first form and validated JPEG integrity with
+  PIL; renamed `timestamp_rename.py`, it has since been removed. The repository has no mask
   generation. [VERIFIED-by-inspection: `timestamp_rename.py`, 2026-08-04]
 
 ---
@@ -1812,7 +1812,7 @@ subsets, one variant per row, scored on registered cameras:**
 | `clahe_c2_t4` | 124 / 400 | 31.0 % |
 | **`baseline`** (no preprocessing) | **0 / 400** | **failed to form any component** |
 
-[VERIFIED: 2026-07-21 zone_9 A/B, `scripts/validation/run_zone9_validation.py` phase 2; table reproduced
+[VERIFIED: 2026-07-21 zone_9 A/B, `ea3ad5d:scripts/validation/run_zone9_validation.py` phase 2; table reproduced
 from `ea3ad5d:docs/code-review-2026-07.md` §"Preprocessing, measured then baked in"; defaults
 recorded in `modules/preprocess_images/preprocess_images.py`]
 
@@ -1826,7 +1826,7 @@ Three things the full grid says that the headline does not:
    16×16 → 41.8 %. Neither neighbour is a safe substitute.
    Gray-world white balance **actively hurts** (33.8 % vs 59.8 % at the same clip/tile).
 
-The variant grid (`scripts/validation/preprocess_variants.py`): round 1 = `baseline`, `clahe_c2_t8`,
+The variant grid (`ea3ad5d:scripts/validation/preprocess_variants.py`): round 1 = `baseline`, `clahe_c2_t8`,
 `clahe_c4_t8`, `wb_clahe_c2_t8`; refinement around the winner = clip/2, clip×1.5, tile 4,
 tile 16, white-balance flip. Scoring metric: **registered / total images**, read from the
 pose-XMP sidecar count, with component count and runtime as tiebreakers — never keypoint

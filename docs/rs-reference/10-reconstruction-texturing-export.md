@@ -1799,7 +1799,7 @@ current tiler** [VERIFIED-as-guidance: `publish_cesium.py` docstring,
 publish path that consumes it.)
 
 **[CONTRADICTED — the long-standing "Cesium ignores depth" belief is wrong.]**
-A live probe (ion asset `5171554`, `scripts/validation/probe_cesium_depth.py`,
+A live probe (ion asset `5171554`, `ea3ad5d:scripts/validation/probe_cesium_depth.py`,
 2026-08-31) uploaded a 435-byte OBJ box with
 `position=[133.634688, 3.584574, -512.46]` and read it back from the asset's
 own `tileset.json` at **h = −512.46 m, error −0.000 m**. ion neither refuses
@@ -1815,8 +1815,8 @@ sea-surface asset on this account:
 2. **Even when placement IS carried, the vertical datum is wrong.** The
    project CRS is 2D (`+proj=utm +zone=53 +datum=WGS84 +units=m +no_defs`) and
    declares no vertical datum, while the Z it carries is the flight log's
-   `ALTITUDE_EST` — negative metres below the **sea surface** (`georeference_survey.py:320`
-   writes `-abs(kalman_depth)`). Cesium reads every height as metres above the
+   `ALTITUDE_EST` — negative metres below the **sea surface** (the georeference stage
+   writes `-abs(depth)`). Cesium reads every height as metres above the
    **WGS84 ellipsoid**. Nothing in the chain converts between them, so the
    asset sinks or floats by the geoid undulation N: **+72.69 m** at the NA168
    H2080 site, +70.4 m in the Solomon Sea, −27.1 m in the Gulf of Mexico,

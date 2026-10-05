@@ -1130,7 +1130,7 @@ Binary-only siblings [UNDOCUMENTED]: `gpsLogFileName`, `gpsLogFolder`, `gpsLogCu
 `ifKModel`, `ifDistortionmode`, `ifRmode`, `ifTmode`, `ifOfsX`, `ifOfsY`, `ifOfsZ`,
 `ifOfsRR`, `ifOfsRP`, `ifOfsRY`, `ifOfsifuUseOffset`.
 The `ifOfs*` set is the **lever-arm / mount-angle offset** block applied at import; this
-repo instead applies those offsets upstream in `georeference_survey.py` and the georeference module.
+repo instead applies those offsets upstream, in the georeference module.
 [INFERRED from the names + repo architecture]
 
 Other CSV import families [UNDOCUMENTED: binary]: `csvGCSep` / `csvGCIgn` (ground control),
