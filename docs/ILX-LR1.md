@@ -210,8 +210,10 @@ When every camera's mode is `off`, or the workspace has no intake manifest,
 no sidecar or `.rscmd` is written and `AlignZone.bat` adds the zone with
 `-addFolder`. An unreadable or incomplete manifest, or a missing one when Wild
 Sync Intake is part of the same run, fails the stage before anything is
-aligned. Calibration delivery cannot be combined with the pool zone layout
-(`RS_ALIGN_POOL_DIR`); the stage refuses that combination.
+aligned. When the workspace has an intake manifest, or Wild Sync Intake is part
+of the run, a zone without its flight log fails instead of being aligned
+without navigation priors. Calibration delivery cannot be combined with the
+pool zone layout (`RS_ALIGN_POOL_DIR`); the stage refuses that combination.
 
 A previous run's zone output folder that holds a `pre_existing_sidecars`
 folder is moved to `superseded/` with its projects and components, never

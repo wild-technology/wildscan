@@ -43,6 +43,8 @@ cameras captured with Wild Sync. This release is breaking.
 - An unreadable `.xmp` sidecar in a zone's image tree is reported by name; it
   is moved aside like a foreign sidecar where a calibration sidecar goes, and
   otherwise fails the zone before RealityScan starts.
+- In a Wild Sync intake workspace, a zone without its flight log fails
+  instead of being aligned without navigation priors.
 - `packaging` is declared as a test dependency.
 - The test suite moved from `testing/` to `tests/`.
 

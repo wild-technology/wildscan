@@ -468,6 +468,7 @@ Answers you typed are stored in `rs_settings.json` in the checkout root.
 | Intake: a file `already exists with different content`, or files `this intake did not plan` | The workspace holds another dataset. Use a fresh workspace. |
 | Intake warns `calibration groups only` | The images do not match the stored calibration (aspect ratio or EXIF focal length), or the node assignment is not confirmed. Expected for the August 2026 field runs. |
 | Alignment: `Calibration sidecars cannot be delivered with the pool layout` | Batch with the default copy layout, or re-run the intake with `--w_calibration off`. |
+| Alignment: `No flight log for <zone> ... although this workspace has a Wild Sync intake` | The zone folder lacks its `flight_log_<zone><band>_UTM.txt`. Re-run Batch Directory, or the intake, so every zone carries its log. |
 | A stage "succeeds" but produces nothing | RealityScan reports success in several no-op cases. Check the stage's report and census, not the exit code; [failure modes](rs-reference/12-failure-modes-and-race-conditions.md) lists them. |
 | Orientation or accuracies missing after import | The flight-log format is not installed or its ID does not match ([5.4](#54-flight-log-import-format)). |
 | Publishing fails on the geoid grid | See [5.5](#55-cesium-publishing-the-geoid-grid). |
