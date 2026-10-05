@@ -25,6 +25,7 @@ import json
 import os
 import subprocess
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 from module_base.scene_checkpoint import scene_bundle
@@ -123,13 +124,17 @@ def build_fingerprint(flight_log: str | None,
                       flight_log_params: str | None,
                       align_settings_xml: str | None,
                       min_component_size: int,
-                      rs_executable: str | None = None) -> dict:
+                      rs_executable: str | None = None,
+                      calibration: Mapping[str, str] | None = None) -> dict:
     """Identity of everything that determines a zone's aligned output.
 
     align_settings_xml is the RS_ALIGN_PARAMS override when set, else the
     canonical Metadata/AlignmentParams.xml - i.e. whatever AlignZone.bat
     will actually apply. ``frame`` is ``"utm"`` for a zone-tagged flight
-    log and None when the zone aligned without one.
+    log and None when the zone aligned without one. ``calibration`` is the
+    {camera: mode} map of a zone aligned with calibration sidecars; it is
+    recorded only when given, so a zone aligned without sidecars keeps the
+    fingerprint it always had.
     """
     frame = ("utm" if (flight_log and utm_zone_from_flight_log_name(flight_log))
              else None)
@@ -143,6 +148,8 @@ def build_fingerprint(flight_log: str | None,
         "min_component_size": int(min_component_size),
         "repo_sha": _repo_sha(),
     }
+    if calibration is not None:
+        fp["calibration"] = dict(sorted(calibration.items()))
     if rs_executable and os.path.isfile(rs_executable):
         st = os.stat(rs_executable)
         fp["realityscan"] = {"path": os.path.abspath(rs_executable),
@@ -186,6 +193,10 @@ def diff_fingerprints(old: dict | None, new: dict) -> list[str]:
             f"min_component_size changed: {old.get('min_component_size')} -> "
             f"{new.get('min_component_size')} (export threshold; small "
             "pockets appear/disappear)")
+    if old.get("calibration") != new.get("calibration"):
+        changes.append(
+            f"calibration delivery changed: {old.get('calibration') or 'none'}"
+            f" -> {new.get('calibration') or 'none'}")
     return changes
 
 

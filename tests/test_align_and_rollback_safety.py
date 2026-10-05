@@ -441,7 +441,8 @@ def test_relative_alignment_paths_survive_the_native_script_cwd(tmp_path, monkey
                                 str(nav),
                                 str(caller / 'logs' / 'FlightLogParams_53N.xml')]
         assert all(Path(value).is_absolute() for value in command[1:5])
-        assert command[5:] == ['ordinary_zone_name', '50']
+        # One image: the minimum component size of 50 drops to 2.
+        assert command[5:] == ['ordinary_zone_name', '2']
         assert kwargs['env']['RS_ALIGN_PARAMS'] == str(alignment_params)
         assert kwargs['env']['RS_ALIGN_POOL_DIR'] == str(images)
         return SimpleNamespace(returncode=1)

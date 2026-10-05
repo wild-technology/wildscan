@@ -3,15 +3,26 @@ from __future__ import annotations
 import os
 import shutil
 import time
+from collections.abc import Mapping
 
-from module_base.rs_module import RSModule
 from module_base.parameter import Parameter
-from .. import align_fingerprint
-from .. import calibration_sidecars
-from .. import component_manifest
-from ..flight_logs import (find_flight_log, require_utm_zone,
-                           write_flight_log_params)
-from .realityscan_cli import RealityScanCLI, METADATA_DIR, set_project_save_env
+from module_base.rs_module import RSModule
+
+from .. import (
+    align_fingerprint,
+    calibration_sidecars,
+    camera_registry,
+    component_manifest,
+)
+from ..flight_logs import find_flight_log, require_utm_zone, write_flight_log_params
+from ..image_exts import PROCESSABLE_IMAGE_EXTS
+from ..wildsync_intake.intake import (
+    MANIFEST_NAME,
+    RAW_IMAGES,
+    calibration_modes,
+    load_manifest,
+)
+from .realityscan_cli import METADATA_DIR, RealityScanCLI, set_project_save_env
 
 # Component/scene files as exported by RealityScan (legacy RealityCapture
 # extensions still accepted so older outputs keep working).
@@ -91,13 +102,16 @@ class RealityScanAlignment(RSModule):
             type=int,
             default_value=50,
             description=('Smallest component (in cameras) exported after a '
-                         'zone align. CONSEQUENCE: components under this '
-                         'threshold are silently discarded before the merge '
-                         'or model stage ever sees them - for thin features '
-                         '(mast tops, a stern flag-pole) that fragment into '
+                         'zone align. A scene with fewer images than this '
+                         'uses its image count instead (at least 2), so a '
+                         'small stereo dataset can still export a component '
+                         'holding all of its cameras. CONSEQUENCE: '
+                         'components under this threshold are silently '
+                         'discarded before the merge or model stage ever '
+                         'sees them - for thin features that fragment into '
                          'small pockets, lower this (e.g. 10-20) or the '
                          'feature vanishes from the deliverable with no '
-                         'error (review 2026-08-08).'),
+                         'error.'),
             prompt_user=False
         )
 
@@ -185,11 +199,23 @@ class RealityScanAlignment(RSModule):
 
     def __align_zone(self, input_folder, output_folder, scene_name,
                      flight_log_path, flight_log_params_path,
-                     display_output=False, min_component_size=50):
+                     display_output=False, min_component_size=50,
+                     calibration_modes: Mapping[str, str] | None = None):
         """Align one zone as one scene via AlignZone.bat and export ALL its
         components (>= min_component_size cameras) plus a registration
         census. No model generation here: models are built once, on the
         merged component (GenerateModel.bat).
+
+        ``calibration_modes`` ({camera key: prior | groups | off}, from the
+        intake manifest): when any camera's mode writes a sidecar, the
+        decided sidecar is written beside every image of that camera, an
+        .rscmd that adds every image (with its sidecar where it has one) is
+        written to the output folder, and AlignZone.bat adds the images by
+        executing it instead of -addFolder. The sidecar hygiene after the
+        run then restores the same decided sidecars. Without such a mode the
+        zone is aligned exactly as without calibration delivery. Whether
+        RealityScan imports these -addImageWithCalibration lines as written
+        is not validated here.
 
         All RealityScan execution goes through RealityScanCLI, which handles
         instance locking, progress monitoring, error detection, and verified
@@ -212,6 +238,32 @@ class RealityScanAlignment(RSModule):
 
         if not os.path.isdir(input_folder):
             raise ValueError(f"Input folder {input_folder} is not a directory")
+
+        sidecar_modes = None
+        if calibration_modes and any(
+                mode in calibration_sidecars.SIDECAR_MODES
+                for mode in calibration_modes.values()):
+            sidecar_modes = dict(calibration_modes)
+            if os.environ.get('RS_ALIGN_POOL_DIR'):
+                raise ValueError(
+                    'Calibration sidecars cannot be delivered with the pool '
+                    'layout (RS_ALIGN_POOL_DIR is set): the sidecars would '
+                    'have to live beside the shared pool images. Batch with '
+                    'the copy layout, or re-run the intake with calibration '
+                    'off.')
+
+        # A scene smaller than the export threshold could never export a
+        # component, however well it aligned.
+        image_paths = self.__image_paths(input_folder)
+        if image_paths and len(image_paths) < min_component_size:
+            lowered = min(min_component_size, max(2, len(image_paths)))
+            if lowered != min_component_size:
+                self.logger.info(
+                    'Scene %s has %d image(s), fewer than the minimum '
+                    'component size of %d cameras - exporting components of '
+                    '>= %d cameras instead', scene_name, len(image_paths),
+                    min_component_size, lowered)
+                min_component_size = lowered
 
         # Every trajectory is imported in the UTM zone its own filename
         # names; refuse an untagged log before anything on disk is moved.
@@ -252,7 +304,8 @@ class RealityScanAlignment(RSModule):
             os.path.abspath(os.environ.get('RS_ALIGN_PARAMS')
                             or os.path.join(METADATA_DIR, 'AlignmentParams.xml')),
             min_component_size,
-            rs_executable=self.cli.find_executable())
+            rs_executable=self.cli.find_executable(),
+            calibration=sidecar_modes)
 
         if os.path.isdir(output_folder) and os.listdir(output_folder):
             prev_fp = align_fingerprint.read_fingerprint(output_folder)
@@ -348,13 +401,16 @@ class RealityScanAlignment(RSModule):
             self.logger.info(f'Flight log CRS: UTM zone {zone}{band} '
                              f'(params: {generated})')
 
+        args = [input_folder, output_folder, flight_log_path,
+                flight_log_params_path, scene_name, str(min_component_size)]
+        if sidecar_modes:
+            args.append(self.__write_calibration_inputs(
+                image_paths, output_folder, scene_name, sidecar_modes))
+
         files_before = set(os.listdir(output_folder))
 
         result = self.cli.run_batch_script(
-            'AlignZone.bat',
-            [input_folder, output_folder, flight_log_path, flight_log_params_path,
-             scene_name, str(min_component_size)],
-            log_dir, display_output)
+            'AlignZone.bat', args, log_dir, display_output)
 
         # Sidecar hygiene even on failure: the in-session identity loop
         # normally harvests every pose sidecar into identity_c<K> folders,
@@ -362,8 +418,11 @@ class RealityScanAlignment(RSModule):
         # which would poison the next attempt as auto-imported priors
         # (B7). The registration census now comes from the manifests
         # (harvested sidecars), not from this sweep.
-        leftover, restored, removed = calibration_sidecars.sanitize_and_census(
-            hygiene_root)
+        # With calibration delivery both hygiene calls get the decided
+        # modes, so they rewrite or restore exactly the sidecars written
+        # before the run and never delete one of them.
+        leftover, _restored, _removed = calibration_sidecars.sanitize_and_census(
+            hygiene_root, sidecar_modes)
         if leftover:
             self.logger.warning(
                 '%d pose sidecars were left beside the images (partial '
@@ -381,8 +440,8 @@ class RealityScanAlignment(RSModule):
         # ungrouped, which CONFOUNDED PD-4/PD-4a) that the same entry
         # records as fixed (audit 2026-08-07). Idempotent: (0, 0) on a
         # complete tree.
-        created, no_camera = calibration_sidecars.ensure_calibration_sidecars(
-            hygiene_root)
+        created, _no_camera = calibration_sidecars.ensure_calibration_sidecars(
+            hygiene_root, sidecar_modes)
         if created:
             self.logger.info(
                 'Restored %d calibration sidecar(s) displaced by the identity '
@@ -406,8 +465,13 @@ class RealityScanAlignment(RSModule):
 
         if not component_files:
             self.logger.error(
-                'No components of >= %d cameras were exported for %s',
-                min_component_size, input_folder)
+                'RealityScan finished, but no component of >= %d cameras was '
+                'exported for %s (%d image(s) in the scene): no group of that '
+                'many cameras aligned together. Check the alignment log %s; '
+                'to keep smaller components, lower Min Component Size '
+                '(--r_min_component_size).',
+                min_component_size, input_folder, len(image_paths),
+                result.log_path)
             return {'Success': False, 'Component Count': 0,
                     'Registered Cameras': 0}, {'Success': scene_success}
 
@@ -433,7 +497,8 @@ class RealityScanAlignment(RSModule):
         # (The calibration-sidecar repair ran above, on every exit path;
         # this call covers the input folder when it differs from the
         # hygiene root.)
-        calibration_sidecars.ensure_calibration_sidecars(input_folder)
+        calibration_sidecars.ensure_calibration_sidecars(input_folder,
+                                                         sidecar_modes)
 
         registered = 0
         for mp in manifest_paths:
@@ -593,6 +658,57 @@ class RealityScanAlignment(RSModule):
             images.extend(f for f in files if f.lower().endswith((".png", ".heif", ".jpg", ".jpeg")))
         return images
 
+    @staticmethod
+    def __image_paths(image_folder: str) -> list[str]:
+        """Absolute paths of the image files under the folder, recursively,
+        sorted."""
+        return sorted(
+            os.path.join(root, name)
+            for root, _dirs, files in os.walk(os.path.abspath(image_folder))
+            for name in files
+            if os.path.splitext(name)[1].lower() in PROCESSABLE_IMAGE_EXTS)
+
+    def __write_calibration_inputs(self, image_paths: list[str],
+                                   output_folder: str, scene_name: str,
+                                   modes: Mapping[str, str]) -> str:
+        """Write the decided sidecar beside each image and the .rscmd that
+        adds every image of the scene; returns the .rscmd path."""
+        entries = calibration_sidecars.write_sidecars(image_paths, modes)
+        rscmd = calibration_sidecars.write_rscmd(
+            os.path.join(output_folder, f'{scene_name}.rscmd'), entries)
+        with_sidecar = sum(1 for _image, xmp in entries if xmp is not None)
+        self.logger.info(
+            'Calibration delivery for %s (%s): %d of %d image(s) added with a '
+            'calibration sidecar, command file %s', scene_name,
+            ', '.join(f'{key}={mode}' for key, mode in sorted(modes.items())),
+            with_sidecar, len(entries), rscmd)
+        if with_sidecar < len(entries):
+            self.logger.warning(
+                '%d image(s) of %s are added without a calibration sidecar '
+                '(no known camera, or calibration off for their camera)',
+                len(entries) - with_sidecar, scene_name)
+        return rscmd
+
+    def intake_calibration_modes(self) -> dict[str, str] | None:
+        """{camera key: decided calibration mode} from this workspace's Wild
+        Sync intake manifest, ``<output_dir>/raw_images/wildsync_intake.json``.
+
+        The decision is read, never recomputed: preprocessing writes images
+        without EXIF. Returns None when there is no manifest and the intake
+        is not part of this run. Raises ValueError when the manifest is
+        unreadable or incomplete, or missing although the intake is part of
+        this run.
+        """
+        raw_dir = os.path.join(self.params['output_dir'].get_value(), RAW_IMAGES)
+        manifest = load_manifest(raw_dir)
+        if manifest is None:
+            if 'ws_run_dirs' in self.params:
+                raise ValueError(
+                    f'Wild Sync Intake is part of this run but '
+                    f'{os.path.join(raw_dir, MANIFEST_NAME)} does not exist')
+            return None
+        return calibration_modes(manifest)
+
     def run(self):
         # Parameters are validated by the orchestrator before run()
         output_dir = os.path.join(self.params['output_dir'].get_value(), "aligned_components")
@@ -610,6 +726,26 @@ class RealityScanAlignment(RSModule):
                 'Metadata/FlightLogParams.xml', explicit_flp)
             explicit_flp = None
         params_template = flight_log_params_template(METADATA_DIR, explicit_flp)
+
+        # Calibration delivery follows the intake's per-camera decision. An
+        # unreadable manifest, or a missing one when the intake is part of
+        # this run, fails the stage before anything is aligned: aligning
+        # without the decided calibration would be a different run.
+        try:
+            modes = self.intake_calibration_modes()
+        except ValueError as exc:
+            self.logger.error('%s - nothing was aligned.', exc)
+            return {'Success': False}
+        manifest_path = os.path.join(self.params['output_dir'].get_value(),
+                                     RAW_IMAGES, MANIFEST_NAME)
+        if modes is None:
+            self.logger.info('No Wild Sync intake manifest at %s - aligning '
+                             'without calibration sidecars', manifest_path)
+        else:
+            self.logger.info(
+                'Calibration delivery decided by %s: %s', manifest_path,
+                ', '.join(f'{key}={mode}' for key, mode in sorted(modes.items()))
+                or 'no cameras')
 
         process_data = []
         skipped_zones = []
@@ -718,6 +854,18 @@ class RealityScanAlignment(RSModule):
                 batch_input_folder = os.path.join(batch_directory, batch_folder)
                 resolve_and_queue(batch_input_folder, batch_input_folder)
 
+        if modes is None:
+            registry_images = sum(
+                1 for data in process_data
+                for name in self.__collect_images(data['input_folder'])
+                if camera_registry.identify(name) is not None)
+            if registry_images:
+                self.logger.warning(
+                    '%d image(s) to align are named like registry cameras, '
+                    'but there is no Wild Sync intake manifest at %s - '
+                    'calibration delivery is OFF for this run', registry_images,
+                    manifest_path)
+
         output_data = {}
         output_data['Success'] = True
         output_data['Output Directory'] = output_dir
@@ -763,7 +911,8 @@ class RealityScanAlignment(RSModule):
                 component_data, scene_data = self.__align_zone(
                     input_folder, zone_output_dir, zone_name,
                     item_flight_log_path, item_flight_log_params_path,
-                    item_display_output, min_component_size=min_comp)
+                    item_display_output, min_component_size=min_comp,
+                    calibration_modes=modes)
                 output_data['Components'][zone_output_dir] = component_data
                 output_data['Scenes'][scene_path] = scene_data
             except Exception as e:
