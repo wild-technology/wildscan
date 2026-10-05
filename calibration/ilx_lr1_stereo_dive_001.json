@@ -1,9 +1,8 @@
 {
   "schema_version": 1,
   "_comment": [
-    "Standalone stereo calibration for the Sony ILX-LR1 pair, in the cameras/rigs schema of modules/cameras.json.",
-    "DATA-ONLY: not loaded by modules/camera_registry.py; nothing consumes it until it is merged into cameras.json.",
-    "Calibration groups 7/8 follow on from the VOYIS eyes (5/6)."
+    "Calibration record for the Sony ILX-LR1 stereo pair: the full solve, its quality and the calibration image pairs.",
+    "The pipeline does not read this file. modules/cameras.json carries the values it loads, and tests/test_camera_registry.py asserts that the two files agree."
   ],
   "cameras": {
     "ilx_left": {

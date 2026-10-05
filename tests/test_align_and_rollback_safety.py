@@ -260,7 +260,7 @@ def test_sidecar_repair_runs_before_the_failure_returns():
     source = open(os.path.join(REPO_ROOT, 'modules', 'realityscan_interface',
                                'realityscan_interface.py'),
                   encoding='utf-8').read()
-    repair = source.index('camera_registry.ensure_calibration_sidecars(')
+    repair = source.index('calibration_sidecars.ensure_calibration_sidecars(')
     failure_return = source.index('if not result.success:')
     no_components = source.index('if not component_files:')
     assert repair < failure_return, 'repair is unreachable on a failed align'

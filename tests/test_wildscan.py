@@ -215,11 +215,11 @@ def test_camera_parsing_recognises_registry_families(tmp_path):
     from wildscan.session import scan_cameras
     stills = tmp_path / "stills"
     stills.mkdir()
-    (stills / "P231C0001_x.jpg").write_bytes(b"j")   # WCA Port - known
-    (stills / "C231C0002_x.jpg").write_bytes(b"j")   # WCA Cinema - known
-    (stills / "U9990001_x.jpg").write_bytes(b"j")    # Upper - NOT in registry
+    (stills / "Cam1_20260820_192542.42.jpg").write_bytes(b"j")  # left - known
+    (stills / "Cam2_20260820_192542.42.jpg").write_bytes(b"j")  # right - known
+    (stills / "U9990001_x.jpg").write_bytes(b"j")    # NOT in registry
     scan = scan_cameras(stills)
-    assert "wca_port" in scan.known and "wca_cinema" in scan.known
+    assert "cam1" in scan.known and "cam2" in scan.known
     assert "u" in scan.unknown, "unrecognised prefixes must surface"
 
 
@@ -242,8 +242,8 @@ def test_unknown_camera_asks_name_lever_and_tilt(tmp_path):
 def test_known_cameras_ask_nothing(tmp_path):
     stills = tmp_path / "stills"
     stills.mkdir()
-    (stills / "P231C0001_x.jpg").write_bytes(b"j")
-    s = _session(tmp_path, ["georeference"])
+    (stills / "Cam1_20260820_192542.42.jpg").write_bytes(b"j")
+    s = _session(tmp_path, ["preprocess"])
     s.raw_images_dir = str(stills)
     qs = build_questions(s, scan_raw_data(""))
     assert not [q for q in qs if q.stage == "cameras"], (
