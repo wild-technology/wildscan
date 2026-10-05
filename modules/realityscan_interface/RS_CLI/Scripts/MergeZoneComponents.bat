@@ -340,7 +340,7 @@ if exist "%ErrorsFile%" (
 exit /b 0
 
 :: :run - delegate one operation, double-wait, abort on reported error
-:: (see AlignImagesFromFolder.bat for the rationale).
+:: (see AlignZone.bat for the rationale).
 :run
 %RealityScan% -delegateTo %RS_INSTANCE% %*
 if errorlevel 1 (

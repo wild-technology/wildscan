@@ -25,9 +25,8 @@ __pycache__/
 *.pyc
 *.lprof
 
-# publish_cesium.py staging (local-frame mesh copies) and the ion probe
+# publish_cesium.py staging (local-frame mesh copies)
 _cesium_local/
-_probe_cesium/
 
 # Packaging / build artifacts
 *.egg-info/

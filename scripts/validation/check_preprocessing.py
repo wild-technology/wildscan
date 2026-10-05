@@ -28,12 +28,10 @@ import cv2
 import numpy as np
 
 from module_base.parameter import Parameter
-from module_base.settings_store import SettingsStore
 from modules.harvest_guard import assert_harvestable
 from modules.preprocess_images.preprocess_images import (
     IMAGE_EXTENSIONS, JPEG_QUALITY, PreprocessImages, build_transform)
 
-DEFAULT_DATASET = r'M:\NA173_H2103a\batched_images_by_zone\zone_9'
 PER_CAMERA = 20
 
 
@@ -82,15 +80,14 @@ def prepare_work_dir(dataset: Path, work_dir: Path) -> Path:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--dataset',
-                        default=SettingsStore().get('zone9_test', 'dataset_dir', DEFAULT_DATASET),
+    parser.add_argument('--dataset', required=True,
                         help='dataset to sample images from')
     parser.add_argument('--work-dir',
                         help='empty workspace for results (default: a temporary directory)')
     args = parser.parse_args(argv)
     dataset = Path(args.dataset)
     if not dataset.is_dir():
-        parser.error(f'dataset not found: {dataset} (pass --dataset)')
+        parser.error(f'dataset not found: {dataset}')
 
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger('check_preprocessing')

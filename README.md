@@ -182,7 +182,7 @@ working copies or the pipeline's prepared zone tree.
 | `modules/realityscan_interface/` | Everything that talks to RealityScan — see below |
 | `modules/extract_images/`, `modules/georeference/`, `modules/preprocess_images/`, `modules/image_batcher/` | Pipeline modules used by `main.py` |
 | `tests/` | Offline pytest regression tests and fixtures |
-| `scripts/validation/` | Explicit manual checks: zone_9 native validation, preprocessing checks, and the Cesium depth probe |
+| `scripts/validation/` | Explicit manual checks: the preprocessing check |
 | `docs/validation/`, `docs/validation/results/` | Dated experiment plans and preserved result evidence |
 | `flightlogs.xml`, `sensorsdb.xml` | RealityScan reference data |
 | `docs/code-review-2026-07.md` | What the first-machine validation changed and why (read before trusting older assumptions about the CLI layer) |
@@ -200,10 +200,7 @@ on copies of your images, use:
 ```
 
 The supplied work directory must be empty and separate from the source;
-omitting it uses a temporary directory. The native zone_9 runner is
-`scripts/validation/run_zone9_validation.bat` (or the adjacent `.py` file).
-It runs RealityScan alignment; `probe_cesium_depth.py` creates a real Cesium
-probe asset.
+omitting it uses a temporary directory.
 
 Retired scripts are excluded from the published tree. Their
 [original archive snapshot](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive)
@@ -216,9 +213,8 @@ when those experiments were recorded. Current commands use the layout above.
 `Preprocess Images` applies CLAHE (clip 2.0, 8×8 tiles, L channel in LAB)
 to copies under `<output>/preprocessed_images`, leaving the originals in
 place. The current workflow uses those processed copies for both alignment
-and texturing. The default was A/B-measured on a zone_9 400-image subset (2026-07-21,
-`scripts/validation/run_zone9_validation.py`): baseline registered 0% (no component at
-all), CLAHE 2.0/8×8 registered 59.8% and beat every neighboring clip/tile
+and texturing. The default was A/B-measured on a zone_9 400-image subset
+(2026-07-21): baseline registered 0% (no component at all), CLAHE 2.0/8×8 registered 59.8% and beat every neighboring clip/tile
 setting; gray-world white balance *reduced* registration (~34%) and is
 off by default.
 

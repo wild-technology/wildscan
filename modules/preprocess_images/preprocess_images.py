@@ -1,11 +1,11 @@
 """Pre-alignment image preprocessing for underwater imagery.
 
 Canonical implementation of the CLAHE / white-balance transforms; the
-testing variants (scripts/validation/preprocess_variants.py) import from here rather
-than maintaining their own copy.
+manual check (scripts/validation/check_preprocessing.py) imports from here
+rather than maintaining its own copy.
 
 Defaults (CLAHE clip 2.0, 8x8 tiles, no white balance) come from the
-2026-07-21 zone_9 A/B iteration (scripts/validation/run_zone9_validation.py phase 2):
+2026-07-21 zone_9 A/B iteration on a 400-image subset:
 baseline registered 0/400 images (alignment produced no component at
 all), CLAHE 2.0/8x8 registered 59.8%, every neighboring clip/tile setting
 scored lower, and adding gray-world white balance dropped registration to

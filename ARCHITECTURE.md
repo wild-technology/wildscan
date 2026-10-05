@@ -39,9 +39,7 @@ are useful elsewhere too. The processing target is native Windows 11 Pro,
 and offline passing tests do not establish native RealityScan acceptance.
 
 Manual validation lives in `scripts/validation/`, separate from pytest.
-`check_preprocessing.py` checks copies of a small image sample;
-`run_zone9_validation.py` and its `.bat` launcher run native alignment.
-`probe_cesium_depth.py` creates a real remote probe asset.
+`check_preprocessing.py` checks copies of a small image sample.
 
 For any RealityScan CLI question, start at `docs/rs-reference/README.md`,
 the routing index of the RealityScan manual.
@@ -191,8 +189,7 @@ Exceptions that must NOT be renamed:
 **Entry points**
 
 - `tests/` — offline pytest tests and fixtures; no campaign launchers.
-- `scripts/validation/` — explicit manual validations and their
-  preprocessing variant grid.
+- `scripts/validation/` — explicit manual validation.
 - `docs/validation/` — historical experiment plans;
   `docs/validation/results/` preserves their result evidence. Dated plans
   retain their original command paths; use the current script locations above.
@@ -242,9 +239,8 @@ Exceptions that must NOT be renamed:
     FBX-by-parts + ultra-dense colored PLY), `SaveProjectCopy`.
   - Boot/env: `startRealityScan`, `SetVariables`. Boot honors
     `RS_HEADLESS=0` for a GUI-visible instance.
-  - Supporting/testing: `GrowZone`, `FlushCache` (sets retention 0 during the clear —
-    the 7-day default kept 918 GB), and `AlignImagesFromFolder`
-    (DEPRECATED; kept only because `scripts/validation/run_zone9_validation.py` drives it).
+  - Supporting/testing: `GrowZone` and `FlushCache` (sets retention 0
+    during the clear — the 7-day default kept 918 GB).
     The one-off investigation probes and the superseded workflows were
     removed at the wildscan release; they survive in the predecessor
     repositories.
@@ -291,8 +287,8 @@ Exceptions that must NOT be renamed:
 - `modules/preprocess_images/` — canonical CLAHE / white-balance transforms
   + the pre-alignment preprocessing module (default CLAHE 2.0/8×8,
   validated on zone_9 — baseline aligns to nothing on this imagery).
-  `scripts/validation/preprocess_variants.py` imports the transforms from here; keep
-  it that way (no second implementation).
+  `scripts/validation/check_preprocessing.py` imports the transforms from
+  here; keep it that way (no second implementation).
 - `modules/image_batcher/batch_directory.py` — zone batching. Note the
   duplicate-path identity problem: copying overlap images into two zones
   gives one trajectory row two physical files.
