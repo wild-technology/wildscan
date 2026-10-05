@@ -409,6 +409,7 @@ class NodeReport:
     matched: int = 0
     unmatched_rows: list | None = None
     unmatched_images: list | None = None
+    hidden_files: int = 0
 
     def as_dict(self) -> dict:
         return {'node': self.node, 'camera': self.camera,
@@ -416,7 +417,8 @@ class NodeReport:
                 'variant_images': self.variant_images,
                 'matched': self.matched,
                 'unmatched_rows': list(self.unmatched_rows or ()),
-                'unmatched_images': list(self.unmatched_images or ())}
+                'unmatched_images': list(self.unmatched_images or ()),
+                'hidden_files_ignored': self.hidden_files}
 
 
 @dataclass
@@ -469,7 +471,13 @@ def plan_run(run_dir: str, variant: str,
         rows = read_flight_log_csv(log_path)
 
         images: dict[str, str] = {}
+        hidden = 0
         for name in sorted(os.listdir(node_dir)):
+            if name.startswith('.'):
+                # Hidden files are never Wild Sync frames; a copy made on
+                # macOS adds an AppleDouble '._<name>' beside every file.
+                hidden += 1
+                continue
             if image_variant(name) != variant \
                     or not os.path.isfile(os.path.join(node_dir, name)):
                 continue
@@ -485,7 +493,8 @@ def plan_run(run_dir: str, variant: str,
         report = NodeReport(node, node_family.camera if node_family else '',
                             log_rows=len(rows),
                             variant_images=len(images),
-                            unmatched_rows=[], unmatched_images=[])
+                            unmatched_rows=[], unmatched_images=[],
+                            hidden_files=hidden)
         named: dict[str, LogRow] = {}
         for row in rows:
             fid = frame_id(row.filename)
@@ -935,6 +944,12 @@ def run_intake(run_paths: Sequence[str], workspace: str,
     if late:
         warn(f'{len(late)} image(s) carry time_err_ms above '
              f'{options.time_err_warn_ms:g} ms (largest {max(late):g} ms)')
+    hidden_files = sum(n.hidden_files for p in plans for n in p.nodes)
+    if hidden_files:
+        notices.append(f'{hidden_files} hidden file(s) (names starting with '
+                       '".", such as macOS "._" AppleDouble files) in the '
+                       'camera folders were ignored')
+        log.info('%s', notices[-1])
     unmeasured = [key for key in cameras_in_use
                   if any(f.camera == key and f.mount.lever_arm_m is None
                          for f in frames)]
