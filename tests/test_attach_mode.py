@@ -35,8 +35,11 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from modules.realityscan_interface.realityscan_cli import (  # noqa: E402
-    ERRORS_DIR, RealityScanCLI)
+from modules.realityscan_interface import realityscan_cli as cli_mod
+from modules.realityscan_interface.realityscan_cli import (
+    ERRORS_DIR as PACKAGE_ERRORS_DIR,
+)
+from modules.realityscan_interface.realityscan_cli import RealityScanCLI
 
 CANNED_STATUS = ('id:save progress:100.0% runtime:5 endEstimation:0 '
                  'rev:147 lastError:-2113863583')
@@ -128,8 +131,19 @@ def _calls(calls_log):
             calls_log.read_text(encoding='ascii').splitlines() if l.strip()]
 
 
+@pytest.fixture(autouse=True)
+def errors_dir(tmp_path, monkeypatch):
+    """Marker files and instance locks live in this test's own folder,
+    never in the package's RS_CLI/Errors: the tests neither write into the
+    source tree nor collide on a lock with a concurrent pytest run."""
+    path = tmp_path / 'errors'
+    path.mkdir()
+    monkeypatch.setattr(cli_mod, 'ERRORS_DIR', str(path))
+    return str(path)
+
+
 @pytest.fixture
-def target_markers():
+def target_markers(errors_dir):
     """Pre-existing marker files, foreign AND own.
 
     Foreign (TARGET) markers must survive byte-identical - they belong to
@@ -140,25 +154,41 @@ def target_markers():
     run_batch_script would. progress_<own> must still survive: the live
     instance holds it open via -writeProgress."""
     payloads = {
-        os.path.join(ERRORS_DIR, f'errors_{TARGET}.txt'): 'stale-foreign-error',
-        os.path.join(ERRORS_DIR, f'progress_{TARGET}.txt'): 'id:texture 41%',
-        os.path.join(ERRORS_DIR, f'results_{TARGET}.log'): 'earlier op OK',
-        os.path.join(ERRORS_DIR, f'errors_{OWN_INSTANCE}.txt'): 'own-stale-err',
-        os.path.join(ERRORS_DIR, f'progress_{OWN_INSTANCE}.txt'): 'own 12%',
-        os.path.join(ERRORS_DIR, f'results_{OWN_INSTANCE}.log'): 'own earlier',
+        os.path.join(errors_dir, f'errors_{TARGET}.txt'): 'stale-foreign-error',
+        os.path.join(errors_dir, f'progress_{TARGET}.txt'): 'id:texture 41%',
+        os.path.join(errors_dir, f'results_{TARGET}.log'): 'earlier op OK',
+        os.path.join(errors_dir, f'errors_{OWN_INSTANCE}.txt'): 'own-stale-err',
+        os.path.join(errors_dir, f'progress_{OWN_INSTANCE}.txt'): 'own 12%',
+        os.path.join(errors_dir, f'results_{OWN_INSTANCE}.log'): 'own earlier',
     }
-    os.makedirs(ERRORS_DIR, exist_ok=True)
     for path, text in payloads.items():
         with open(path, 'w', encoding='utf-8') as f:
             f.write(text)
-    try:
-        yield payloads
-    finally:
-        for path in payloads:
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+    return payloads
+
+
+def test_markers_and_locks_never_touch_the_package_errors_dir(
+        tmp_path, monkeypatch, errors_dir, target_markers):
+    before = sorted(os.listdir(PACKAGE_ERRORS_DIR))
+    exe, _ = _stub_exe(tmp_path)
+    script, _ = _stub_workflow(tmp_path)
+    cli = _cli(exe)
+    assert os.path.dirname(cli._lock_path(TARGET)) == errors_dir
+    assert all(os.path.dirname(p) == errors_dir for p in target_markers)
+    held = []
+    acquire = cli._acquire_lock
+
+    def acquire_and_record(*args, **kwargs):
+        owner = acquire(*args, **kwargs)
+        held.extend(n for n in os.listdir(errors_dir) if n.endswith('.lock'))
+        return owner
+
+    monkeypatch.setattr(cli, '_acquire_lock', acquire_and_record)
+    result = cli.run_attach_script(script, ['D:/out'], str(tmp_path / 'logs'),
+                                   instance=TARGET)
+    assert result.success
+    assert held == [f'{TARGET}.lock'], held
+    assert sorted(os.listdir(PACKAGE_ERRORS_DIR)) == before
 
 
 # ------------------------------------------------------------- refusal (a)
@@ -211,7 +241,7 @@ def test_attach_never_boots_shuts_down_or_clears_markers(
 
 
 def test_own_instance_attach_clears_stale_errorwriter_markers(
-        tmp_path, target_markers):
+        tmp_path, errors_dir, target_markers):
     """B9 own-instance exception (2026-08-07): attaching to the instance
     THIS checkout owns clears OUR stale ErrorWriter files (they tripped
     ModelToFinal's own-marker gate on the first delegated op) - but never
@@ -228,18 +258,18 @@ def test_own_instance_attach_clears_stale_errorwriter_markers(
     assert result.success
     # OWN ErrorWriter markers cleared (removed or truncated) ...
     for name in (f'errors_{OWN_INSTANCE}.txt', f'results_{OWN_INSTANCE}.log'):
-        path = os.path.join(ERRORS_DIR, name)
+        path = os.path.join(errors_dir,name)
         assert not os.path.isfile(path) or not open(path).read(), \
             f'own stale marker survived an own-instance attach: {path}'
     # ... OWN progress untouched ...
-    own_progress = os.path.join(ERRORS_DIR, f'progress_{OWN_INSTANCE}.txt')
+    own_progress = os.path.join(errors_dir,f'progress_{OWN_INSTANCE}.txt')
     assert os.path.isfile(own_progress)
     with open(own_progress, 'r', encoding='utf-8') as f:
         assert f.read() == 'own 12%'
     # ... and OTHER instances' markers survive byte-identical.
     for name in (f'errors_{TARGET}.txt', f'progress_{TARGET}.txt',
                  f'results_{TARGET}.log'):
-        path = os.path.join(ERRORS_DIR, name)
+        path = os.path.join(errors_dir,name)
         assert os.path.isfile(path)
         with open(path, 'r', encoding='utf-8') as f:
             assert f.read() == target_markers[path]
@@ -259,7 +289,8 @@ def test_instance_is_first_script_argument(tmp_path):
     assert line.split() == [TARGET, 'D:/out', 'Final', '4x8k']
 
 
-def test_wildcard_instance_passes_through_and_locks_safely(tmp_path):
+def test_wildcard_instance_passes_through_and_locks_safely(tmp_path,
+                                                          errors_dir):
     exe, _ = _stub_exe(tmp_path)
     script, record = _stub_workflow(tmp_path)
     cli = _cli(exe)
@@ -271,7 +302,7 @@ def test_wildcard_instance_passes_through_and_locks_safely(tmp_path):
     (line,) = _calls(record)
     assert line.split()[0] == '*', 'the wildcard must reach the script as %1'
     # '*' is not a legal filename character; the sanitized lock must be gone.
-    assert not os.path.isfile(os.path.join(ERRORS_DIR, 'WILDCARD.lock'))
+    assert not os.path.isfile(os.path.join(errors_dir,'WILDCARD.lock'))
 
 
 # ------------------------------------------------------- status parsing
