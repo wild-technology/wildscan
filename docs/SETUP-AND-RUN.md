@@ -319,9 +319,11 @@ $env:RS_NO_INTERACTIVE = "1"
 ```
 
 `RS_MODULES` and `RS_NO_INTERACTIVE` select the modules without the checkbox
-prompt. Any parameter the module chain asks for and that is not given as a
-flag is asked for at the console, with the stored or default value offered
-(Enter accepts it). `--r_project_label=` passes an empty label, which disables
+prompt. With `RS_NO_INTERACTIVE` set, nothing is asked at the console: a
+parameter not given as a flag takes its stored or default value, and a missing
+required value (`--output_dir`, `--w_input`) ends the run with an error that
+names the flag. Without it, each such parameter is asked for at the console
+with the stored or default value offered (Enter accepts it). `--r_project_label=` passes an empty label, which disables
 the dated project copies. `& ".\.venv\Scripts\python.exe" main.py --help` lists
 every flag with its description.
 
