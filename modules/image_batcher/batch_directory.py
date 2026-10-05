@@ -29,6 +29,14 @@ from .. import camera_registry
 from .. import image_exts
 
 
+# Datasets below this many images are placed in one zone by default.
+SINGLE_ZONE_BELOW_DEFAULT = 4000
+
+# Below this many images a dataset still runs, with a warning: the pipeline
+# is not expected to work well on so few images.
+MIN_EXPECTED_IMAGES = 100
+
+
 def _has_area(points: np.ndarray) -> bool:
     """True when 2-D points span a nonzero area, i.e. a convex hull exists.
 
@@ -67,6 +75,22 @@ class BatchDirectory(RSModule):
             default_value=3000,
             description='Target number of images per zone (zones will be split/merged to approach this)',
             prompt_user=True
+        )
+
+        additional_params['batch_single_zone_below'] = Parameter(
+            name='Single Zone Below (images)',
+            cli_short='b_sz',
+            cli_long='b_single_zone_below',
+            type=int,
+            default_value=SINGLE_ZONE_BELOW_DEFAULT,
+            description=('A dataset with fewer images than this is placed in '
+                         'one zone: no clustering, no splitting and no '
+                         'overlap copies. At or above it, zones are sized '
+                         'toward the target images per zone, so a dataset '
+                         'between the target (3000 by default) and this '
+                         'value stays one zone instead of becoming two small '
+                         'ones.'),
+            prompt_user=False
         )
 
         additional_params['batch_min_zone_size'] = Parameter(
@@ -231,7 +255,7 @@ class BatchDirectory(RSModule):
                 'batch_max_zone_size', 'batch_initial_overlap_percent',
                 'batch_density_weight', 'batch_kde_bandwidth',
                 'batch_overlap_max_distance_m', 'batch_use_z',
-                'batch_zone_layout')
+                'batch_zone_layout', 'batch_single_zone_below')
         input_dir = self.__get_input_dir()
         return {
             'flight_log': os.path.basename(flight_log_path or ''),
@@ -1176,19 +1200,31 @@ class BatchDirectory(RSModule):
 
         self.logger.info(f"Total number of georeferenced points: {len(gdf)}")
 
-        # Prompt for min/max zone size based on total image count; the
-        # last-entered values are offered as defaults on the next run
-        self.logger.info(f"Recommended min zone size: {max(100, len(gdf) // 10)}")
-        self.logger.info(f"Recommended max zone size: {max(1000, len(gdf) // 2)}")
+        if len(gdf) < MIN_EXPECTED_IMAGES:
+            self.logger.warning(
+                '%d images is below the %d the pipeline is expected to work '
+                'well with; batching continues with one zone.', len(gdf),
+                MIN_EXPECTED_IMAGES)
+        single_zone_below = int(
+            self.params['batch_single_zone_below'].get_value()
+            if 'batch_single_zone_below' in self.params
+            else SINGLE_ZONE_BELOW_DEFAULT)
+        single_zone = len(gdf) < single_zone_below
 
-        self.params['batch_min_zone_size'].set_value(self._prompt_int(
-            'min_zone_size', 'Minimum zone size',
-            self.params['batch_min_zone_size'].get_value(),
-            cli_value=self._explicit_param('batch_min_zone_size')))
-        self.params['batch_max_zone_size'].set_value(self._prompt_int(
-            'max_zone_size', 'Maximum zone size',
-            self.params['batch_max_zone_size'].get_value(),
-            cli_value=self._explicit_param('batch_max_zone_size')))
+        if not single_zone:
+            # Prompt for min/max zone size based on total image count; the
+            # last-entered values are offered as defaults on the next run
+            self.logger.info(f"Recommended min zone size: {max(100, len(gdf) // 10)}")
+            self.logger.info(f"Recommended max zone size: {max(1000, len(gdf) // 2)}")
+
+            self.params['batch_min_zone_size'].set_value(self._prompt_int(
+                'min_zone_size', 'Minimum zone size',
+                self.params['batch_min_zone_size'].get_value(),
+                cli_value=self._explicit_param('batch_min_zone_size')))
+            self.params['batch_max_zone_size'].set_value(self._prompt_int(
+                'max_zone_size', 'Maximum zone size',
+                self.params['batch_max_zone_size'].get_value(),
+                cli_value=self._explicit_param('batch_max_zone_size')))
 
         target_size = int(self.params['batch_target_images_per_zone'].get_value())
         min_size = int(self.params['batch_min_zone_size'].get_value())
@@ -1204,7 +1240,16 @@ class BatchDirectory(RSModule):
         if self.utm_zone_suffix:
             self.logger.info(f"UTM zone suffix detected: {self.utm_zone_suffix}")
 
-        while True:
+        if single_zone:
+            self.logger.info(
+                '%d images is below %d (b_single_zone_below): one zone holds '
+                'them all - no clustering, no splitting, no overlap copies.',
+                len(gdf), single_zone_below)
+            final_zones = [list(dict.fromkeys(gdf['filename'].tolist()))]
+            total_in_batches = len(final_zones[0])
+            overlap_percent = 0.0
+
+        while not single_zone:
             final_zones, base_zones, gdf_processed = self.__create_geographic_zones(
                 gdf, target_size, min_size, max_size, overlap_percent, density_weight, kde_bw,
                 max_overlap_distance_m=max_overlap_distance_m
