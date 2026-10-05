@@ -386,17 +386,30 @@ class RealityScanAlignment(RSModule):
         # .bat harvest, sanitize, regeneration) targets the pool root
         # instead of the zone folder. Unset = legacy behavior.
         pose_sidecars = 0
+        unreadable = []
         for root, _dirs, files in os.walk(hygiene_root):
             for name in files:
                 if not name.lower().endswith('.xmp'):
                     continue
+                path = os.path.join(root, name)
                 try:
-                    with open(os.path.join(root, name), encoding='utf-8',
-                              errors='replace') as fh:
+                    with open(path, encoding='utf-8', errors='replace') as fh:
                         if 'xcr:Position' in fh.read():
                             pose_sidecars += 1
-                except OSError:
-                    continue
+                except OSError as exc:
+                    unreadable.append(f'{path} ({exc})')
+        if unreadable:
+            # Not provably free of a pose, and RealityScan may import it:
+            # an unreadable sidecar is treated as a foreign one that could
+            # not be moved aside.
+            self.logger.warning('%d sidecar(s) in %s could not be read: %s',
+                                len(unreadable), hygiene_root,
+                                '; '.join(unreadable))
+            raise ValueError(
+                f'{len(unreadable)} unreadable .xmp sidecar(s) in '
+                f'{hygiene_root} (e.g. {unreadable[0]}) - RealityScan could '
+                'import them as priors with their images. Make them readable '
+                'or remove them, then re-run; the zone was not aligned.')
         if pose_sidecars:
             self.logger.warning(
                 'HEADS UP: %s contains %d pose-bearing .xmp sidecar(s) beside '

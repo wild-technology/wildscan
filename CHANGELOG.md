@@ -40,6 +40,9 @@ cameras captured with Wild Sync. This release is breaking.
   image that the pipeline did not write (a pose prior, an edited
   calibration) is moved to `aligned_components/<zone>/pre_existing_sidecars/`
   instead of being overwritten.
+- An unreadable `.xmp` sidecar in a zone's image tree is reported by name; it
+  is moved aside like a foreign sidecar where a calibration sidecar goes, and
+  otherwise fails the zone before RealityScan starts.
 - `packaging` is declared as a test dependency.
 - The test suite moved from `testing/` to `tests/`.
 

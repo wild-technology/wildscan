@@ -223,6 +223,11 @@ pose priors, its pose export overwrites them and the hygiene below rewrites
 or deletes what remains. The stage warns before the run that their content is
 not preserved.
 
+A sidecar that cannot be read is never skipped silently: in place of a
+calibration sidecar it is moved aside like a foreign one; if it cannot be
+moved, or it lies anywhere else in the zone's image tree, the zone fails
+before RealityScan starts, with a warning naming each file.
+
 After each run, the sidecar hygiene (`sanitize_and_census`,
 `ensure_calibration_sidecars`) rewrites any pose-bearing sidecar left beside
 an image to the decided calibration sidecar and restores missing ones; it never

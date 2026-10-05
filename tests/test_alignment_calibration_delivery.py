@@ -514,6 +514,105 @@ def test_a_moved_sidecar_gets_a_numbered_name_on_collision(tmp_path):
     assert (destination / 'ilx_left' / names[1]).read_bytes() == b'user 2'
 
 
+def _unreadable(monkeypatch, module, paths: set[str]) -> None:
+    """Make reading ``paths`` with ``open`` in ``module`` fail as an
+    access-denied file would (writing a new file there still works)."""
+    real_open = open
+
+    def fake_open(file, mode='r', *args, **kwargs):
+        if 'r' in mode and os.path.normcase(os.path.abspath(file)) in paths:
+            raise PermissionError(13, 'Permission denied', str(file))
+        return real_open(file, mode, *args, **kwargs)
+
+    monkeypatch.setattr(module, 'open', fake_open, raising=False)
+
+
+def test_an_unreadable_sidecar_is_moved_aside_as_foreign(tmp_path,
+                                                         monkeypatch, logs):
+    modes = {'ilx_left': 'groups', 'ilx_right': 'groups'}
+    ws = _workspace(tmp_path, modes)
+    zone = ws / 'batched_images_by_zone' / 'zone_1'
+    foreign = _sidecar_of(_images(ws)[0])
+    foreign.write_bytes(b'locked')
+    _unreadable(monkeypatch, calibration_sidecars,
+                {os.path.normcase(str(foreign))})
+    module, calls = _module(tmp_path, monkeypatch, ws,
+                            logging.getLogger('align-calibration-test'),
+                            min_size=2)
+    assert module.run()['Success'] is True
+    assert len(calls) == 1
+    assert (ws / PRE_EXISTING / foreign.relative_to(zone)).read_bytes() == \
+        b'locked'
+
+
+def test_an_unreadable_sidecar_that_cannot_be_moved_fails_the_zone(
+        tmp_path, monkeypatch, logs):
+    modes = {'ilx_left': 'groups', 'ilx_right': 'groups'}
+    ws = _workspace(tmp_path, modes)
+    foreign = _sidecar_of(_images(ws)[0])
+    foreign.write_bytes(b'locked')
+    _unreadable(monkeypatch, calibration_sidecars,
+                {os.path.normcase(str(foreign))})
+    real_rename = os.rename
+
+    def no_rename(src, dst):
+        if os.path.normcase(str(src)) == os.path.normcase(str(foreign)):
+            raise PermissionError(13, 'Permission denied', str(src))
+        return real_rename(src, dst)
+
+    monkeypatch.setattr(os, 'rename', no_rename)
+    module, calls = _module(tmp_path, monkeypatch, ws,
+                            logging.getLogger('align-calibration-test'),
+                            min_size=2)
+    output = module.run()
+    assert output['Success'] is False
+    assert calls == []
+    assert foreign.read_bytes() == b'locked'
+    errors = [c.get('Error', '') for c in output['Components'].values()]
+    assert any('cannot move the sidecar' in e and str(foreign) in e
+               for e in errors), errors
+
+
+@pytest.mark.parametrize('modes', [
+    {'ilx_left': 'off', 'ilx_right': 'off'},
+    None,
+])
+def test_an_unreadable_sidecar_fails_the_zone_with_calibration_off(
+        tmp_path, monkeypatch, logs, modes):
+    ws = _workspace(tmp_path, modes)
+    foreign = _sidecar_of(_images(ws)[0])
+    foreign.write_bytes(b'locked')
+    _unreadable(monkeypatch, ri_mod, {os.path.normcase(str(foreign))})
+    module, calls = _module(tmp_path, monkeypatch, ws,
+                            logging.getLogger('align-calibration-test'),
+                            min_size=2)
+    output = module.run()
+    assert output['Success'] is False
+    assert calls == []
+    assert foreign.read_bytes() == b'locked'
+    errors = [c.get('Error', '') for c in output['Components'].values()]
+    assert any('1 unreadable .xmp sidecar(s)' in e for e in errors), errors
+    assert any('could not be read' in m and str(foreign) in m
+               for m in logs.messages), logs.messages
+
+
+def test_hygiene_reports_an_unreadable_sidecar(tmp_path, monkeypatch, caplog):
+    folder = tmp_path / 'ilx_left'
+    folder.mkdir()
+    (folder / 'Cam1_20260820_192542.42.card.JPG').write_bytes(b'jpeg')
+    locked = folder / 'Cam1_20260820_192542.42.card.xmp'
+    locked.write_text(POSE_SIDECAR, encoding='utf-8')
+    _unreadable(monkeypatch, calibration_sidecars,
+                {os.path.normcase(str(locked))})
+    with caplog.at_level(logging.WARNING, logger='modules.calibration_sidecars'):
+        calibration_sidecars.sanitize_and_census(str(tmp_path),
+                                                 {'ilx_left': 'groups'})
+    assert locked.exists()
+    assert any('1 sidecar(s) could not be read' in r.getMessage()
+               and str(locked) in r.getMessage() for r in caplog.records), \
+        caplog.text
+
+
 def test_a_change_of_calibration_mode_is_reported_on_a_rerun(tmp_path,
                                                              monkeypatch,
                                                              logs):
