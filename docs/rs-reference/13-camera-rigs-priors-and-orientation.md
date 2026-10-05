@@ -41,7 +41,7 @@ inline. Nothing in this class has been confirmed by running the application.
 7. [Prior strength, accuracy, hardness, and composition](#7-prior-strength-accuracy-hardness-and-composition)
 8. [Coordinate frames in play](#8-coordinate-frames-in-play)
 9. [Flight-log (trajectory) priors](#9-flight-log-trajectory-priors)
-10. [Applied: the four-camera underwater ROV rig](#10-applied-the-four-camera-underwater-rov-rig)
+10. [Applied: the two-camera ILX-LR1 stereo rig](#10-applied-the-two-camera-ilx-lr1-stereo-rig)
 11. [Undistortion and registration export](#11-undistortion-and-registration-export)
 12. [Recipes and checklists](#12-recipes-and-checklists)
 13. [Open questions](#open-questions)
@@ -204,13 +204,14 @@ The shipped sample [OFFICIAL: tools/xmpalign]:
 the solve demonstrably honoured the `Camera:` groups (§4.4).
 [VERIFIED: FINDINGS 2026-07-26] [UNDOCUMENTED]
 
-### 2.3 The `Camera:` namespace (what this repo actually writes)
+### 2.3 The `Camera:` namespace (an element form that is also accepted)
 
-The Help's sample uses only `xcr:` attributes in the `.../xcr/1.1#` namespace. This repo
-writes a **different, element-based form** in the `.../xcr/1.0/` and
-`.../camera/1.0/` namespaces, and RealityScan accepts it — proven by the intrinsics
-separation in §4.4. Literal content of `camera_registry.calibration_xmp()`
-(`modules/camera_registry.py`):
+The Help's sample uses only `xcr:` attributes in the `.../xcr/1.1#` namespace. A
+**different, element-based form** in the `.../xcr/1.0/` and `.../camera/1.0/` namespaces is
+accepted too — proven by the intrinsics separation in §4.4, which used sidecars of this form
+on the earlier four-camera datasets. This repository now writes the documented `xcr` 1.1
+attribute form instead (`modules/calibration_sidecars.py`, `sidecar_xmp`; §10.4). The
+element form as it was written:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -263,7 +264,7 @@ the threshold are silently excluded from selection and export
 Consequences that bite:
 
 - Ordinal sidecars are **inert as priors** (no image has an ordinal stem) but are still a
-  valid registration *count*. `camera_registry.sanitize_and_census` deletes them quietly.
+  valid registration *count*. `calibration_sidecars.sanitize_and_census` deletes them quietly.
   [VERIFIED: B10, 2026-07-23]
 - Per-camera identity is only available from `-exportXMP` in the original aligned scene.
   This is why membership is derived by **successive difference** of stem harvests in the
@@ -284,7 +285,7 @@ Consequences that bite:
   sidecars are never re-exported. Measured on fresh zone_1: 796 of 4,540 images (17.5%)
   left with no sidecar, including an entire 665-camera component. Two later test cells
   re-aligned in that state and their results are confounded. Fixed by
-  `camera_registry.ensure_calibration_sidecars()`. [VERIFIED: FINDINGS 2026-07-25]
+  `calibration_sidecars.ensure_calibration_sidecars()`. [VERIFIED: FINDINGS 2026-07-25]
 
 ### 2.5 XMP export options and the `xmp*` params keys
 
@@ -376,7 +377,7 @@ So `xmpCamera=3` selects **locked**. **This repo's `-exportXMP` therefore writes
 sidecars carrying LOCKED priors**, which is the worst case for the B7 auto-import
 contamination in §2.1: any later `-add` of the same folder imports cameras that
 RealityScan is forbidden to move, *and* §3.3's "Exact/Locked cannot be grown
-incrementally" then applies. `camera_registry.sanitize_and_census` /
+incrementally" then applies. `calibration_sidecars.sanitize_and_census` /
 `ensure_calibration_sidecars` are what stand between that and a corrupted re-align — they
 are not optional hygiene.
 [UNDOCUMENTED: binary UI resource strings] [INFERRED that the same enum
@@ -449,7 +450,7 @@ mechanisms are not reconciled by any Help page.
 #### How the wizard maps images to rigs — `#rig` / `#pose` / `#camera`
 
 The wizard's mapping is **path-pattern based**, and the pattern vocabulary is exactly what
-a filename-encoded rig like §10.2's needs:
+a rig whose file names encode camera and exposure needs:
 
 > "The keywords `#rig`, `#pose`, `#camera` represent rig name, rig pose name, and camera
 > name in the file path string."
@@ -533,30 +534,18 @@ suitably". [OFFICIAL: videotutorials/fullbodyscans/fullbodyscanstutorials]
 
 ### 3.4 What this repo does *not* do
 
-**No rig has ever been declared through this CLI.** The four-camera ROV rig is handled
-purely as four *calibration groups* plus per-image pose priors from the trajectory; no
-`xcr:Rig`, `xcr:RigInstance` or `xcr:RigPoseIndex` is written, and `inpRig*` has never been
-sent. `xmpRig=true` is set in `XMPExportParams.xml`, so *exports* would carry rigging if
-RealityScan had any to write. [VERIFIED-by-inspection: `modules/camera_registry.py`,
-`RS_CLI/Metadata/XMPExportParams.xml`, and the absence of any rig identifier in the repo]
+**No rig is declared through this CLI.** The ILX-LR1 stereo pair is handled as two
+*calibration groups* and two *lens-distortion groups* plus per-image priors from the flight
+log; no `xcr:Rig`, `xcr:RigInstance` or `xcr:RigPoseIndex` is written, and `inpRig*` is never
+sent. `xmpRig=true` is set in `XMPExportParams.xml`, which nothing uses.
+[VERIFIED-by-inspection: `modules/cameras.json`, `modules/calibration_sidecars.py`,
+`RS_CLI/Metadata/XMPExportParams.xml`]
 
-This is a deliberate consequence of the rig being **non-rigid in practice**: the cameras
-are on an ROV frame whose mount angles differ *per cruise* for the same physical unit
-(§10.3). A declared Exact rig would also forbid incremental growth (§3.3), which is the
-pipeline's primary recovery mechanism for zones that fail solo.
-[INFERRED — the reasoning is sound but no cell tested a declared rig on this data.] The
-untested opportunity is real, and larger than the repo's own notes suggest:
-
-- the rig-internal C–P geometry has been measured twice on metrically sound solves and is
-  stable to ~0.1 m (§10.4) — exactly the input a **Draft**-strength relative-pose rig wants;
-- the WCA filenames already encode camera identity and exposure time
-  (`P231C0003_20231104202628_edt.jpg`), which is the shape the Rig Creation Wizard's
-  `#rig_#pose_#camera` mapping consumes (§3.1);
-- `xmpComponentMode=Rigid` (§2.5) exports "a camera group whose scale is fully determined"
-  — the closest thing the product has to declaring a metric rig baseline, and the natural
-  companion to the missing stereo-rig support in §3.3.
-
-[OPEN — see Q6.]
+The reason is §3.5: a declared `xcr:Rig` requires a `.rcrx` rig file that no installation
+provides. The stereo baseline and extrinsics are kept as data only (§10.7). A declared Exact
+rig would also forbid incremental growth (§3.3). `xmpComponentMode=Rigid` (§2.5) exports "a
+camera group whose scale is fully determined" — the closest thing the product has to declaring
+a metric rig baseline. [OPEN — see Q6.]
 
 ---
 
@@ -740,8 +729,8 @@ $IterateGroups(g$(groupIndex) calib=$(calibrationGroup) lens=$(distortionGroup) 
 ```
 
 This answers "did my `Camera:CalibrationGroup` sidecars actually take?" in one command
-instead of a 5,000-record harvest, and it also surfaces the pixel-footprint outlier of
-§10.8 (`refWidth`/`refHeight` differ for a group of one).
+instead of a 5,000-record harvest, and it also surfaces any image whose pixel footprint differs
+(`refWidth`/`refHeight` differ for a group of one).
 **Never exercised in this repo.** [OPEN — the function is documented; only its behaviour
 on this rig is untested.] See `10-reconstruction-texturing-export.md` for report mechanics.
 
@@ -1090,12 +1079,11 @@ camera at `(0,0,150)` with `yaw=pitch=roll=0`, looking **down**.
 This is exactly what this repo's converter assumes:
 
 ```python
-# modules/georeference/georeference_images.py
-camera_pitch_from_horiz = pitch_vehicle - camera_offset
-rc_pitch = 90.0 + camera_pitch_from_horiz      # 0 = nadir, 90 = horizontal
+# modules/flight_logs.py, realityscan_orientation
+rs_pitch = 90.0 + (pitch - down_tilt)          # 0 = nadir, 90 = horizontal
 ```
 
-and the written logs confirm it: **Port median 88.11°** (n = 2,267, range 86.6–89.4 —
+and on the earlier four-camera datasets the written logs confirmed it: **Port median 88.11°** (n = 2,267, range 86.6–89.4 —
 essentially horizontal) and **Cinema median 43.11°** (n = 2,273, range 41.5–44.3 — ~45°
 down), both matching the physical rig. [VERIFIED: FINDINGS 2026-07-26]
 
@@ -1221,7 +1209,7 @@ Take a component whose solve is trusted (metric scale in band, low fragmentation
 If the priors are *locked*, a wrong convention makes the align fail or produce a grossly
 rotated component — a loud failure, which is what you want. If they are merely
 *Position and orientation*, a wrong convention degrades quietly, which is exactly the
-failure mode that produced the bow tilt (§10.6).
+failure mode behind a ~45° tilt of a component observed on an earlier dataset.
 
 **Noise floor for step 4:** *align output is never pose-stable.* A free re-align of an
 already-solved 118-camera smoke scene moved **all 118** cameras and can drop 1–2 marginal
@@ -1349,7 +1337,7 @@ component but cannot stiffen or repair its geometry. [VERIFIED: FINDINGS 2026-07
 
 That makes `-update` the *only* consumer of orientation priors in an assembly stage that
 imports finished components — and therefore the prime suspect whenever a component is
-correctly solved but wrongly oriented in the deliverable (§10.6).
+correctly solved but wrongly oriented in the deliverable.
 
 ### 7.5 Measured effects of priors — the numbers that matter
 
@@ -1810,8 +1798,8 @@ Two consequences that change the shape of the §7.5 contamination flag:
   **yaw/heading** rotation of 0°/90°/180°/270°, which is a real failure mode but a
   different one — and it is invisible to a registration count, exactly like the scale
   errors in §7.5. [INFERRED from the option labels; not probed.]
-- **There is no oblique mount option.** A rig whose cameras are not nadir-facing (Cinema at
-  45° down, Port at ~0° — §10.3) *must* bake the tilt into the imported YPR, which is what
+- **There is no oblique mount option.** A rig whose cameras are not nadir-facing (the earlier
+  four-camera rig had cameras at 45° down and near horizontal) *must* bake the tilt into the imported YPR, which is what
   this repo does. That is the correct choice, not a workaround.
   [INFERRED from the option list.]
 
@@ -1838,312 +1826,211 @@ resulting prior poses]
 
 ---
 
-## 10. Applied: the four-camera underwater ROV rig
+## 10. Applied: the two-camera ILX-LR1 stereo rig
 
-### 10.1 The cameras (`modules/camera_registry.py` — the single source of truth)
+This section applies sections 1-9 to the rig this repository targets: two Sony ILX-LR1 cameras
+in a stereo pair, recorded with Wild Sync. The user-facing description, with the exact sidecar
+text, is `docs/ILX-LR1.md`; the first-run checks are
+`docs/validation/ILX-LR1_first_run_checklist.md`. **No live RealityScan alignment has been run
+with the code described here**; everything in this section is [VERIFIED-by-inspection] of the
+code and data files unless tagged otherwise.
 
-| Physical camera | Optics | Calibration group | Lens group | `CalibrationPrior` | `FocalLength35mm` | `DistortionModel` (sidecar hint) |
-|---|---|---:|---:|---|---:|---|
-| **Zeuss** | rectilinear 23 mm full frame | `1` | `1` | `Approximate` | `23.0` | `brown3` |
-| **Port** | fisheye 14 mm full frame | `2` | `2` | `Approximate` | `16.0` | `division` |
-| **Cinema** | rectilinear 17 mm full frame | `3` | `3` | `Approximate` | `16.0` | `brown3` |
-| **Starboard** | fisheye 14 mm full frame | `4` | `4` | `Approximate` | `16.0` | `division` |
+### 10.1 The cameras (`modules/cameras.json`, loaded by `modules/camera_registry.py`)
 
-[VERIFIED-by-inspection: `modules/camera_registry.py`; confirmed 2026-07-23]
-Cinema's focal moved 17.0 → 16.0 on confirmation ("C=16"), corroborated by the
-solver's own median 16.37 mm 35-eq over 2,204 cameras. [VERIFIED: FINDINGS 2026-07-25]
-Remember §5.4: the `DistortionModel` column is a **hint only** — the global
-`sfmDistortionModel` decides.
+| Camera key | Wild Sync node | Eye | `CalibrationGroup` | `DistortionGroup` | Prior level | `FocalLength35mm` (prior mode) | `DistortionModel` | Calibration image | Calibration focal |
+|---|---|---|---:|---:|---|---:|---|---|---:|
+| `ilx_left` | `cam1` | L | `7` | `7` | `approximate` → `initial` | `17.72584` | `brown3` | 4096 × 3000 | 16 mm |
+| `ilx_right` | `cam2` | R | `8` | `8` | `approximate` → `initial` | `17.72584` | `brown3` | 4096 × 3000 | 16 mm |
 
-`S231C*.mov` videos are Starboard and are **excluded from photogrammetry** by project
-decision. [VERIFIED: FINDINGS 2026-07-23]
+One calibration group and one lens-distortion group per physical camera (§4.3). The registry
+accepts only `brown3` and only the `approximate` prior level, and refuses non-zero tangential
+coefficients for `brown3`. Remember §5.4: the per-image `DistortionModel` is a hint; the global
+`sfmDistortionModel=Brown3` in `AlignmentParams.xml` decides.
+
+`approximate` is written as `xcr:CalibrationPrior="initial"`. [INFERRED: `initial` is the value
+in RealityScan's own sample sidecar; the documented token set is initial / exact / locked, §1]
 
 ### 10.2 Identifying a camera from a filename
 
-Two era-specific naming families map onto the same four physical units. Matching is
-**most specific first**: anchored WCA prefix, then anchored legacy prefix, then a
-delimiter-bounded `zeuss`/`herc` token.
+Two families, matched case-insensitively against the base name, first match wins:
 
-```python
-_WCA_PREFIX  = re.compile(r'^([pcs])\d+c', re.IGNORECASE)          # P231C0003_<ts>_edt.jpg
-_ZEUSS_TOKEN = re.compile(r'(^|[_\-.])(zeuss|herc)([_\-.]|$)', re.IGNORECASE)
-_LEGACY_FAMILY = (('camupper', 'legacy_camupper'),
-                  ('cammid',   'legacy_cammid'),
-                  ('camlower', 'legacy_camlower'))
-```
-
-| Family key | Matches | Physical camera |
+| Family | Pattern | Camera |
 |---|---|---|
-| `wca_port` | `P<digits>C…` | port |
-| `wca_cinema` | `C<digits>C…` | cinema |
-| `wca_starboard` | `S<digits>C…` | starboard |
-| `legacy_cammid` | `cammid*` | port |
-| `legacy_camlower` | `camlower*` | cinema |
-| `legacy_camupper` | `camupper*` | starboard |
-| `zeuss` | delimiter-bounded `zeuss` or `herc` | zeuss |
+| `cam1` | `^cam1_` | `ilx_left` |
+| `cam2` | `^cam2_` | `ilx_right` |
 
-Two regression-pinned traps [VERIFIED: `tests/test_rig_mounts.py`]:
+Every file of a Wild Sync frame resolves alike: review JPEG `Cam1_<date>_<time>.jpg`, card JPEG
+`Cam1_<date>_<time>.card.JPG`, RAW `.ARW` and Wild Sync's own `.xmp`. The frame id is the name
+without `(.card)?.(jpg|jpeg|arw|xmp)`; it contains a dot, so `splitext` must never be applied to a
+name that has already lost its extension. The calibration sidecar of `X.card.JPG` is
+`X.card.xmp` (RealityScan binds `<name minus last extension>.xmp`, §2.1).
 
-- **Cruise digits must not decide the family.** Literal `p231c`/`c231c` tests meant the next
-  cruise's `C245C0007_*.jpg` fell through to a **zero lever arm and 0° pitch offset** —
-  Cinema losing its 45° down-look — asserted at 10° claimed confidence, with one suppressed
-  warning for the whole run.
-- **`herc` was tested first, unanchored, and would have beaten an anchored WCA prefix**
-  (`P231C0003_herc.jpg`). The token is now delimiter-bounded and runs last.
+The node-to-eye assignment (`cam1` → left, `cam2` → right) is encoded only in these two rows. The
+rig field `node_assignment_confirmed` is the switch: while it is `false`, eye-dependent
+calibration (principal point, distortion) is never applied.
 
-### 10.3 Mount geometry is keyed by FILENAME FAMILY, not by camera
+### 10.3 Mount geometry and the lever arm
 
-The same Cinema unit sits **10° down** under legacy `camlower` names and **45° down** under
-WCA `C###C` names. Keying geometry off the physical camera would silently rewrite every
-legacy dataset by tens of degrees. `MOUNTS` in
-`modules/georeference/georeference_images.py`:
+Per family, in `modules/cameras.json`; none of these values is measured:
 
-| Family | fwd (m) | lat (m) | down (m) | pitch (° down from vehicle forward axis) | pitch accuracy (°) |
-|---|---:|---:|---:|---:|---:|
-| `zeuss` | 0.5 | 0.0 | 0.5 | 30.0 | 30.0 |
-| `legacy_camupper` | 1.0 | 0.0 | 0.0 | 70.0 | 10.0 |
-| `legacy_cammid` | 1.0 | 0.0 | 1.0 | 20.0 | 10.0 |
-| `legacy_camlower` | 1.0 | 0.0 | 1.0 | 10.0 | 5.0 |
-| `wca_port` | 1.0 | 0.0 | 1.0 | 0.0 | 15.0 |
-| `wca_cinema` | 1.0 | 0.0 | 0.0 | 45.0 | 15.0 |
-| `wca_starboard` | **`None`** — never measured | | | | |
+| Family | `down_tilt_deg` | `yaw_offset_deg` | `pitch_accuracy_deg` | `lever_arm_m` |
+|---|---:|---:|---:|---|
+| `cam1` | 90.0 (nadir) | 0.0 | 15.0 | `null` — not measured |
+| `cam2` | 90.0 (nadir) | 0.0 | 15.0 | `null` — not measured |
 
-[VERIFIED-by-inspection + pinned by `tests/test_rig_mounts.py`, values in force 2026-07-26]
-
-**The fallback for a family with no measured mount (2026-08-31, adopted).**
-A family that resolves to `None` above no longer writes an empty pitch. It takes
-the house convention: **10° down from the vehicle forward axis, claimed at 30°
-accuracy** — which lands at **80° on the nadir scale** for a level vehicle, and
-composes with vehicle pitch like any measured mount. A measured `MOUNTS` entry
-always **wins**; the fallback is reached only where there is none.
-
-| | |
-|---|---|
-| Source of truth | `ASSUMED_MOUNT_DEFAULTS` + `assumed_pitch_prior()` in `modules/georeference/georeference_images.py`, consumed by **both** implementations |
-| Config record | `modules/cameras.json` → `defaults.assumed_mount` |
-| Knobs | `--g_assumed_pitch` / `--g_assumed_pitch_accuracy` (georeference module) |
-| Opt-out | a **negative** assumed pitch restores the 2026-08-07 behaviour (no pitch prior at all) |
-| Never applies to | `voyis_*` — poses come from the COLMAP bridge, so a vehicle-nav prior is the **wrong pipeline**, not a missing measurement, and a fallback would mask that |
-| Applies to | `wca_starboard` and any unrecognised family. The unknown-camera warning still fires, so the run still SAYS the mount was never measured |
-| Lever arm | **still never invented** — an unmeasured mount contributes `(0, 0, 0)` m. The Port-1 m incident was a POSITION invention; this changes only the pitch prior |
-
-This **reverses part of** the 2026-08-07 audit, which deleted a fallback of
-**0°** ("this camera looks straight ahead") asserted at **10°** accuracy. The
-house convention is a different geometric claim — 10° *down*, not 0° *ahead* —
-but the audit's other objection still stands, which is why the accuracy is 30°:
-no tighter than the loosest **measured** mount (`zeuss`), because PD-0/PD-0b
-measured that over-tight orientation accuracy **fragments** solves. Asserting an
-assumed tilt at a measured mount's confidence would repeat the mistake the audit
-was right about. [VERIFIED: FINDINGS 2026-08-31]
-
-
-
-`wca_starboard` is deliberately `None`: the project excludes Starboard from photogrammetry, so
-it should not be reached — and if it is, **the run must say so rather than invent a zero
-lever arm and a 0° tilt**. Unknown families and known-but-unmeasured mounts are both counted
-through one warning path so the run summary carries a single number for "images that got no
-usable prior". Inventing rig numbers is what produced the Port-1 m incident.
-
-Lever arms are applied in the world frame, driven by vehicle heading (UTM X=East, Y=North,
-heading 0°=North increasing clockwise):
+An unmeasured lever arm contributes a zero offset and one logged notice; no value is invented.
+A measured lever arm `(forward, right, down)` would be applied in the **world** frame from the
+heading by `modules/wildsync_intake/intake.py` (`lever_arm_offset`):
 
 ```python
-east_offset  = forward_m * sin(heading) + lateral_m * cos(heading)
-north_offset = forward_m * cos(heading) - lateral_m * sin(heading)
-adjusted_altitude = altitude - down_m          # down is negative altitude
+east_offset  = forward_m * sin(heading) + right_m * cos(heading)
+north_offset = forward_m * cos(heading) - right_m * sin(heading)
+altitude     = -abs(depth) - down_m
 ```
 
-**RealityScan has a native facility for exactly this and the repo does not use it.** The
-trajectory-import dialog carries a "Compensate GPS/INS offset" group — "Define the relative
-offset between the camera nodal point and the positioning system" — with keys
-`ifOfsX`/`ifOfsY`/`ifOfsZ` (Nodal point X/Y/Z offset) and `ifOfsRY`/`ifOfsRP`/`ifOfsRR`
-(Yaw/Pitch/Roll angle offset). The frames differ: the repo applies the lever arm in the
-**world** frame using vehicle heading, RealityScan expects it in the **camera/image** frame
-(image X, image Y, look-at direction). Both are valid; **doing both double-applies the lever
-arm.** Since the repo's params XML sets no `ifOfs*` key, nothing is double-applied today —
-but anyone adding one must remove the Python offset first.
-[UNDOCUMENTED: binary UI strings, §9.3] [OPEN — headless behaviour of `ifOfs*` untested,
-Q7.]
+**RealityScan has a native facility for the same correction and the repo does not use it.**
+The trajectory-import dialog's "Compensate GPS/INS offset" group carries `ifOfsX`/`ifOfsY`/`ifOfsZ`
+and `ifOfsRY`/`ifOfsRP`/`ifOfsRR`, in the **camera/image** frame. Doing both double-applies the
+lever arm. The repo's params XML sets no `ifOfs*` key, so nothing is double-applied today.
+[UNDOCUMENTED: binary UI strings, §9.3] [OPEN — headless behaviour of `ifOfs*` untested, Q7]
 
-### 10.4 The lever-arm retraction chain — four steps, all retained
+### 10.4 Calibration delivery: `prior`, `groups` or `off`
 
-1. **Original (2026-07-23, adopted):** Port 0° pitch, 1 m forward + 1 m down;
-   Cinema 45° down, 1 m forward. [VERIFIED-as-decision]
-2. **Measured from the solve (2,169 near-simultaneous C/P pairs, zone_1 fresh run):** angle
-   **47.2°** (IQR 47.0–47.4) confirmed; but |P−C| separation **0.22 m**, vertical component
-   **0.00 m** ⇒ "the Port lever arm is wrong by ~1 m". [SUPERSEDED the same day]
-3. **Retraction:** that measurement was taken **inside hull c0 — the 0.175-scale
-   component** — so both the separation and its vertical part are meaningless
-   (0.22 × 5.7 ≈ 1.25 m). Only the **angle** survived, because angles are invariant under
-   scale and rotation. Re-measured on **two independent metrically-sound solves** (bow c2;
-   zone_2 from PD-2b): C-vs-P optical-axis angle **47.2° / 46.8°** vs the code's 45.0°, and
-   **C above P by +1.12 m / +1.03 m** vs the code's implied +1.00 m; |P−C| separation
-   1.21 / 1.11 m. **The code's original values stand, corroborated twice.**
-   [VERIFIED: FINDINGS 2026-07-25]
-4. **Re-application and reversal:** a 2026-07-26 project decision ("roughly the same
-   distance forward; the Z in my notes may be wrong") was implemented — Port 1.0/1.0 →
-   1.17/0.0 — **quoting the already-retracted 0.22 m figures as corroboration**. A
-   contradiction audit caught it and it was reverted the same day; H2024's nav, flight log
-   and zones were regenerated from raw under the restored geometry.
-   [SUPERSEDED: FINDINGS 2026-07-26]
+`modules/calibration_sidecars.py` decides one mode per camera at intake, from the original images
+(preprocessing writes images without EXIF), and the intake records it in
+`raw_images/wildsync_intake.json`:
 
-**DECISION IN FORCE: Port 1.0 m forward / 1.0 m down, Cinema 1.0 / 0.0. Do NOT flatten them
-on the strength of the 0.22 m / 0.00 m figures — those are scale-corrupted, and they were
-retracted once and re-applied by mistake before an audit caught it.**
-[VERIFIED-as-decision: status log 2026-07-27; pinned by `test_port_sits_one_metre_below_cinema`]
+- `prior` — groups, model, `FocalLength35mm`, principal point and the measured coefficients in
+  the six-slot order of §5.3 (OpenCV `k1, k2, p1, p2, k3` written as `k1 k2 k3 0 p2 p1`), as an
+  `initial` prior. Only when the node assignment is confirmed, every image's aspect ratio is
+  within 1 % of 4096:3000, and every image's EXIF focal length is within 0.5 mm of 16 mm (or the
+  operator asserts it).
+- `groups` — `xcr:CalibrationGroup`, `xcr:DistortionGroup` and `xcr:DistortionModel` only, so
+  RealityScan solves each camera's intrinsics separately. The fallback whenever `prior` does not
+  apply. The August 2026 field data (4752 × 3168, EXIF 29 mm and 24 mm) comes out as `groups`.
+- `off` — no sidecars.
 
-**Why rig-internal derivation is trusted where absolute-mount derivation is not:** relative
-axis angle and relative position between two cameras on one rigid vehicle are observable in
-*any* solve, regardless of how weakly the scene's absolute attitude is constrained. By
-contrast, mount-angle derivation from solved scenes is unreliable — zone_3-derived offsets
-(C ≈ 58° down, tight IQR) conflict with a steady zone_1 strip (C ≈ −42°, also tight IQR),
-because a trajectory is near-1D and scene rotation about it is cheap under position-only
-georeferencing. [VERIFIED: FINDINGS 2026-07-25]
+Sidecars use the documented `xcr` 1.1 attribute form (`05-metadata-xmp-and-sidecars.md` §2) and
+never carry a pose. The slot order is from the shipped export templates (§5.3); the radius
+normalisation of the coefficients, and of the principal point for a non-square image, is
+[INFERRED], which is why the prior is never locked.
+
+The RealityScan Alignment stage writes the sidecars beside the images of each zone and a
+`<zone>.rscmd` command file (one `-addImageWithCalibration "<image>" "<xmp>"` line per image with a
+sidecar, `-add "<image>"` otherwise; absolute paths, sorted, CRLF), and passes it to
+`AlignZone.bat`, which then adds the images with `-execRSCMD` instead of `-addFolder`. The
+module records that this command-file delivery has worked from the command line before, and that
+`-setPriorCalibrationGroup` / `-setPriorLensGroup` returned success from the delegated command
+line without changing the groups. [OPEN: the `AlignZone.bat` mode itself has not been run; check
+B of the first-run checklist]
 
 ### 10.5 The written flight log
 
-`modules/georeference/georeference_images.py` writes a **13-column, semicolon-separated**
-log matching `{B438A617-…}`:
+The Wild Sync Intake writes one **13-column, semicolon-separated** log for both cameras,
+`raw_images/flight_log_<zone><band>_UTM.txt`, in format `{B438A617-…}`, through
+`modules/flight_logs.write_flight_log`:
 
 ```
 filename;X (East);Y (North);Alt;X Accuracy;Y Accuracy;Alt Accuracy;Yaw;Pitch;Roll;Yaw Accuracy;Pitch Accuracy;Roll Accuracy
 ```
 
-Accuracies in force: **position 10.0 / 10.0 / 1.0 m** (end-to-end per-image uncertainty, not
-the DVL/Paro sensor spec — see §7.5), **yaw 15.0°, roll 15.0°, pitch per-family from
-`MOUNTS['p_acc']`**. No magnetic declination is applied and that is **correct**:
-`kalman_yaw_deg` comes from an Octans gyrocompass, so it is already true north and
-`decl = 0` is right. The repo's `HEADING_MAG` variable name is a misnomer.
-[VERIFIED-in-part: status log 2026-07-27] [OPEN: confirm the Octans true-vs-magnetic claim from
-a primary source]
+| Column | Source (Wild Sync `flight_log.csv`) | Default accuracy |
+|---|---|---|
+| X, Y | `xutm`, `yutm` (+ horizontal lever arm, zero while unmeasured) | 10 m; **1000 m** when the whole run carries one static fix (positions within 1 m) |
+| Alt | `-abs(depth_from_xplore9)` − downward lever arm; 0.0 (camera at the sea surface) when depth is empty | 1 m |
+| Yaw, Pitch, Roll | §10.6 | yaw and roll 15°; pitch 15° from the mount |
 
-Georeference acceptance: H2023 4,598/4,598 (100 %, all exact time matches, zone 4Q);
-H2024 8,197/8,197 (100 %, zone 4Q); NA167 29,620 images with 18,944 matched ≤ 2 s and the
-10.4k out-of-dive-window WCA files correctly **rejected**.
-[VERIFIED: FINDINGS 2026-07-26; status log 2026-07-22]
+The accuracies are end-to-end per-image uncertainties, not sensor specifications (§7.5). A
+missing value is an empty cell, never 0. The August 2026 field runs carry the same static fix on
+every row and empty depth, so their position priors (1000 m) cannot constrain the solve and their
+altitude is 0.
 
-### 10.6 The bow tilt — what a wrong orientation prior actually looks like
+### 10.6 Orientation priors — what is and is not established
 
-operator report: the bow model sits ~45° off the true ground plane (the site is a flat mud
-floor). **The align is not the culprit.** Measured from the PD-6 harvest: the bow's solved
-camera cloud matches nav to **0.8°** in best-fit-plane attitude (solved 8.1° off vertical vs
-nav 7.3°), shape ratios agree to three decimals (mid/max 0.371 vs 0.370), and its optical
-axes are statistically identical to the hull's (median 148.1 vs 147.7° from local up). There
-is **no 45° rotation in the zone solve**. [VERIFIED: FINDINGS 2026-07-26]
+```text
+yaw   = (heading + declination + mount yaw offset) mod 360
+pitch = 90 + (IMU pitch − mount down tilt)            # = IMU pitch for the nadir mount
+roll  = IMU roll
+```
 
-Where YPR actually entered: the PD-6 align log was **7-column position-only**, while the
-assembly's union log was **13-column carrying YPR at 3/5/3 accuracies** — so the **only**
-consumer of orientation was `-update` in the assembly. [VERIFIED: FINDINGS 2026-07-26]
+`heading` is `heading_imu`, else `yaw` (selectable); `declination` defaults to 0. The pitch
+scale (0 = nadir, 90 = horizontal) is §6.4's. A missing heading, pitch or roll writes no
+orientation prior for that image. Implemented once, in `modules/flight_logs.realityscan_orientation`.
 
-Ranked candidates [INFERRED-ranked]:
+Not established:
 
-1. **`-update` rotated the bow to satisfy mis-converted orientation priors.** The Euler
-   order / camera-mount convention is explicitly unverified, and a 656-camera component
-   spanning 9.3 m on a near-1D track is cheap to rotate about that track (the fit trades a
-   small position penalty for the orientation term), whereas the hull (3,738 cameras over
-   17.9 m) is far stiffer. Predicts a clean near-rigid tilt — which matches a crisp "45
-   degrees".
-2. **Internal deformation of the bow.** Scale IQR width **0.444** vs the hull's 0.081
-   (5.5× wider), which by the oracle's own semantics means drift/fold rather than a
-   similarity error. Explains floor non-flatness but not a clean 45° plane.
+- the Wild Sync IMU axes and signs against RealityScan's Yaw/Pitch/Roll (§6.3) — **not validated
+  against RealityScan**;
+- the composition RealityScan applies on import: `FlightLogParams.xml` does not pin
+  `gpsLogEulerAnglesOrderYPR` or `gpsLogMount`, so the installation defaults apply (§9.3, §9.4);
+- the yaw zero and the image-top direction relative to the heading (mount yaw offset 0 is
+  nominal), and whether the logged heading is magnetic or true.
 
-**Blindness now load-bearing (escalation condition): assemble mode exports no poses, so the
-assembled project — the artifact the operator actually looked at — cannot be measured.
-Hypotheses can only be ranked until poses are harvested from a copy of the assembly.**
-[OPEN]
+The wide 15° accuracies keep an error from dominating the solve; do not tighten them until the
+first-run checklist's orientation check passes. [OPEN]
 
-**Cheap decisive test (~2 min):** re-run the assembly `-update` with a **position-only**
-union log and re-measure the bow's attitude. If the tilt disappears, candidate 1 is
-confirmed and the remedy is to verify the YPR convention before importing orientation
-anywhere. [OPEN — queued probe (h), never run]
+### 10.7 Stereo baseline and extrinsics: data only
 
-**Position adopted (with caveats):** pitch/roll/yaw belong in the **alignment** priors,
-not merely in the post-hoc georeferencing fit — that is where they would anchor absolute
-attitude **and** stiffen a solve against exactly the drift measured in candidate 2. Caveats:
-import at 15° accuracy (provisional, not validated), and **verify the convention first** —
-importing wrong-convention YPR is itself a mechanism for this defect.
-[VERIFIED-as-decision: FINDINGS 2026-07-26]
+The rig `ilx_lr1_stereo` keeps `stereo_baseline_m = 0.225425` (supplied, not measured: the
+checkerboard square size is unknown, so the stereo solve is in square units) and the left-to-right
+extrinsics (OpenCV convention, 1.827° relative rotation). Nothing writes rig XMP (§3.5) or turns
+them into a constraint. The cameras are not hardware-synchronised (calibration pairs within about
+60 ms), so a rig declaration assuming simultaneous exposures would be approximate in any case.
 
-### 10.7 Cross-engine echo on the Zeuss camera
+On a run whose navigation is one static fix, neither the positions nor the rig impose metric
+scale on the solve. [INFERRED] Check the scale of a result against the baseline — the distance
+between the solved centres of near-simultaneous `cam1` / `cam2` frames.
 
-COLMAP on zone_9 **registered 710 Zeuss frames but triangulated ZERO points from them** —
-they contribute nothing downstream. Independently echoing this line's NA167 zone_13 A/B,
-where XMP priors cost 6.7 points of registration **specifically on Zeuss**. Two engines, two
-failure shapes, one physical camera family: **treat Zeuss calibration and imagery as
-suspect** and prioritise per-camera validation when Zeuss zones underperform.
-[VERIFIED-in-the-other-fact-base: COLMAP C-20260721-15/Q-07, recorded here 2026-07-24; not
-reproduced in RealityScan]
+### 10.8 A complete per-zone invocation
 
-### 10.8 One anomaly that will self-separate
-
-Exactly one image of the 8,197-image H2024 census, `C231C2370_20231104202628_edt.jpg`, is
-**3846×2163** while the other 8,196 are **4244×2827**. A different sensor footprint means
-different intrinsics, so RealityScan will group it separately regardless of its XMP
-calibration group. [VERIFIED: FINDINGS 2026-07-25]
-
-### 10.9 A complete, runnable per-zone invocation
-
-The canonical production shape (`AlignZone.bat`, driven by `RealityScanCLI`), reduced to its
-geometry-relevant steps. Paths are of the production *shape*; substitute your own volumes.
+The production shape (`AlignZone.bat`, driven by `RealityScanCLI`) with calibration delivery,
+reduced to its geometry-relevant steps:
 
 ```bat
-:: 0. Restore calibration sidecars stripped by a previous identity harvest.
-::    (Python: camera_registry.ensure_calibration_sidecars(zone_dir))
+:: 0. The alignment stage has written <stem>.xmp beside every image of the zone and
+::    D:\workspace\transect-01\aligned_components\zone_1\zone_1.rscmd
+::    (Python: calibration_sidecars.write_sidecars + write_rscmd).
 
 :: 1. Fresh scene on the pinned instance.
 RealityScan.exe -delegateTo RS1 -newScene
 
-:: 2. Subfolder recursion is NOT the default in this build: without it a zone
-::    tree with per-camera subfolders adds 0 layer images and the flight-log
-::    import then fails err:18002 in a 25 s "successful" run.
-RealityScan.exe -delegateTo RS1 -set "appIncSubdirs=true"
-RealityScan.exe -delegateTo RS1 -addFolder "F:\na156_h2024\batched_images_by_zone\zone_3"
+:: 2. Add every image with its calibration sidecar.
+RealityScan.exe -delegateTo RS1 -execRSCMD "D:\workspace\transect-01\aligned_components\zone_1\zone_1.rscmd"
 
-:: 3. Pose priors. Params XML is regenerated per run from the log's zone tag.
+:: 3. Pose priors. The params XML is regenerated per run from the log's zone tag.
 RealityScan.exe -delegateTo RS1 -importFlightLog ^
-    "F:\na156_h2024\batched_images_by_zone\zone_3\flight_log_4Q_UTM.txt" ^
-    "F:\na156_h2024\ab_position_only\zone_3\FlightLogParams_4Q.xml"
+    "D:\workspace\transect-01\batched_images_by_zone\zone_1\flight_log_19T_UTM.txt" ^
+    "D:\workspace\transect-01\logs\FlightLogParams_19T.xml"
 
 :: 4. -align takes NO parameters in 2.x. Apply every sfm*/lis* key first.
-::    Delegated commands queue FIFO, so the sets execute before the align;
-::    they are instant and need no completion wait.
 RealityScan.exe -delegateTo RS1 -set "sfmEnableCameraPrior=true"
-RealityScan.exe -delegateTo RS1 -set "sfmDistortionModel=Division"
+RealityScan.exe -delegateTo RS1 -set "sfmDistortionModel=Brown3"
 RealityScan.exe -delegateTo RS1 -set "sfmCameraPriorWeight=10.0"
 RealityScan.exe -delegateTo RS1 -set "sfmCameraPriorWeightOrientation=10.0"
-RealityScan.exe -delegateTo RS1 -set "sfmCameraPriorAccuracyYaw=10.0"
-RealityScan.exe -delegateTo RS1 -set "sfmCameraPriorAccuracyPitch=10.0"
-RealityScan.exe -delegateTo RS1 -set "sfmCameraPriorAccuracyRoll=10.0"
 RealityScan.exe -delegateTo RS1 -set "sfmDetectorSensitivity=Ultra"
 RealityScan.exe -delegateTo RS1 -set "sfmImagesOverlap=Medium"
 :: ...plus the rest of AlignmentParams.xml, sfm*/lis* only
 
 RealityScan.exe -delegateTo RS1 -align
 
-:: 5. Flight-log import left its matched images ACTIVELY SELECTED, and
-::    selection-driven exports under -silent then export NOTHING (an XMP
-::    export finished in 0.057 s instead of 20.5 s). Clear the selection
-::    before EVERY export step, not just this one.
+:: 5. Flight-log import leaves its matched images selected; clear the selection
+::    before every export step.
 RealityScan.exe -delegateTo RS1 -deselectAllImages
 
-:: 6. Export gate (default is 5; production uses 50), save, then the
-::    pose census. XMP sidecars are written BESIDE THE IMAGES, not to the
-::    project folder.
+:: 6. Export gate, save, then the identity loop (-exportXMP per lap).
 RealityScan.exe -delegateTo RS1 -setMinComponentSize 50
-RealityScan.exe -delegateTo RS1 -save "F:\na156_h2024\components\zone_3.rsproj"
-RealityScan.exe -delegateTo RS1 -deselectAllImages
+RealityScan.exe -delegateTo RS1 -save "D:\workspace\transect-01\aligned_components\zone_1\zone_1.rsproj"
 RealityScan.exe -delegateTo RS1 -exportXMP
 ```
 
-Every delegated command in production runs through the shared `:run` subroutine
-(delegate → grace → `-waitCompleted` → grace → `-waitCompleted` → abort if the errors marker
-is non-empty). See the CLI-fundamentals document; it is omitted here for readability, **not
-because it is optional**.
+When every camera's mode is `off`, step 2 is `-set "appIncSubdirs=true"` followed by
+`-addFolder` on the zone folder. The alignment stage lowers the export gate to the zone's image
+count (at least 2) when a zone has fewer images than the configured minimum.
 
-Settings must cross the .bat boundary as `key:value` and be converted inside the workflow —
-cmd splits unquoted `;` `,` `=` and Python's `subprocess` quotes only on whitespace, which
-once meant **no flag cell had ever applied its flags** (`err:7155`, "Parsing setting
-key=value … failed"). [VERIFIED: NA167 B5, 2026-07-23]
+Every delegated command in production runs through the shared `:run` subroutine (delegate →
+grace → `-waitCompleted` → grace → `-waitCompleted` → abort if the errors marker is non-empty).
+See the CLI-fundamentals document; it is omitted here for readability, **not because it is
+optional**.
 
 ---
 

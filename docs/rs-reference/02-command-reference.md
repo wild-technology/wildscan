@@ -437,7 +437,7 @@ Note the lowercase `i` in `images` — the literal spelling is `-importHDRimages
   other path — `-add`, `-addFolder` — requires the strict `<stem>.xmp` convention beside the
   image [VERIFIED: NA167 B7].
 - Not used by this repo: the pipeline writes `<stem>.xmp` sidecars beside the images
-  instead, through `camera_registry.ensure_calibration_sidecars()`.
+  instead, through `calibration_sidecars.ensure_calibration_sidecars()`.
 
 ### `-importImageSelection`
 
@@ -1221,7 +1221,7 @@ call :run -exportSelectedComponentDir "F:\na156_h2024\merged"
   on a fresh zone, **796 of 4,540 images (17.5 %) were left with no sidecar at all**,
   including an entire 665-image component. Any re-align of an already-harvested zone then
   silently runs with a partially ungrouped camera set — two prior-test cells were confounded
-  this way. Fixed by `camera_registry.ensure_calibration_sidecars()`
+  this way. Fixed by `calibration_sidecars.ensure_calibration_sidecars()`
   [FINDINGS 2026-07-25].
 
 **Example — successive-difference membership harvest** [VERIFIED: `AlignZone.bat`]
@@ -1251,7 +1251,7 @@ because merge-scene exports are ordinal [VERIFIED: FINDINGS 2026-07-28].
   still a valid registration census, but per-camera **identity** requires `-exportXMP` in the
   original aligned scene [NA167 B10; FINDINGS 2026-07-23].
 - [VERIFIED] Ordinal sidecars are **inert as priors** — no image has an ordinal stem — and
-  `camera_registry.sanitize_and_census` deletes them quietly [B10, 2026-07-23].
+  `calibration_sidecars.sanitize_and_census` deletes them quietly [B10, 2026-07-23].
 - [VERIFIED] It can complete in a merge scene and write **nothing**: the log said "Exporting
   Registration completed in 8.758 seconds" while a sweep of the whole drive found zero
   `.xmp` written. Root cause was the **reparse-point write path** (see `-addFolder`), not
@@ -1295,9 +1295,8 @@ because merge-scene exports are ordinal [VERIFIED: FINDINGS 2026-07-28].
 
 ### `-loadColmap`
 
-Takes the path to any of the three COLMAP text files [OFFICIAL]. Repo context:
-[archive/colmap/](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/colmap/) holds retired COLMAP scripts and must not be resurrected into the active
-pipeline [ARCHITECTURE.md]. Cross-engine fact worth carrying: COLMAP on one zone **registered**
+Takes the path to any of the three COLMAP text files [OFFICIAL]. This pipeline does not
+use it. Cross-engine fact worth carrying: COLMAP on one zone **registered**
 710 frames of the Zeuss camera family but triangulated **zero** points from them — two
 engines, two failure shapes, one physical camera family
 [VERIFIED-in-the-other-fact-base, recorded 2026-07-24; not reproduced in RealityScan].
