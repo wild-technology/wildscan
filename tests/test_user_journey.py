@@ -9,7 +9,8 @@ from textual.widgets import Input, ProgressBar
 import wildscan.app as ui
 import wildscan.session as session_mod
 from tests.test_wildscan import FakeStore
-from wildscan.session import Question, RawDataScan, StageCommand
+from tests.test_wildsync_intake import build_run
+from wildscan.session import Question, StageCommand
 
 
 @pytest.fixture
@@ -19,29 +20,22 @@ def settings(monkeypatch):
     return store
 
 
-@pytest.mark.parametrize('labels', [('NA173', 'H2104'), ('', '')])
-def test_last_run_keeps_the_exact_chosen_results_folder(tmp_path, settings, labels):
+def test_last_run_keeps_the_exact_chosen_workspace_and_run_directories(tmp_path, settings):
     root = str(tmp_path / 'custom results folder')
-    session = session_mod.Session(expedition=labels[0], dive=labels[1], results_root=root)
+    runs = str(tmp_path / 'runs')
+    session = session_mod.Session(run_dirs=runs, results_root=root)
     session_mod.save_last_run(session)
     restored = session_mod.default_session()
     assert restored.results_root == root
+    assert restored.run_dirs == runs
     assert settings.data['wildscan']['results_root'] == root
 
 
-def test_previous_settings_without_results_root_keep_the_legacy_label_fallback(
-        tmp_path, settings):
-    settings.set('wildscan', 'results_base', str(tmp_path))
-    settings.set('wildscan', 'expedition', 'NA173')
-    settings.set('wildscan', 'dive', 'H2104')
-    assert session_mod.default_session().results_root == str(tmp_path / 'na173_h2104')
-
-
-@pytest.mark.parametrize('stage,arg', [('preprocess', 'p_input'),
+@pytest.mark.parametrize('stage,arg', [('intake', 'w_input'), ('preprocess', 'p_input'),
                                      ('batch', 'b_input'), ('align', 'r_input')])
 def test_standalone_image_stages_require_an_input_in_the_wizard(tmp_path, stage, arg):
     session = session_mod.Session(results_root=str(tmp_path / 'results'), enabled=[stage])
-    question = next(q for q in session_mod.build_questions(session, RawDataScan())
+    question = next(q for q in session_mod.build_questions(session)
                     if q.arg == arg)
     assert question.required and question.validate('') is not None
 
@@ -57,8 +51,8 @@ def test_align_defaults_prefer_the_current_prepared_source(tmp_path, prepared):
     session = session_mod.Session(results_root=str(results), enabled=['align'],
                                   answers={'r_input': 'old/dataset',
                                            'r_flight_log': 'old/flight_log.txt',
-                                           'r_project_label': 'OTHER_DIVE'})
-    questions = {q.arg: q for q in session_mod.build_questions(session, RawDataScan())}
+                                           'r_project_label': 'OTHER_LABEL'})
+    questions = {q.arg: q for q in session_mod.build_questions(session)}
     assert questions['r_input'].default == str(results / prepared)
     assert questions['r_flight_log'].default == ''
     assert questions['r_flight_log'].validate('') is None
@@ -75,12 +69,12 @@ def test_align_resume_discovers_each_zone_log_after_the_real_command_parser(
     zones = _batched(results)
     session = session_mod.Session(results_root=str(results), enabled=['align'], answers={
         'r_input': 'old/dataset', 'r_flight_log': 'old/flight_log.txt',
-        'r_project_label': 'OTHER_DIVE'})
-    questions = session_mod.build_questions(session, RawDataScan())
+        'r_project_label': 'OTHER_LABEL'})
+    questions = session_mod.build_questions(session)
     session.answers.update({q.arg: q.default for q in questions})
     command = session_mod.build_commands(session)[0]
     settings.set('main', 'r_flight_log', 'old/flight_log.txt')
-    settings.set('main', 'r_project_label', 'OTHER_DIVE')
+    settings.set('main', 'r_project_label', 'OTHER_LABEL')
     monkeypatch.setattr(driver, 'SettingsStore', lambda: settings)
     monkeypatch.setattr('builtins.input', lambda *args: pytest.fail('Unexpected prompt'))
     params = driver.initialize_parameters({'RealityScan Alignment': RealityScanAlignment(QUIET)})
@@ -106,7 +100,11 @@ def test_explicit_external_alignment_input_keeps_its_own_navigation(
         tmp_path, settings, monkeypatch, navigation):
     import main as driver
     from modules.realityscan_interface.realityscan_interface import RealityScanAlignment
-    from tests.test_align_and_rollback_safety import LOG_HEADER, QUIET, _module_with_stub
+    from tests.test_align_and_rollback_safety import (
+        LOG_HEADER,
+        QUIET,
+        _module_with_stub,
+    )
 
     results = tmp_path / 'results'
     old_raw = results / 'raw_images'
@@ -121,7 +119,7 @@ def test_explicit_external_alignment_input_keeps_its_own_navigation(
         nav.write_text(LOG_HEADER, encoding='utf-8')
     session = session_mod.Session(results_root=str(results), enabled=['align'])
     session.answers.update({q.arg: q.default for q in
-                            session_mod.build_questions(session, RawDataScan())})
+                            session_mod.build_questions(session)})
     # An operator can override detected defaults with valid external inputs.
     session.answers['r_input'] = str(external)
     session.answers['r_flight_log'] = str(nav) if navigation == 'explicit' else ''
@@ -144,9 +142,7 @@ def test_explicit_external_alignment_input_keeps_its_own_navigation(
 @pytest.mark.parametrize('size', [(100, 40), (120, 50)])
 def test_intake_actions_and_read_only_status_are_available(
         tmp_path, settings, monkeypatch, size):
-    source = tmp_path / 'images'
-    source.mkdir()
-    (source / 'sample.jpg').write_bytes(b'fixture')
+    run = build_run(tmp_path)
     results = tmp_path / 'results'
     results.mkdir()
 
@@ -164,11 +160,12 @@ def test_intake_actions_and_read_only_status_are_available(
             screen = app.screen
             for name in ('s-continue', 's-status'):
                 assert screen.query_one('#' + name).region.bottom <= size[1] - 1
-            screen.query_one('#s-rawimages', Input).value = str(source)
+            screen.query_one('#s-runs', Input).value = str(run)
             await pilot.click('#s-status')
             await pilot.pause()
             assert isinstance(app.screen, ui.StatusScreen)
-            assert app.screen.query_one('#st-pipeline').row_count == 9
+            assert app.screen.query_one('#st-pipeline').row_count == len(
+                session_mod.ALL_STAGES) == 8
             assert 'No final components' in str(app.screen.query_one('#st-note').content)
             app.screen.action_back()
             await pilot.pause()
@@ -179,78 +176,57 @@ def test_intake_actions_and_read_only_status_are_available(
     asyncio.run(drive())
 
 
+@pytest.mark.parametrize('field', ['missing', 'not_a_run'])
 def test_invalid_intake_path_has_visible_feedback_without_creating_results(
-        tmp_path, settings):
+        tmp_path, settings, field):
     results = tmp_path / 'results'
+    (tmp_path / 'not_a_run').mkdir()
 
     async def drive():
         app = ui.WildScanApp(str(results))
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             screen = app.screen
-            screen.query_one('#s-rawimages').value = str(tmp_path / 'missing')
+            screen.query_one('#s-runs').value = str(tmp_path / field)
             await pilot.click('#s-continue')
             await pilot.pause()
             assert app.screen is screen
             problem = screen.query_one('#s-problem')
-            assert 'Images folder' in str(problem.content)
+            assert 'Run directory' in str(problem.content)
             assert problem.region.bottom <= 39
             assert not results.exists()
 
     asyncio.run(drive())
 
 
-def test_automatic_results_name_tracks_typing_but_preserves_manual_folder(
-        tmp_path, settings):
-    async def drive():
-        app = ui.WildScanApp()
-        async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.pause()
-            screen = app.screen
-            for value in ('N', 'NA', 'NA173'):
-                screen.query_one('#s-expedition').value = value
-                await pilot.pause()
-            screen.query_one('#s-dive').value = 'H2104'
-            await pilot.pause()
-            assert screen.query_one('#s-results').value.endswith('na173_h2104')
-            manual = str(tmp_path / 'chosen')
-            screen.query_one('#s-results').value = manual
-            screen.query_one('#s-dive').value = 'H2105'
-            await pilot.pause()
-            assert screen.query_one('#s-results').value == manual
-
-    asyncio.run(drive())
-
-
 def test_detected_question_defaults_and_summary_back_preserve_current_answers(
         tmp_path, settings):
-    source = tmp_path / 'images'
-    source.mkdir()
+    run = build_run(tmp_path)
 
     async def drive():
         app = ui.WildScanApp(str(tmp_path / 'results'))
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
-            app.session.enabled = ['preprocess']
-            app.session.raw_images_dir = str(source)
-            app.session.answers = {'p_input': 'old/dataset'}
-            app.questions = [q for q in session_mod.build_questions(app.session, RawDataScan())
-                             if q.arg == 'p_input']
+            app.session.enabled = ['intake']
+            app.session.run_dirs = str(run)
+            app.session.answers = {'w_input': 'old/dataset'}
+            app.questions = [q for q in session_mod.build_questions(app.session)
+                             if q.arg == 'w_input']
             wizard = ui.WizardScreen()
             app.push_screen(wizard)
             await pilot.pause()
-            assert wizard.query_one('#w-answer', Input).value == str(source)
+            assert wizard.query_one('#w-answer', Input).value == str(run)
             wizard._commit_and(1)
             await pilot.pause()
             assert isinstance(app.screen, ui.SummaryScreen)
             app.screen.action_back()
             await pilot.pause()
             assert app.screen is wizard and wizard.index == 0
-            assert wizard._question().arg == 'p_input'
+            assert wizard._question().arg == 'w_input'
             wizard._commit_and(1)
             await pilot.pause()
             assert isinstance(app.screen, ui.SummaryScreen)
-            assert app.session.answers['p_input'] == str(source)
+            assert app.session.answers['w_input'] == str(run)
 
     asyncio.run(drive())
 
@@ -258,7 +234,7 @@ def test_detected_question_defaults_and_summary_back_preserve_current_answers(
 @pytest.mark.parametrize('value', ['1.5', 'inf', 'nan'])
 def test_integer_question_rejects_values_the_driver_cannot_parse(tmp_path, value):
     session = session_mod.Session(results_root=str(tmp_path), enabled=['batch'])
-    question = next(q for q in session_mod.build_questions(session, RawDataScan())
+    question = next(q for q in session_mod.build_questions(session)
                     if q.arg == 'b_target_images')
     assert question.value_type is int
     assert question.validate(value) is not None
@@ -272,7 +248,6 @@ def test_run_planning_failure_stays_visible_and_can_return_to_edit(
         raise OSError('results folder is not writable')
 
     monkeypatch.setattr(ui, 'build_commands', fail)
-    monkeypatch.setattr(ui, 'write_camera_records', lambda session: None)
     monkeypatch.setattr(ui.CommandRunner, 'start', lambda *args: pytest.fail('Unexpected launch'))
 
     async def drive():
@@ -305,14 +280,14 @@ def test_review_uses_plain_labels_and_rejects_invalid_automatic_continue(
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             app.session.enabled = ['publish']
-            app.session.answers['i_mpx'] = '3'
-            app.questions = [Question('extract', 'i_mpx', 'Long description', 'number',
-                                      label='Image megapixels')]
+            app.session.answers['w_declination'] = '3'
+            app.questions = [Question('intake', 'w_declination', 'Long description',
+                                      'number', label='Magnetic declination (deg)')]
             app.push_screen(ui.SummaryScreen())
             await pilot.pause()
             screen = app.screen
             text = str(screen.query_one('#sum-params').content)
-            assert 'Image megapixels: 3' in text and 'i_mpx' not in text
+            assert 'Magnetic declination (deg): 3' in text and 'w_declination' not in text
             assert 'preview only' in text
             assert screen.query_one('#sum-run').region.bottom <= 39
             screen.query_one('#sum-auto').value = 'maybe'
@@ -337,7 +312,6 @@ def test_retry_resets_previous_operation_progress(tmp_path, settings, monkeypatc
 
     monkeypatch.setattr(ui, 'CommandRunner', FakeRunner)
     monkeypatch.setattr(ui, 'build_commands', lambda session: [StageCommand('sample stage', ['sample.py'], {})])
-    monkeypatch.setattr(ui, 'write_camera_records', lambda session: None)
 
     async def drive():
         app = ui.WildScanApp(str(tmp_path))

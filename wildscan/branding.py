@@ -2,7 +2,7 @@
 
 One place for every colour, glyph and the wordmark, so the app reads as one
 system. Palette: abyssal navy field, bioluminescent teal primary, coral
-accent, sand for warm highlights - the expedition look, readable on any
+accent, sand for warm highlights - the deep-water look, readable on any
 terminal that supports truecolor and degrading sanely on 256-colour.
 """
 from __future__ import annotations

@@ -2,7 +2,7 @@
 """WildScan portal tests: RC_Main's interaction, preserved.
 
 The portal contract under test:
-    - raw-data auto-detection (videos, nav, imagery) feeding prefills
+    - Wild Sync run-directory detection and the camera scan feeding prefills
     - stage checkbox with resume-aware pre-selection
     - RC_Main's question order and disable_when_module_active semantics
     - last-run answers becoming the next session's defaults
@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import sys
 
 import pytest
@@ -26,10 +27,18 @@ sys.path.insert(0, REPO_ROOT)
 
 pytest.importorskip("textual")
 
-import wildscan.session as session_mod  # noqa: E402
-from wildscan.session import (Session, build_commands, build_questions,  # noqa: E402
-                              default_enabled, scan_raw_data)
-from wildscan.workspace import Workspace  # noqa: E402
+import wildscan.session as session_mod
+from tests.test_wildsync_intake import FRAMES, RUN_ID, build_run
+from wildscan.session import (
+    RunDataScan,
+    Session,
+    build_commands,
+    build_questions,
+    default_enabled,
+    scan_cameras,
+    scan_run_data,
+)
+from wildscan.workspace import Workspace
 
 
 class FakeStore:
@@ -54,8 +63,8 @@ def store(monkeypatch):
 
 def make_workspace(tmp_path, *, stage: str) -> Workspace:
     """A results root advanced through the pipeline up to `stage`."""
-    ws = tmp_path / "cruise"
-    order = ["empty", "extract", "georeference", "batch", "align",
+    ws = tmp_path / "workspace"
+    order = ["empty", "images", "intake", "batch", "align",
              "merge", "model", "export"]
     upto = order.index(stage)
     if upto >= 1:
@@ -64,15 +73,18 @@ def make_workspace(tmp_path, *, stage: str) -> Workspace:
         for i in range(4):
             (raw / f"img_{i:03d}.jpg").write_bytes(b"j")
     if upto >= 2:
-        # Cover ALL four images: the census's coverage rule (2026-08-07,
-        # workspace_census._detect_georeference) reports 'partial' when the
+        # Cover ALL four images: the census's coverage rule
+        # (workspace_census._detect_georeference) reports 'partial' when the
         # log covers under half of raw_images - a 1-row log here made the
-        # 'georeference is done' premise of the resume tests false. The
-        # rule is deliberate (silence-is-not-success); the fixture was
-        # stale, dormant while textual was uninstalled on this box.
+        # 'intake is done' premise of the resume tests false. The rule is
+        # deliberate (silence-is-not-success).
         (ws / "raw_images" / "flight_log_4Q_UTM.txt").write_text(
             "filename;X (East);Y (North);Alt\n"
             + "".join(f"img_{i:03d}.jpg;1;2;3\n" for i in range(4)),
+            encoding="utf-8")
+        (ws / "raw_images" / "wildsync_intake.json").write_text(json.dumps({
+            "schema": 1, "status": "complete", "variant": "card",
+            "sources": [{"run_id": RUN_ID}], "images": {"matched": 4}}),
             encoding="utf-8")
     if upto >= 3:
         for zone in ("zone_1", "zone_2"):
@@ -120,169 +132,246 @@ def make_workspace(tmp_path, *, stage: str) -> Workspace:
     return Workspace(ws)
 
 
-def make_raw_data(tmp_path):
-    raw = tmp_path / "cruise_data"
-    (raw / "video").mkdir(parents=True)
-    (raw / "nav").mkdir()
-    (raw / "video" / "dive_A.mov").write_bytes(b"v")
-    (raw / "video" / "dive_B.mov").write_bytes(b"v")
-    (raw / "nav" / "H2024_final_datatable.csv").write_text("t,x,y\n",
-                                                           encoding="utf-8")
-    (raw / "nav" / "raw_nav.csv").write_text("t,x,y\n", encoding="utf-8")
-    return raw
+def make_runs(tmp_path):
+    """A folder holding two Wild Sync run directories (same frames, two ids)."""
+    root = tmp_path / "runs"
+    root.mkdir()
+    build_run(root, RUN_ID)
+    build_run(root, "260820_1930_transect-02")
+    return root
+
+
+def run_ids(scan):
+    return [run.run_id for run in scan.runs]
 
 
 # -------------------------------------------------------------- detection
 
-def test_raw_data_scan_finds_video_nav_imagery(tmp_path):
-    raw = make_raw_data(tmp_path)
-    (raw / "stills").mkdir()
-    (raw / "stills" / "a.jpg").write_bytes(b"j")
-    scan = scan_raw_data(raw)
-    assert len(scan.videos) == 2
-    assert scan.nav_files[0].name == "H2024_final_datatable.csv", (
-        "final_datatable must be preferred")
-    assert scan.image_count == 1
+def test_a_single_run_directory_is_detected_by_its_structure(tmp_path):
+    run = build_run(tmp_path)
+    scan = scan_run_data(run)
+    assert scan.problems == []
+    assert [r.path for r in scan.runs] == [run]
+    assert scan.runs[0].has_run_json
+    assert scan.runs[0].run_id == RUN_ID
 
 
-@pytest.mark.parametrize('location', ['', '   ', '\t'])
-def test_empty_raw_data_path_does_not_scan_current_directory(tmp_path, monkeypatch, location):
-    (tmp_path / 'frame.jpg').write_bytes(b'image')
-    (tmp_path / 'dive.mov').write_bytes(b'video')
+def test_a_folder_of_runs_yields_every_run_in_name_order(tmp_path):
+    root = make_runs(tmp_path)
+    (root / "notes").mkdir()
+    (root / "notes" / "readme.txt").write_text("not a run", encoding="utf-8")
+    scan = scan_run_data(root)
+    assert scan.problems == []
+    assert run_ids(scan) == [RUN_ID, "260820_1930_transect-02"]
+
+
+def test_several_paths_and_a_run_named_twice_are_taken_once(tmp_path):
+    root = make_runs(tmp_path)
+    first = root / RUN_ID
+    scan = scan_run_data(f"{first};{root};{first}")
+    assert run_ids(scan) == [RUN_ID, "260820_1930_transect-02"]
+
+
+def test_a_run_without_run_json_is_still_a_run_but_flagged(tmp_path):
+    run = build_run(tmp_path)
+    (run / "run.json").unlink()
+    scan = scan_run_data(run)
+    assert run_ids(scan) == [RUN_ID]
+    assert not scan.runs[0].has_run_json
+    assert "(no run.json)" in scan.summary_lines()[0]
+
+
+def test_a_folder_that_is_not_a_run_is_reported_not_scanned(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    (empty / "cam1").mkdir()                # a node folder without its log
+    (empty / "cam1" / "Cam1_x.jpg").write_bytes(b"j")
+    scan = scan_run_data(empty)
+    assert scan.runs == []
+    assert len(scan.problems) == 1
+    assert "neither a Wild Sync run directory" in scan.problems[0]
+
+
+def test_a_missing_path_is_a_problem(tmp_path):
+    scan = scan_run_data(tmp_path / "missing")
+    assert scan.runs == []
+    assert "not found" in scan.problems[0]
+
+
+@pytest.mark.parametrize('location', ['', '   ', '\t', ' ; '])
+def test_empty_run_path_does_not_scan_current_directory(tmp_path, monkeypatch, location):
+    build_run(tmp_path)
     monkeypatch.chdir(tmp_path)
-    assert scan_raw_data(location) == session_mod.RawDataScan()
+    assert scan_run_data(location) == RunDataScan()
+
+
+def test_camera_scan_counts_each_variant_of_both_ilx_cameras(tmp_path):
+    run = build_run(tmp_path)
+    cameras = {c.node: c for c in scan_run_data(run).runs[0].cameras}
+    assert sorted(cameras) == ["cam1", "cam2"]
+    assert cameras["cam1"].camera == "ilx_left"
+    assert cameras["cam2"].camera == "ilx_right"
+    for cam in cameras.values():
+        assert (cam.card, cam.review, cam.raw) == (len(FRAMES),) * 3
+        assert cam.hidden_files == 0
+    line = cameras["cam1"].summary_line()
+    assert "cam1 (ilx_left)" in line
+    assert "3 card, 3 review, 3 RAW" in line and "not an input" in line
+
+
+def test_camera_scan_counts_differ_per_variant_and_keep_the_frame_id_dot(tmp_path):
+    run = build_run(tmp_path)
+    node = run / "cam1"
+    (node / f"Cam1_{FRAMES[0]}.jpg").unlink()                 # one review gone
+    (node / f"Cam1_{FRAMES[1]}.ARW").unlink()
+    (node / f"Cam1_{FRAMES[2]}.ARW").unlink()                 # two RAW gone
+    (node / "Cam1_20260820_192544.42.card.jpeg").write_bytes(b"j")  # extra card
+    cam1 = next(c for c in scan_cameras(run) if c.node == "cam1")
+    assert (cam1.card, cam1.review, cam1.raw) == (4, 2, 1)
+    cam2 = next(c for c in scan_cameras(run) if c.node == "cam2")
+    assert (cam2.card, cam2.review, cam2.raw) == (3, 3, 3)
+
+
+def test_hidden_files_are_never_counted_as_frames(tmp_path):
+    run = build_run(tmp_path)
+    node = run / "cam2"
+    twins = [f"._{p.name}" for p in node.iterdir() if p.is_file()]
+    for name in twins:
+        (node / name).write_bytes(b"\x00\x05\x16\x07")      # AppleDouble stub
+    cam2 = next(c for c in scan_cameras(run) if c.node == "cam2")
+    assert (cam2.card, cam2.review, cam2.raw) == (3, 3, 3)
+    assert cam2.hidden_files == len(twins) == 13
+    assert scan_run_data(run).problems == []
+
+
+def test_a_node_outside_the_registry_is_named_as_unrecognised(tmp_path):
+    run = build_run(tmp_path)
+    shutil.copytree(run / "cam1", run / "cam9")
+    cams = {c.node: c for c in scan_cameras(run)}
+    assert cams["cam9"].camera == ""
+    assert "matches no camera" in cams["cam9"].summary_line()
 
 
 def test_resume_aware_stage_preselection(tmp_path):
     ws = make_workspace(tmp_path, stage="align")
     enabled = default_enabled(ws)
-    for done in ("extract", "georeference", "batch", "align"):
+    for done in ("intake", "batch", "align"):
         assert done not in enabled, f"{done} is done - must start unticked"
     for todo in ("merge", "model", "export", "publish"):
         assert todo in enabled
 
 
+def test_intake_status_comes_from_its_manifest(tmp_path):
+    ws = make_workspace(tmp_path, stage="images")
+    assert session_mod.stage_statuses(ws)["intake"].status == "pending"
+    ws = make_workspace(tmp_path / "next", stage="intake")
+    status = session_mod.stage_statuses(ws)["intake"]
+    assert status.status == "done"
+    assert status.summary == "4 card images from 1 run(s)"
+    (ws.raw_images / "wildsync_intake.json").write_text("{", encoding="utf-8")
+    assert session_mod.stage_statuses(ws)["intake"].status == "partial"
+
+
+def test_the_stage_table_follows_the_module_chain(tmp_path):
+    assert session_mod.ALL_STAGES == [
+        "intake", "preprocess", "batch", "align",
+        "merge", "model", "export", "publish"]
+    assert [session_mod.MODULE_DISPLAY[k] for k in session_mod.CHAIN_STAGES] == [
+        "Wild Sync Intake", "Preprocess Images", "Batch Directory",
+        "RealityScan Alignment"]
+    registry = session_mod._module_registry()
+    assert [registry[k].name for k in session_mod.CHAIN_STAGES] == [
+        session_mod.MODULE_DISPLAY[k] for k in session_mod.CHAIN_STAGES]
+    assert session_mod.STAGE_TITLES["intake"] == "Wild Sync Intake"
+    assert set(session_mod.STAGE_TITLES) == set(session_mod.ALL_STAGES)
+
+
 # -------------------------------------------------------------- questions
 
-def _session(tmp_path, enabled, data=None) -> Session:
-    s = Session(expedition="NA156", dive="H2024",
-                cruise_folder=str(data) if data else "",
+def _session(tmp_path, enabled, runs=None) -> Session:
+    s = Session(run_dirs=str(runs) if runs else "",
                 results_root=str(tmp_path / "results"))
     s.enabled = enabled
     return s
 
 
 def test_questions_follow_module_order_and_use_descriptions(tmp_path):
-    s = _session(tmp_path, ["preprocess", "batch", "align"],
-                 make_raw_data(tmp_path))
-    qs = [q for q in build_questions(s, scan_raw_data(s.cruise_folder))
-          if q.stage != "cameras"]
+    s = _session(tmp_path, ["intake", "preprocess", "batch", "align"],
+                 build_run(tmp_path))
+    qs = build_questions(s)
     stages = [q.stage for q in qs]
-    assert stages == sorted(stages, key=["preprocess", "batch", "align"].index), (
+    assert stages == sorted(stages, key=session_mod.CHAIN_STAGES.index), (
         "questions must arrive in module order (RC_Main)")
-    images = next(q for q in qs if q.arg == "p_input")
-    assert images.required and images.kind == "path"
-    assert "images to preprocess" in images.prompt.lower(), (
+    assert stages[0] == "intake"
+    runs = next(q for q in qs if q.arg == "w_input")
+    assert runs.required and runs.kind == "rundirs"
+    assert "Wild Sync run directory" in runs.prompt, (
         "the prompt is the parameter's own description")
+    asked = {q.arg for q in qs}
+    assert {"w_input", "w_variant", "w_calibration", "w_declination"} <= asked
+    assert not asked & {"p_input", "b_input", "r_input"}, (
+        "an enabled intake hands the downstream stages their input")
 
 
-def test_detection_prefills_the_answers(tmp_path):
-    raw = make_raw_data(tmp_path)
-    (raw / "stills").mkdir()
-    (raw / "stills" / "Cam1_20260820_192542.42.jpg").write_bytes(b"j")
-    s = _session(tmp_path, ["preprocess"], raw)
-    qs = build_questions(s, scan_raw_data(raw))
-    images = next(q for q in qs if q.arg == "p_input")
-    assert images.default == str(raw / "stills")
+def test_the_run_directory_prefills_the_intake_question(tmp_path):
+    run = build_run(tmp_path)
+    s = _session(tmp_path, ["intake"], run)
+    qs = build_questions(s)
+    assert next(q for q in qs if q.arg == "w_input").default == str(run)
 
 
-def test_explicit_lines_beat_the_cruise_scan(tmp_path):
-    """The separate Raw Images line takes priority over anything found by
-    scanning the cruise folder."""
-    raw = make_raw_data(tmp_path)
-    (raw / "scanned").mkdir()
-    (raw / "scanned" / "Cam1_20260820_192542.42.jpg").write_bytes(b"j")
-    stills = tmp_path / "stills"
-    stills.mkdir()
-    (stills / "Cam2_20260820_192542.42.jpg").write_bytes(b"j")
-    s = _session(tmp_path, ["preprocess"], raw)
-    s.raw_images_dir = str(stills)
-    qs = build_questions(s, scan_raw_data(raw))
-    assert next(q for q in qs if q.arg == "p_input").default == str(stills)
+def test_intake_questions_validate_their_answers(tmp_path):
+    run = build_run(tmp_path)
+    qs = {q.arg: q for q in build_questions(_session(tmp_path, ["intake"], run))}
+    assert qs["w_input"].validate(str(run)) is None
+    assert qs["w_input"].validate(f"{run};{tmp_path / 'missing'}") is not None
+    not_a_run = tmp_path / "not_a_run"
+    not_a_run.mkdir()
+    assert qs["w_input"].validate(str(not_a_run)) is not None
+    assert qs["w_input"].validate("") == "this one is required"
+    assert qs["w_variant"].choices == ("card", "review")
+    assert qs["w_variant"].default == "card"
+    assert qs["w_variant"].validate("REVIEW") is None
+    assert "card, review" in qs["w_variant"].validate("raw")
+    assert qs["w_calibration"].choices == ("auto", "prior", "groups", "off")
+    assert qs["w_calibration"].default == "auto"
+    assert qs["w_calibration"].validate("bogus") is not None
+    assert qs["w_declination"].validate("-14.5") is None
+    assert qs["w_declination"].validate("east") is not None
 
 
-def test_camera_parsing_recognises_registry_families(tmp_path):
-    from wildscan.session import scan_cameras
-    stills = tmp_path / "stills"
-    stills.mkdir()
-    (stills / "Cam1_20260820_192542.42.jpg").write_bytes(b"j")  # left - known
-    (stills / "Cam2_20260820_192542.42.jpg").write_bytes(b"j")  # right - known
-    (stills / "U9990001_x.jpg").write_bytes(b"j")    # NOT in registry
-    scan = scan_cameras(stills)
-    assert "cam1" in scan.known and "cam2" in scan.known
-    assert "u" in scan.unknown, "unrecognised prefixes must surface"
-
-
-def test_unknown_camera_asks_name_lever_and_tilt(tmp_path):
-    """Unknown cameras may carry optional notes; measured rig values are
-    never required or invented from a filename prefix."""
-    stills = tmp_path / "stills"
-    stills.mkdir()
-    (stills / "U9990001_x.jpg").write_bytes(b"j")
-    s = _session(tmp_path, ["georeference"])
-    s.raw_images_dir = str(stills)
-    qs = build_questions(s, scan_raw_data(""))
-    cam_qs = {q.arg: q for q in qs if q.stage == "cameras"}
-    assert "Upper (fisheye; 16mm)" in cam_qs["cam_u_name"].prompt
-    assert {'cam_u_name', 'cam_u_lever', 'cam_u_tilt'} <= set(cam_qs)
-    assert all(not q.required and q.default == '' and q.validate('') is None
-               for q in cam_qs.values())
-
-
-def test_known_cameras_ask_nothing(tmp_path):
-    stills = tmp_path / "stills"
-    stills.mkdir()
-    (stills / "Cam1_20260820_192542.42.jpg").write_bytes(b"j")
+def test_stages_after_intake_prefill_from_the_workspace(tmp_path):
+    results = tmp_path / "results"
+    (results / "raw_images").mkdir(parents=True)
     s = _session(tmp_path, ["preprocess"])
-    s.raw_images_dir = str(stills)
-    qs = build_questions(s, scan_raw_data(""))
-    assert not [q for q in qs if q.stage == "cameras"], (
-        "recognised families have priors on file - no questions")
-
-
-def test_camera_answers_never_reach_main_py(tmp_path):
-    s = _session(tmp_path, ["preprocess"])
-    s.answers = {"p_input": "D:/x", "cam_u_name": "Upper (fisheye; 16mm)",
-                 "cam_u_lever": "1.0/0.0/1.0", "cam_u_tilt": "45"}
-    chain = build_commands(s)[0]
-    argv = " ".join(chain.argv)
-    assert "--p_input" in argv
-    assert "cam_u" not in argv, (
-        "camera records are portal data, not pipeline arguments")
+    qs = build_questions(s)
+    assert next(q for q in qs if q.arg == "p_input").default == str(
+        results / "raw_images")
+    assert not [q for q in qs if q.arg.startswith("w_")]
 
 
 def test_disable_when_module_active_suppresses_redundant_questions(tmp_path):
     """RC_Main semantics: an enabled upstream module answers for you."""
     with_batch = _session(tmp_path, ["batch", "align"])
-    qs = {q.arg for q in build_questions(with_batch, scan_raw_data(""))}
+    qs = {q.arg for q in build_questions(with_batch)}
     assert "r_input" not in qs, "Batch Directory hands alignment its input"
     assert "r_flight_log" not in qs
 
     align_alone = _session(tmp_path, ["align"])
-    qs = {q.arg for q in build_questions(align_alone, scan_raw_data(""))}
+    qs = {q.arg for q in build_questions(align_alone)}
     assert "r_input" in qs, "without batch, alignment must ask"
 
 
 def test_last_run_answers_are_the_new_defaults(tmp_path, store):
     s = _session(tmp_path, ["batch"])
+    s.run_dirs = str(tmp_path / "runs")
     s.answers["b_target_images"] = "2500"
     session_mod.save_last_run(s)
     reloaded = session_mod.default_session()
-    assert reloaded.expedition == "NA156"
-    assert reloaded.dive == "H2024"
+    assert reloaded.run_dirs == str(tmp_path / "runs")
+    assert reloaded.results_root == str(tmp_path / "results")
     assert reloaded.answers.get("b_target_images") == "2500"
-    qs = build_questions(_session_with_answers(tmp_path, reloaded.answers),
-                         scan_raw_data(""))
+    qs = build_questions(_session_with_answers(tmp_path, reloaded.answers))
     target = next(q for q in qs if q.arg == "b_target_images")
     assert target.default == "2500", "the last run must prefill the next"
 
@@ -296,18 +385,61 @@ def _session_with_answers(tmp_path, answers) -> Session:
 # --------------------------------------------------------------- commands
 
 def test_chain_runs_as_one_invocation_preserving_handoff(tmp_path):
-    s = _session(tmp_path, ["preprocess", "batch", "align"])
-    s.answers = {"p_input": "D:/x", "b_flight_log_path": "D:/nav.txt"}
+    run = build_run(tmp_path)
+    s = _session(tmp_path, ["intake", "preprocess", "batch", "align"], run)
+    s.answers = {"w_input": str(run), "b_flight_log_path": "D:/nav.txt"}
     commands = build_commands(s)
     chain = commands[0]
     assert chain.env["RS_MODULES"] == (
-        "Preprocess Images,Batch Directory,RealityScan Alignment"), (
+        "Wild Sync Intake,Preprocess Images,Batch Directory,"
+        "RealityScan Alignment"), (
         "chained modules MUST share one main.py process - the in-process "
         "hand-off is the pipeline's current data handling")
     argv = " ".join(chain.argv)
-    assert chain.argv[chain.argv.index('--p_input') + 1] == os.path.abspath('D:/x')
+    assert chain.argv[chain.argv.index('--w_input') + 1] == str(run)
     assert "--r_display_output false" in argv, "console display forced off"
+    assert chain.stages == ("intake", "preprocess", "batch", "align")
+    assert chain.stage == ("Wild Sync Intake + Preprocess Images + "
+                           "Batch Directory + RealityScan Alignment")
     assert chain.needs_realityscan
+
+
+def test_intake_command_passes_the_modules_own_flags(tmp_path, monkeypatch):
+    runs = make_runs(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    s = Session(run_dirs="runs", results_root="results", enabled=["intake"])
+    s.answers = {"w_input": f"runs/{RUN_ID};runs/260820_1930_transect-02",
+                 "w_variant": "review", "w_calibration": "groups",
+                 "w_declination": "-14.5", "w_assert_focal": "true",
+                 "w_heading_source": "yaw", "w_min_match_rate": "90",
+                 "p_input": "ignored"}
+    command = build_commands(s)[0]
+    results = tmp_path / "results"
+    flags = {
+        "--output_dir": str(results),
+        "--continue_automatically": "true",
+        "--w_input": f"{runs / RUN_ID};{runs / '260820_1930_transect-02'}",
+        "--w_variant": "review", "--w_calibration": "groups",
+        "--w_declination": "-14.5", "--w_assert_focal": "true",
+        "--w_heading_source": "yaw", "--w_min_match_rate": "90",
+    }
+    assert command.argv[0] == sys.executable
+    assert command.argv[1].endswith("main.py")
+    assert dict(zip(command.argv[2::2], command.argv[3::2])) == flags
+    assert command.env["RS_MODULES"] == "Wild Sync Intake"
+    assert not command.needs_realityscan
+    assert command.stages == ("intake",)
+    assert command.workspace == str(results)
+    assert s.run_dirs == str(runs), "the session's run directory is anchored"
+
+
+def test_intake_flags_match_the_module_parameters():
+    module = session_mod._module_registry()["intake"]
+    flags = {p.cli_long: p.cli_short for p in module.get_parameters().values()}
+    assert flags["w_input"] == "w_i" and flags["w_variant"] == "w_v"
+    assert flags["w_calibration"] == "w_cal" and flags["w_declination"] == "w_d"
+    assert {"w_input", "w_variant", "w_calibration", "w_declination"} <= (
+        session_mod.chain_arg_names(["intake"]))
 
 
 def test_post_stages_are_separate_gated_commands(tmp_path):
@@ -320,6 +452,7 @@ def test_post_stages_are_separate_gated_commands(tmp_path):
     assert "--pair_gate overlap" in merge
     assert "--loss_tolerance 0.0025" in merge
     assert "--scale_gate true" in merge
+    assert "--name results_Assembly" in merge
 
 
 def test_export_runs_through_the_python_driver(tmp_path):
@@ -430,6 +563,7 @@ def test_components_join_scale_models_exports(tmp_path):
 def test_portal_walks_session_to_stage_pick(tmp_path, store):
     from wildscan.app import StagePickScreen, WildScanApp
 
+    run = build_run(tmp_path)
     results = tmp_path / "results"
 
     async def drive():
@@ -437,17 +571,23 @@ def test_portal_walks_session_to_stage_pick(tmp_path, store):
         async with app.run_test(size=(120, 50)) as pilot:
             await pilot.pause()
             screen = app.screen
-            screen.query_one("#s-expedition").value = "NA156"
-            screen.query_one("#s-dive").value = "H2024"
+            screen.query_one("#s-runs").value = str(run)
             screen.query_one("#s-results").value = str(results)
-            await pilot.pause()
+            await pilot.pause(0.5)
+            preview = str(screen.query_one("#s-detect").content)
+            assert f"run {RUN_ID}" in preview
+            assert "cam1 (ilx_left): 3 card, 3 review, 3 RAW" in preview
+            assert "cam2 (ilx_right): 3 card, 3 review, 3 RAW" in preview
             await pilot.click("#s-continue")
             await pilot.pause()
             assert isinstance(app.screen, StagePickScreen)
             picker = app.screen.query_one("#stage-pick")
-            # One option per stage: preprocess, batch, align, merge, model,
-            # export, publish (extract and georeference were removed).
-            assert picker.option_count == len(session_mod.ALL_STAGES) == 7
+            # One option per stage: intake, preprocess, batch, align, merge,
+            # model, export, publish.
+            assert picker.option_count == len(session_mod.ALL_STAGES) == 8
+            assert picker.get_option_at_index(0).value == "intake"
+            assert "Wild Sync Intake" in str(picker.get_option_at_index(0).prompt)
+            assert "intake" in picker.selected
             assert results.is_dir(), "the results root must be auto-created"
     asyncio.run(drive())
 
@@ -473,20 +613,19 @@ def test_run_persists_anchored_source_paths_before_launch(tmp_path, store, monke
         async with app.run_test(size=(120, 50)) as pilot:
             await pilot.pause()
             app.session.results_root = 'results'
-            app.session.raw_images_dir = 'raw'
-            app.session.video_path = 'raw/clip.mov'
-            app.session.enabled = ['preprocess']
-            app.session.answers = {'p_input': 'raw',
+            app.session.run_dirs = 'runs'
+            app.session.enabled = ['intake']
+            app.session.answers = {'w_input': 'runs;more/runs',
                                    'r_input': 'zones', 'r_flight_log': 'nav.csv'}
             app.push_screen(app_mod.RunScreen())
             await pilot.pause()
             assert len(launches) == 1
-            assert store.data['wildscan']['raw_images_dir'] == str(tmp_path / 'raw')
-            assert store.data['wildscan']['video_path'] == str(tmp_path / 'raw' / 'clip.mov')
-            assert store.data['wildscan']['answers']['p_input'] == str(tmp_path / 'raw')
+            assert store.data['wildscan']['run_dirs'] == str(tmp_path / 'runs')
+            assert store.data['wildscan']['answers']['w_input'] == (
+                str(tmp_path / 'runs') + ';' + str(tmp_path / 'more' / 'runs'))
             assert store.data['wildscan']['answers']['r_input'] == str(tmp_path / 'zones')
             assert store.data['wildscan']['answers']['r_flight_log'] == str(tmp_path / 'nav.csv')
-            assert store.data['wildscan']['results_base'] == str(tmp_path)
+            assert store.data['wildscan']['results_root'] == str(tmp_path / 'results')
     asyncio.run(drive())
 
 
@@ -514,7 +653,6 @@ def test_failed_console_stage_retries_current_command(tmp_path, store, monkeypat
 
     monkeypatch.setattr(app_mod, "CommandRunner", FakeRunner)
     monkeypatch.setattr(app_mod, "build_commands", lambda session: commands)
-    monkeypatch.setattr(app_mod, "write_camera_records", lambda session: None)
 
     async def drive():
         app = app_mod.WildScanApp(str(tmp_path))
@@ -540,87 +678,58 @@ def test_resume_ignores_malformed_interruption_stages(tmp_path, stages):
     assert "model" in default_enabled(Workspace(tmp_path))
 
 
-def test_intake_detection_debounces_and_scopes_source_scans(tmp_path, store, monkeypatch):
+def test_intake_detection_debounces_and_scopes_the_run_scan(tmp_path, store, monkeypatch):
     import wildscan.app as app_mod
-    calls = {'cruise': [], 'raw_images': [], 'processed': []}
+    calls = []
 
-    def raw_data(path):
-        calls['cruise'].append(path)
-        return session_mod.RawDataScan()
+    def runs(path):
+        calls.append(path)
+        return RunDataScan()
 
-    def cameras(path):
-        calls['raw_images'].append(path)
-        return session_mod.CameraScan()
-
-    def processed(path):
-        calls['processed'].append(path)
-        return {'datatables': [], 'utm_logs': []}
-
-    monkeypatch.setattr(app_mod, 'scan_raw_data', raw_data)
-    monkeypatch.setattr(session_mod, 'scan_cameras', cameras)
-    monkeypatch.setattr(session_mod, 'scan_processed_data', processed)
+    monkeypatch.setattr(app_mod, 'scan_run_data', runs)
 
     async def drive():
         app = app_mod.WildScanApp()
         async with app.run_test(size=(120, 50)) as pilot:
             await pilot.pause()
             screen = app.screen
-            for widget, path in (('s-cruise', 'cruise'), ('s-rawimages', 'stills'),
-                                 ('s-processed', 'processed')):
-                screen.query_one('#' + widget).value = str(tmp_path / 'partial')
-                screen.query_one('#' + widget).value = str(tmp_path / path)
+            screen.query_one('#s-runs').value = str(tmp_path / 'partial')
+            screen.query_one('#s-runs').value = str(tmp_path / 'runs')
             await pilot.pause(0.5)
-            assert calls == {
-                'cruise': [str(tmp_path / 'cruise')],
-                'raw_images': [str(tmp_path / 'stills')],
-                'processed': [str(tmp_path / 'processed')],
-            }
-            screen.query_one('#s-video').value = str(tmp_path / 'dive.mov')
-            screen.query_one('#s-rawimages').value = str(tmp_path / 'partial')
-            screen.query_one('#s-rawimages').value = str(tmp_path / 'new_stills')
+            assert calls == [str(tmp_path / 'runs')]
+            screen.query_one('#s-results').value = str(tmp_path / 'results')
             await pilot.pause(0.5)
-            assert len(calls['cruise']) == len(calls['processed']) == 1
-            assert calls['raw_images'] == [str(tmp_path / 'stills'),
-                                          str(tmp_path / 'new_stills')]
-            screen.query_one('#s-cruise').value = ''
+            assert calls == [str(tmp_path / 'runs')], (
+                'changing the workspace must not rescan the run directories')
+            screen.query_one('#s-runs').value = str(tmp_path / 'partial')
+            screen.query_one('#s-runs').value = str(tmp_path / 'other_runs')
             await pilot.pause(0.5)
-            assert app.scan == session_mod.RawDataScan()
-            assert len(calls['cruise']) == 1
+            assert calls == [str(tmp_path / 'runs'), str(tmp_path / 'other_runs')]
+            screen.query_one('#s-runs').value = ''
+            await pilot.pause(0.5)
+            assert app.scan == RunDataScan()
+            assert len(calls) == 2
     asyncio.run(drive())
 
 
-def test_intake_preview_cache_is_refreshed_before_questions(tmp_path, store, monkeypatch):
+def test_run_preview_is_refreshed_when_continuing(tmp_path, store):
     import wildscan.app as app_mod
-    source = tmp_path / 'cruise_data'
-    source.mkdir()
-    (source / 'first.mov').write_bytes(b'video')
-    scans = []
-
-    def questions(session, scan):
-        scans.append(scan)
-        return []
-
-    monkeypatch.setattr(app_mod, 'build_questions', questions)
+    run = build_run(tmp_path)
 
     async def drive():
         app = app_mod.WildScanApp()
         async with app.run_test(size=(120, 50)) as pilot:
             await pilot.pause()
             screen = app.screen
-            screen.query_one('#s-cruise').value = str(source)
+            screen.query_one('#s-runs').value = str(run)
             screen.query_one('#s-results').value = str(tmp_path / 'results')
             await pilot.pause(0.5)
-            assert len(app.scan.videos) == 1
-            (source / 'second.mov').write_bytes(b'video')
+            assert app.scan.runs[0].cameras[0].card == 3
+            (run / 'cam1' / 'Cam1_20260820_192544.42.card.JPG').write_bytes(b'j')
             screen.query_one('#s-continue').press()
             await pilot.pause()
             assert isinstance(app.screen, app_mod.StagePickScreen)
-            assert len(app.scan.videos) == 2
-            (source / 'third.mov').write_bytes(b'video')
-            app.screen.action_confirm()
-            await pilot.pause()
-            assert {path.name for path in scans[0].videos} == {
-                'first.mov', 'second.mov', 'third.mov'}
+            assert app.scan.runs[0].cameras[0].card == 4
     asyncio.run(drive())
 
 
@@ -689,8 +798,9 @@ def test_console_metadata_and_invalid_args_do_not_open_ui_or_settings(
 @pytest.mark.parametrize('workspace', [None, 'C:/surveys/my workspace'])
 def test_console_workspace_argument_is_forwarded_to_normal_app_run(
         monkeypatch, workspace):
-    import wildscan.app as app_mod
     from unittest.mock import Mock
+
+    import wildscan.app as app_mod
     app = Mock()
     constructor = Mock(return_value=app)
     monkeypatch.setattr(app_mod, 'WildScanApp', constructor)
