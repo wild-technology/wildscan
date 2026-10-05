@@ -81,7 +81,7 @@ class RealityScanAlignment(RSModule):
                          'the input folder or each zone\'s own log; without '
                          'a matching log, alignment runs without navigation priors.'),
             prompt_user=True,
-            disable_when_module_active=['Batch Directory', 'Georeference Images']
+            disable_when_module_active=['Batch Directory', 'Wild Sync Intake']
         )
 
         additional_params['rs_min_component_size'] = Parameter(
@@ -154,7 +154,7 @@ class RealityScanAlignment(RSModule):
         Returns the path to the flight log file (or None when none exists).
 
         All on-disk discovery goes through flight_logs.find_flight_log so
-        the georeference module's flight_log_<zone>_UTM.txt naming and the
+        the intake's flight_log_<zone><band>_UTM.txt naming and the
         per-zone copies from Batch Directory are both found.
         """
 
@@ -169,16 +169,18 @@ class RealityScanAlignment(RSModule):
                 return explicit
 
         # Standalone inputs own their navigation; do not borrow a log from
-        # another image tree under the output workspace.
-        if 'rs_input_image_dir' in self.params:
-            return find_flight_log(self.params['rs_input_image_dir'].get_value())
-
-        # The georeference module writes its flight log next to the images
-        # it processed: its explicit input dir, or raw_images when chained
-        # after Extract Images.
-        if 'geo_input_image_dir' in self.params:
-            return find_flight_log(self.params['geo_input_image_dir'].get_value())
+        # another image tree under the output workspace. Chained after Wild
+        # Sync Intake, the input is this workspace's own imagery (often the
+        # preprocessed copies, which keep the file names), and the intake's
+        # log in raw_images names it.
         output_dir = self.params['output_dir'].get_value()
+        if 'rs_input_image_dir' in self.params:
+            input_dir = self.params['rs_input_image_dir'].get_value()
+            if 'ws_run_dirs' in self.params:
+                return find_flight_log(
+                    input_dir, os.path.join(output_dir, "raw_images"))
+            return find_flight_log(input_dir)
+
         return find_flight_log(os.path.join(output_dir, "raw_images"), output_dir)
 
     def __align_zone(self, input_folder, output_folder, scene_name,

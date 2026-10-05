@@ -84,6 +84,7 @@ packages = [
     "modules.image_batcher",
     "modules.preprocess_images",
     "modules.realityscan_interface",
+    "modules.wildsync_intake",
 ]
 # Native workflows are resources of realityscan_interface, not Python
 # namespace packages. Include only the explicit resource patterns below.

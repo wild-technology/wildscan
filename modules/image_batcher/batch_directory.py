@@ -130,7 +130,7 @@ class BatchDirectory(RSModule):
             default_value=None,
             description='Directory containing the images to batch',
             prompt_user=True,
-            disable_when_module_active=['Extract Images', 'Preprocess Images']
+            disable_when_module_active=['Wild Sync Intake', 'Preprocess Images']
         )
 
         additional_params['batch_flight_log_path'] = Parameter(
@@ -141,7 +141,7 @@ class BatchDirectory(RSModule):
             default_value=None,
             description='Path to the flight log file (required for geographic batching)',
             prompt_user=True,
-            disable_when_module_active='Georeference Images'
+            disable_when_module_active='Wild Sync Intake'
         )
 
         additional_params['batch_use_z'] = Parameter(
@@ -371,9 +371,8 @@ class BatchDirectory(RSModule):
     def __get_flight_log_path(self):
         if 'batch_flight_log_path' in self.params:
             return self.params['batch_flight_log_path'].get_value()
-        # Georeference writes the flight log next to the images it
-        # processed: its explicit input dir, or raw_images when it ran
-        # after Extract Images (whose output the search must cover too).
+        # Wild Sync Intake writes the flight log into raw_images, next to
+        # the images it took in.
         output_dir = self.params['output_dir'].get_value()
         # find_flight_log REFUSES a directory whose logs disagree on UTM
         # zone (or mix tagged and untagged names). Surface that message
@@ -381,9 +380,6 @@ class BatchDirectory(RSModule):
         # log is required" instead of an argparse-era traceback escaping
         # to main.py (audit 2026-08-07).
         try:
-            if 'geo_input_image_dir' in self.params:
-                return find_flight_log(
-                    self.params['geo_input_image_dir'].get_value())
             return find_flight_log(os.path.join(output_dir, "raw_images"),
                                    output_dir)
         except ValueError as exc:

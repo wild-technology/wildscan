@@ -148,7 +148,7 @@ class PreprocessImages(RSModule):
             default_value=None,
             description='Directory containing the images to preprocess',
             prompt_user=True,
-            disable_when_module_active='Extract Images'
+            disable_when_module_active='Wild Sync Intake'
         )
 
         additional_params['pre_clahe_clip'] = Parameter(
@@ -358,8 +358,9 @@ class PreprocessImages(RSModule):
             return success, message
 
         input_dir = self.__get_input_dir()
-        # When chained after Extract Images the input folder is produced at
-        # runtime, so only validate an explicitly given directory.
+        # When chained after Wild Sync Intake the input folder (raw_images)
+        # is produced at runtime, so only validate an explicitly given
+        # directory.
         if 'pre_input_image_dir' in self.params:
             # Unattended runs never see the prompt, so the value can arrive
             # as None; say which flag is missing instead of raising
