@@ -937,3 +937,46 @@ def test_the_census_reports_an_incomplete_intake_as_partial(run_dir, workspace,
     status = Workspace(workspace).detect()['intake']
     assert status.status == 'partial'
     assert any('did not finish' in d for d in status.details), status.details
+
+# ---------------------------------------- sidecars the alignment wrote
+
+def _sidecar_beside(workspace: Path, key: str = 'ilx_left') -> Path:
+    image = min((workspace / 'raw_images' / key).iterdir())
+    return image.with_name(image.name[:-len('.JPG')] + '.xmp')
+
+
+@pytest.mark.parametrize('mode', ['groups', 'prior'])
+def test_a_rerun_tolerates_the_pipelines_own_calibration_sidecars(
+        run_dir, workspace, mode):
+    """Alignment pointed directly at raw_images writes its calibration
+    sidecars there; a later intake re-run leaves them as they are."""
+    from modules.calibration_sidecars import sidecar_xmp
+    run_intake([str(run_dir)], str(workspace), log=QUIET)
+    sidecar = _sidecar_beside(workspace)
+    own = sidecar_xmp(camera_registry.CAMERAS['ilx_left'], mode).encode('utf-8')
+    sidecar.write_bytes(own)
+    result = run_intake([str(run_dir)], str(workspace), log=QUIET)
+    assert result.manifest['images']['reused'] == 6
+    assert sidecar.read_bytes() == own
+
+
+@pytest.mark.parametrize('content', [
+    b'<x:xmpmeta><rdf:Description xcr:Position="1 2 3"/></x:xmpmeta>\n',
+    'own sidecar of the other camera',
+    'own sidecar beside no planned image',
+])
+def test_a_rerun_refuses_any_other_sidecar(run_dir, workspace, content):
+    from modules.calibration_sidecars import sidecar_xmp
+    run_intake([str(run_dir)], str(workspace), log=QUIET)
+    sidecar = _sidecar_beside(workspace)
+    if content == 'own sidecar of the other camera':
+        content = sidecar_xmp(camera_registry.CAMERAS['ilx_right'],
+                              'groups').encode('utf-8')
+    elif content == 'own sidecar beside no planned image':
+        sidecar = sidecar.with_name('Cam1_20990101_000000.00.card.xmp')
+        content = sidecar_xmp(camera_registry.CAMERAS['ilx_left'],
+                              'groups').encode('utf-8')
+    sidecar.write_bytes(content)
+    with pytest.raises(IntakeError, match='did not plan'):
+        run_intake([str(run_dir)], str(workspace), log=QUIET)
+    assert sidecar.read_bytes() == content

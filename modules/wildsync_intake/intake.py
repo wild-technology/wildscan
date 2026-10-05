@@ -59,10 +59,12 @@ from ..calibration_sidecars import (
     DECIDED_MODES,
     CalibrationRefused,
     decide_calibration,
+    is_own_sidecar,
     read_image_geometry,
+    sidecar_path,
 )
 from ..calibration_sidecars import MODES as CALIBRATION_MODES
-from ..camera_registry import Mount, Registry
+from ..camera_registry import Camera, Mount, Registry
 from ..flight_logs import (
     FlightLogRow,
     flight_log_name,
@@ -738,16 +740,34 @@ def _write_json(path: str, data: dict) -> None:
     _write_text_atomically(path, write)
 
 
-def _unexpected_files(raw_dir: str, planned: set[str]) -> list[str]:
+def _own_sidecar(path: str, sidecar_cameras: Mapping[str, Camera]) -> bool:
+    """True when ``path`` is the calibration sidecar of a planned image and
+    holds, byte for byte, one the alignment stage writes for its camera."""
+    camera = sidecar_cameras.get(os.path.normcase(os.path.abspath(path)))
+    if camera is None:
+        return False
+    with open(path, 'rb') as stream:
+        return is_own_sidecar(stream.read(), camera)
+
+
+def _unexpected_files(raw_dir: str, planned: set[str],
+                      sidecar_cameras: Mapping[str, Camera] | None = None
+                      ) -> list[str]:
+    """Files under ``raw_dir`` this intake did not plan. The calibration
+    sidecars the alignment stage writes beside a planned image (when it is
+    pointed at raw_images directly) are not counted and are left as they
+    are; ``sidecar_cameras`` maps each planned image's sidecar path
+    (normcase, absolute) to the image's camera."""
     extras = []
     for root, _dirs, files in os.walk(raw_dir):
         for name in files:
             if name.startswith('.') or name.lower() in _IGNORED_FILES:
                 continue
-            path = os.path.normcase(os.path.abspath(os.path.join(root, name)))
-            if path not in planned:
-                extras.append(os.path.relpath(os.path.join(root, name),
-                                              raw_dir))
+            full = os.path.join(root, name)
+            path = os.path.normcase(os.path.abspath(full))
+            if path in planned or _own_sidecar(full, sidecar_cameras or {}):
+                continue
+            extras.append(os.path.relpath(full, raw_dir))
     return sorted(extras)
 
 
@@ -968,8 +988,11 @@ def run_intake(run_paths: Sequence[str], workspace: str,
                     for frame in frames}
     planned = {os.path.normcase(os.path.abspath(p)) for p in
                (*destinations.values(), log_path, manifest_path)}
+    sidecar_cameras = {
+        os.path.normcase(os.path.abspath(sidecar_path(destinations[f.name]))):
+            registry.cameras[f.camera] for f in frames}
     if os.path.isdir(raw_dir):
-        extras = _unexpected_files(raw_dir, planned)
+        extras = _unexpected_files(raw_dir, planned, sidecar_cameras)
         if extras:
             raise IntakeError(
                 f'{raw_dir} holds {len(extras)} file(s) this intake did not '
