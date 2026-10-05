@@ -129,7 +129,7 @@ def build_arg_parser(params) -> argparse.ArgumentParser:
     command line (the WildScan portal) can be tested against the real
     parser instead of a parallel list of flag names. A flag not defined
     here is an argparse exit-2 "unrecognized arguments" before any stage
-    runs (audit 2026-08-07).
+    runs.
     """
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -227,10 +227,9 @@ def log_output_data(logger, output_data: dict[str, object], indent: int = 0) -> 
 
 def main(argv) -> None:
     logger = initialize_logger()
-    # --help must never block on the interactive module checkbox (verified
-    # live 2026-08-08: `python main.py --help` under redirected output hung
-    # past 60 s with no message, because initialize_modules() ran before
-    # argparse ever saw argv). With -h/--help present, enable every module
+    # --help must never block on the interactive module checkbox: under
+    # redirected output initialize_modules() would otherwise wait for input
+    # before argparse ever sees argv. With -h/--help present, enable every module
     # non-interactively so the FULL parser - all modules' options - builds,
     # prints, and exits.
     if any(a in ('-h', '--help') for a in argv[1:]):
@@ -251,9 +250,7 @@ def main(argv) -> None:
         if not ok:
             # sys.exit(1), NOT a bare return: a bare return exits 0, so an
             # unattended caller gating on exit status reads a refused run as
-            # success. Surfaced 2026-07-26 when the batcher correctly refused
-            # to reuse zones built from a different flight log and main.py
-            # still reported 0 - the same silent-failure shape as the
+            # success - the same silent-failure shape as the
             # module-failure branch below, which has always exited 1.
             logger.error(msg)
             sys.exit(1)
@@ -279,9 +276,7 @@ def main(argv) -> None:
             # isatty() lies under hidden consoles and redirected pipes, so
             # this gate cannot be reached only when a human is present.
             # Unattended, stdin is at EOF immediately: continue rather than
-            # crash the chain between two modules that both succeeded
-            # (observed on the H2024 run - georeference finished 8,197/8,197
-            # and the pipeline died here before preprocessing).
+            # crash the chain between two modules that both succeeded.
             try:
                 input("Press enter to continue...")
             except EOFError:

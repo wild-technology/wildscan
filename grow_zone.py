@@ -19,7 +19,7 @@ from component imports, which silently lacks the orphan images):
      capped by --max_passes.
   5. Export final components + manifests; write grow_report.json.
 
-Checkpoint/rollback design (mandated 2026-07-23): the checkpoint
+Checkpoint/rollback design: the checkpoint
 is a plain file copy of the .rsproj plus its companion data folder (the
 sibling directory named after the project stem, holding sfmN.dat etc.),
 restored to the SAME path on rollback. The officially sanctioned
@@ -31,10 +31,10 @@ stage exists to register. It remains a manual fallback only.
 
 Example (PowerShell, from the Git checkout):
     & "./.venv/Scripts/python.exe" grow_zone.py `
-        --scene "D:/dive/aligned_components/zone_1/zone_1.rsproj" `
-        --images_root "D:/dive/batched_images_by_zone/zone_1" `
-        --components_dir "D:/dive/aligned_components/zone_1" `
-        --output "D:/dive/grown/zone_1" --min_size 50 --max_passes 8
+        --scene "<workspace>/aligned_components/zone_1/zone_1.rsproj" `
+        --images_root "<workspace>/batched_images_by_zone/zone_1" `
+        --components_dir "<workspace>/aligned_components/zone_1" `
+        --output "<workspace>/grown/zone_1" --min_size 50 --max_passes 8
 
 See --help for feature-source, selection and checkpoint options.
 
@@ -102,7 +102,7 @@ def registered_basenames(images_root: str, stem_index: dict[str, str],
     pose (-exportXMP writes pose entries only for registered cameras).
     Read-only - callers must follow up with
     calibration_sidecars.sanitize_and_census so pose sidecars can never leak
-    into later adds as exact-pose priors (bug B7)."""
+    into later adds as exact-pose priors."""
     names: set[str] = set()
     unmapped = 0
     for root, _dirs, files in os.walk(images_root):
@@ -143,7 +143,7 @@ def take_census(images_root: str, stem_index: dict[str, str], logger) -> set[str
 # ----------------------------------------------------------------------
 # Scene checkpoint / rollback (mandated design: bundle file copy)
 # ----------------------------------------------------------------------
-# Implementation moved to module_base/scene_checkpoint.py (2026-07-24)
+# Implementation lives in module_base/scene_checkpoint.py
 # so the cross-zone merge driver shares the SAME battle-tested restore
 # path. Re-exported here for existing callers/tests.
 from module_base.scene_checkpoint import (  # noqa: F401
@@ -188,9 +188,8 @@ def load_contract_manifests(directory: str, logger) -> dict[str, dict]:
 def write_manifest(manifest: dict, directory: str) -> str:
     """Write a manifest next to its component using the CONTRACT naming
     (<rsalign>.manifest.json) so component_analysis.load_manifests and
-    merge_zones can find it. Review finding 2026-07-24: the previous
-    '<component>.json' naming made growth manifests invisible to the
-    merge stage. Approximate membership is flagged in the manifest
+    merge_zones can find it; any other naming makes growth manifests
+    invisible to the merge stage. Approximate membership is flagged in the manifest
     itself so twin resolution can refuse to discard on fuzzy data."""
     safe = re.sub(r'[^A-Za-z0-9._ -]', '_', str(manifest['component']))
     rsalign_guess = manifest.get('rsalign') or os.path.join(directory, f'{safe}.rsalign')
@@ -339,10 +338,10 @@ def main() -> int:
                              'pool - without this, every other pool image '
                              'counts as an "orphan" and component passes '
                              'try to enable tens of thousands of '
-                             'non-zone images (run3 2026-08-28).')
+                             'non-zone images.')
     parser.add_argument('--flight_log', default=None,
                         help='zone flight log to RE-IMPORT at every grow step '
-                             '(project decision 2026-08-08: the flight log is '
+                             '(the flight log is '
                              'loaded at each alignment step; P4-verified to '
                              're-place aligned components onto current priors '
                              'via -update without a re-align)')
@@ -357,8 +356,8 @@ def main() -> int:
     parser.add_argument('--skip_global', action='store_true',
                         help='skip the opening global re-align pass')
     parser.add_argument('--project_label', default=None,
-                        help='expedition_dive label for the RC_projects daily-save '
-                             'schema (e.g. NA156_H2023)')
+                        help='dataset label for the RC_projects daily-save '
+                             'schema')
     args = parser.parse_args()
 
     def ask(key, cli_value, fallback):
@@ -398,7 +397,7 @@ def main() -> int:
     # RealityScan machine constants (RS_INSTANCE / RS_CACHE_DIR /
     # RS_HEADLESS) from the settings store's 'realityscan' section -
     # realityscan_env is the single source of truth (headless defaults
-    # False = visible, project decision 2026-08-07); a variable already set
+    # False = visible); a variable already set
     # in the environment wins over the stored default.
     os.environ.update(realityscan_env(settings))
 
@@ -672,7 +671,7 @@ def main() -> int:
                 continue  # dropped by a cleanup earlier in this sweep
             # Orphans from the ZONE census, not the manifests: growth
             # passes are align-UPDATES that refresh every component, and
-            # post-pass manifests may be approximate (2026-07-24 fix for
+            # post-pass manifests may be approximate and would report
             # phantom gains).
             orphans = set(all_basenames) - baseline
             if not orphans:
@@ -702,7 +701,7 @@ def main() -> int:
                               fsource=str(feature_source),
                               export_dir=export_dir,
                               secondary=secondary_list)
-            # ZONE-LEVEL accounting (2026-07-24): -align with components
+            # ZONE-LEVEL accounting: -align with components
             # present is an UPDATE that refreshes every component in the
             # scene, so the census after an "isolated" pass covers the
             # WHOLE zone. Comparing it against one component's membership
@@ -807,7 +806,7 @@ def main() -> int:
         'components': final_components,
     }
 
-    # grow -> merge handoff (review backlog MUST-FIX, 2026-07-24): a
+    # grow -> merge handoff: a
     # .complist naming every final component at its authoritative export
     # path, consumable directly by merge_zones.py --complist. Only
     # MANIFESTED components are listed - the feature-aware merge refuses

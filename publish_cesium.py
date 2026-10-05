@@ -7,7 +7,7 @@ georeferenced to be uploaded, since it is possible to upload a model and later
 define its approximate position." That is exactly what the three assets
 already on this ion account show - read back from their own tilesets, they sit
 at ellipsoidal heights of +2.1 m, +0.0 m and +23.7 m, i.e. at the sea surface,
-despite being deep-water ROV sites. Horizontal placement survived; the
+despite being deep-water sites. Horizontal placement survived; the
 vertical did not.
 
 This script is the scripted equivalent that does place them properly:
@@ -42,9 +42,9 @@ PowerShell, from the Git checkout:
     & "./.venv/Scripts/python.exe" -m pip install -e .
 
 Example (PowerShell, from the Git checkout):
-    & "./.venv/Scripts/python.exe" publish_cesium.py --name "H2080 wreck" `
-        --dir "F:/NA168/Zeuss_NA168_H2080/NewModels" `
-        --flight-log "F:/NA168/Zeuss_NA168_H2080/raw_images/flight_log_53N_UTM.txt" `
+    & "./.venv/Scripts/python.exe" publish_cesium.py --name "IN-401 wreck" `
+        --dir "<workspace>/exports/<component>/obj" `
+        --flight-log "<workspace>/flight_log_53N_UTM.txt" `
         --poll --verify
 """
 from __future__ import annotations
@@ -112,8 +112,8 @@ def select_objs(directory: Path, mode: str) -> list[Path]:
     """The OBJ files to publish, resolving the whole-vs-parts ambiguity.
 
     A by-parts export writes both ``<stem>.obj`` and ``<stem>_0000000.obj``
-    ... for the SAME model (on NA168 H2080: 178,269 vertices whole against
-    180,002 across nine parts, the excess being duplicated part boundaries).
+    ... for the SAME model (the parts carry slightly more vertices, the
+    excess being duplicated part boundaries).
     Uploading both would submit the geometry twice, so one set must win and
     the choice is logged rather than made silently.
     """
@@ -167,7 +167,7 @@ def referenced_companions(objs: list[Path],
 
     Following the references matters when a by-parts export sits in the same
     directory as its whole-model twin: copying every texture in the folder
-    would ship the unused set too (326 MB against 121 MB on NA168 H2080) and
+    would ship the unused set too and
     hand ion material files that belong to geometry it was never given.
     """
     wanted: list[Path] = []
@@ -458,7 +458,7 @@ def verify_placement(actual: dict, plan: dict, tolerance_m: float,
     # Extents are the shape check: an axis permutation or a unit error
     # leaves the origin right and the geometry wrong, which no position
     # comparison can see. ion is known to preserve East-North-Up order
-    # (depth probe, 2026-08-31: 20 x 8 x 3 m sent, 20 x 8 x 3 m returned).
+    # (verified with a depth probe).
     actual_extents = actual.get('extents_m')
     if actual_extents:
         expected = plan['extent_m']
@@ -495,7 +495,7 @@ def main() -> int:
     parser.add_argument('--description', default='',
                         help='Markdown description')
     parser.add_argument('--flight-log', default=None,
-                        help='flight log for this dive. Its nav envelope is '
+                        help='flight log for this dataset. Its nav envelope is '
                              'used as a second, independent check on the '
                              'transformToModel reading.')
     parser.add_argument('--parts', default='whole', choices=('whole', 'split'),

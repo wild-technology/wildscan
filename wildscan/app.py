@@ -466,7 +466,7 @@ class RunScreen(Screen):
         so a run that included Merge exported the PREVIOUS run's assembly
         under the new run's name: the argv carried the old
         ws.assembly_project() and export_names_file's `if names:` guard
-        left a stale components.names in place (audit 2026-08-07).
+        left a stale components.names in place.
         """
         app: WildScanApp = self.app  # type: ignore[assignment]
         cmd = self.commands[self.current]

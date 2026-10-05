@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Model every final component of a workspace's assembly, scale-gated.
 
-The workspace-generic successor to the H2024 drivers: reads the latest
+Workspace-generic: reads the latest
 merge_report.json for the final components, resolves each one's metric scale
 (stem-oracle verdicts from the report where present; the correspondence-free
 quantile-ratio oracle for fused components whose ordinal sidecars defeat stem
@@ -9,7 +9,7 @@ pairing - B10), then runs GenerateModel.bat per PASSING component,
 smallest-first (cost ladder: the recipe proves itself on a cheap component
 before the big one spends hours). Ends with ONE dated RC_projects copy via
 SaveProjectCopy.bat - per-component dated copies stay deferred
-(decision 2026-07-28: saving with intermediates live is inordinate).
+(saving with intermediates live is inordinate).
 
 Resumable: successful components are skipped only when the saved assembly,
 source components, navigation and model settings still match their report.
@@ -26,8 +26,8 @@ dated-copy saves; workspace mode still defers dated copies to its single
 end-of-run copy.
 
 Examples (PowerShell, from the Git checkout):
-    & "./.venv/Scripts/python.exe" run_models.py --workspace "F:/na156_h2024_v2"
-    & "./.venv/Scripts/python.exe" run_models.py --project "D:/scene/Assembly.rsproj" `
+    & "./.venv/Scripts/python.exe" run_models.py --workspace "<workspace>"
+    & "./.venv/Scripts/python.exe" run_models.py --project "<workspace>/Assembly.rsproj" `
         --component zone_1_c0 --large_tri_threshold 30
 
 Add --force to bypass successful-component resume checks.
@@ -151,7 +151,7 @@ def run_direct(args: argparse.Namespace) -> int:
     project = Path(args.project).resolve()
     # Validate BEFORE the FileHandler: a mistyped --project whose parent
     # does not exist must produce this message, not a FileNotFoundError
-    # traceback out of basicConfig (clean-sweep 2026-08-07).
+    # traceback out of basicConfig.
     if not project.is_file():
         print(f'ERROR: project not found: {project}', file=sys.stderr)
         return 1
@@ -234,7 +234,7 @@ def main() -> int:
     # Validate BEFORE the FileHandler, exactly as run_direct does: a
     # mistyped --workspace (or one naming a FILE) used to die with a
     # FileNotFoundError traceback out of basicConfig trying to open
-    # <workspace>/models_driver.log (audit 2026-08-07).
+    # <workspace>/models_driver.log.
     if not ws.root.is_dir():
         print(f'ERROR: workspace not found (or not a directory): {ws.root}',
               file=sys.stderr)
@@ -269,7 +269,7 @@ def main() -> int:
 
     # _records drops anything that is not a dict record: a merge report
     # whose 'clusters' is a dict (or holds strings) used to crash here with
-    # AttributeError instead of a message (audit 2026-08-07).
+    # AttributeError instead of a message.
     finals = [(c.get('key', '?'), c)
               for rec in _records(report, 'clusters')
               for c in _records(rec, 'final_components')]
@@ -337,7 +337,7 @@ def main() -> int:
         # The resolved path, not a reconstructed drive root: Path('ws').drive
         # is '' for a relative --workspace, so `drive + '\\'` became '\\'
         # and the floor measured the SYSTEM drive instead of the data
-        # volume (audit 2026-08-07).
+        # volume.
         if shutil.disk_usage(ws.root).free / 1024**3 < MIN_FREE_GB:
             logger.error('ABORT: below the %.0f GB floor', MIN_FREE_GB)
             entry['skipped'] = 'disk_floor'

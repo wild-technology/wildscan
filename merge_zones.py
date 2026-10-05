@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Feature-aware cross-zone merge driver (reworked 2026-07-24).
+"""Feature-aware cross-zone merge driver.
 
 Replaces the maximal-fraction ladder with the workflow the bow/hull
-governing intent requires (status log workflow-evaluation queue):
+governing intent requires:
 
 1. Manifests -> twin resolution -> border graph -> CONNECTED CLUSTERS.
    Components whose UTM bboxes never touch are different physical
@@ -14,9 +14,9 @@ governing intent requires (status log workflow-evaluation queue):
    attributable to an input subset and it dropped no more than
    --loss_tolerance of the input cameras (default 0 = exact only). The
    former never-shrink rule could not accept ANY solver-lossy fusion,
-   which is exactly what the rematch/high-overlap rungs produce - H2024's
-   hull fused 4,860 of 4,865 cameras on every rung and was rejected all
-   three times (FINDINGS 2026-07-28).
+   which is exactly what the rematch/high-overlap rungs produce - a hull
+   that fuses all but a handful of cameras on every rung would be rejected
+   every time.
    A rung that fuses restarts the ladder on the new state; convergence
    = a full ladder cycle with no fusion. There is NO fraction target -
    two saturated disjoint features are SUCCESS. --target is
@@ -36,7 +36,7 @@ governing intent requires (status log workflow-evaluation queue):
    union flight log + -update, saved + dated copy - then an
    EVALUATION READY report for the review gate. Optional --auto_model
    runs GenerateModel per surviving component >= min size instead of
-   stopping at the gate (DEPRECATED 2026-08-07 - prefer run_models.py,
+   stopping at the gate (DEPRECATED - prefer run_models.py,
    which adds smallest-first ordering, resumability and the
    quantile-ratio scale fallback; behaviour kept for compatibility).
 
@@ -44,7 +44,7 @@ Usage:
     python merge_zones.py --components_root <aligned_components>
                           --images_root <batched_images_by_zone>
                           --output <merge_output_dir> [--name Merged]
-                          [--min_size 50] [--project_label NA156_H2023]
+                          [--min_size 50] [--project_label <label>]
                           [--visible true] [--auto_model false]
                           [--complist <file>]  (explicit component inputs)
 
@@ -126,7 +126,7 @@ def load_inputs(components_root: str, complist: str | None,
     Components WITHOUT a manifest are refused: the feature-aware loop is
     driven by membership + bbox, and an anonymous component cannot be
     border-gated, twin-resolved, or attributed. (Re-run AlignZone, or
-    merge the pre-growth manifested exports - the H2023 case.)"""
+    merge the pre-growth manifested exports.)"""
     manifests = component_analysis.load_manifests(components_root)
     by_path = {os.path.normcase(os.path.abspath(m.get('rsalign', ''))): m
                for m in manifests if m.get('rsalign')}
@@ -138,9 +138,8 @@ def load_inputs(components_root: str, complist: str | None,
         # an earlier run kept at its original export location per hard rule
         # 7). For any entry the root scan did not surface, look for the
         # manifest BESIDE the file before refusing - discovery scope, not
-        # manifest absence, is what used to fail here (2026-07-28: phase-2
-        # assembly aborted with 'without manifests' for three components
-        # whose manifests all existed).
+        # manifest absence, is what used to fail here (assembly aborted
+        # with 'without manifests' for components whose manifests existed).
         for p in wanted:
             norm = os.path.normcase(os.path.abspath(p))
             if norm in by_path:
@@ -179,8 +178,7 @@ def measure_input_scales(inputs: list[dict], union_log: str, logger,
 
     `scale_min`/`scale_max` MUST reach the verdict: the operator's
     --scale_min/--scale_max were previously accepted, persisted, printed in
-    EVALUATION_READY as the authoritative band - and never applied (audit #5,
-    2026-07-28). Every verdict was baked at the 0.90-1.10 defaults, so
+    EVALUATION_READY as the authoritative band - and never applied. Every verdict was baked at the 0.90-1.10 defaults, so
     TIGHTENING the gate silently did nothing while the report claimed it.
     """
     nav = scale_oracle.load_nav_positions(union_log)
@@ -264,7 +262,7 @@ def shared_image_count(a: dict, b: dict) -> int:
 
 
 def pair_related(a: dict, b: dict) -> tuple[bool, str]:
-    """The uniqueness criterion (2026-07-28): two components belong in
+    """The uniqueness criterion: two components belong in
     one merge scene ONLY when they share imagery or genuinely overlap in space.
 
     Anything else is a unique feature at its own maximum. The previous gate -
@@ -292,17 +290,16 @@ def fused_export_name(tag: str, attempt_no: int) -> str:
     """The ONE name a fused attempt exports under: file stem, manifest
     component and in-scene component are all this string plus `_c<K>`.
     peel_index restarts every attempt, so the attempt number is what makes
-    two fusions in one cluster distinct (the 2026-07-28 duplicate-identity
+    two fusions in one cluster distinct (avoiding a duplicate-identity
     crash and the wrong-component model hazard)."""
     return f'{tag}_a{attempt_no}'
 
 
-# Merge-scene camera ceiling (C-20260802-01, ON2026 on the 192 GB box):
-# a 34,105-camera merge scene completed at 262 GB peak commit; a ~44k-cam
-# scene died inside RealityScan with 0x8007000E E_OUTOFMEMORY at 319.5 GB
-# after 5.6 h, and the follow-up rung OOM'd the driver Python itself after
-# 19 h. The ceiling is enforced BEFORE launch (an over-ceiling attempt
-# wastes unattended hours and can kill the driver) - deliberately a plain
+# Merge-scene camera ceiling: merge-scene memory grows with camera count,
+# and a scene above this size can exhaust commit inside RealityScan
+# (0x8007000E E_OUTOFMEMORY) after hours of work. The ceiling is enforced
+# BEFORE launch (an over-ceiling attempt wastes unattended hours and can
+# kill the driver) - deliberately a plain
 # argparse default, never an rs_settings inheritance (safety constants do
 # not silently carry between sessions).
 MAX_MERGE_SCENE_CAMERAS = 34_000
@@ -372,7 +369,7 @@ def related_pairs(manifests: list[dict], pair_gate: str,
                   logger=None) -> list[tuple[str, str]]:
     """Every related pair under the chosen gate.
 
-    'overlap' (default) = pair_related above. 'border' = the pre-2026-07-28
+    'overlap' (default) = pair_related above. 'border' = the older
     find_borders behaviour (10 m margin on both boxes), kept so the two can be
     compared rather than assumed.
     """
@@ -462,7 +459,7 @@ def attribute_result(input_manifests: list[dict], peel_counts: list[int],
                      logger, loss_tolerance: int = 0) -> tuple[list[dict], str]:
     """Map peel-loop component counts back to input-manifest subsets.
 
-    CLI fact (smoke E2E, 2026-07-24): a merge/align leaves the SOURCE
+    CLI fact: a merge/align leaves the SOURCE
     components in the scene alongside the freshly fused one - the peel
     of a fused 78+42 pair reads [120, 78, 42]. So peel entries are
     attributed LARGEST FIRST against the remaining inputs (duplicate-path
@@ -481,9 +478,9 @@ def attribute_result(input_manifests: list[dict], peel_counts: list[int],
     `loss_tolerance` (absolute cameras, 0 = exact only) admits a subset whose
     sum EXCEEDS the peel count by up to that many cameras - i.e. a fusion that
     dropped a few marginal cameras. Without it a solver-lossy fusion is
-    invisible: H2024's hull fused 4,860 of 4,865 cameras on every rung and was
-    rejected all three times because 4,860 is not an exact subset sum
-    (FINDINGS 2026-07-28). Exact matches always win; a lossy match is only
+    invisible: a hull that fuses all but a few cameras on every rung is
+    rejected every time because its count is not an exact subset sum.
+    Exact matches always win; a lossy match is only
     considered when no exact one exists, and each adopted result carries the
     `loss` it was accepted with so the report can state it."""
     by_key = {component_analysis.component_key(m): m for m in input_manifests}
@@ -552,7 +549,7 @@ def attribute_result(input_manifests: list[dict], peel_counts: list[int],
             by_index[idx] = {'peel_index': idx, 'camera_count': count,
                              'inputs': [], 'members': None, 'residual': True}
         elif not remaining and count <= loss_tolerance:
-            # Bounded shed (2026-08-01, ON2026): the joint solve can split
+            # Bounded shed: the joint solve can split
             # weak boundary cameras into a fragment that is not a
             # subset-sum of whole inputs. With EVERY input already
             # attributed and the fragment inside the loss budget, treat it
@@ -600,7 +597,7 @@ def build_union_flight_log(images_root: str, output_dir: str, logger,
     optionally filtered to `only_basenames`) + auto-generated CRS XML.
     The merge scene MUST have these constraints imported: a merged
     component is a NEW component and is not georeferenced otherwise
-    (observed NA156 H2023)."""
+    (observed)."""
     zone_logs = []
     for root, _dirs, files in os.walk(images_root):
         for f in files:
@@ -612,7 +609,7 @@ def build_union_flight_log(images_root: str, output_dir: str, logger,
     # os.walk order is not deterministic, and the zone for the whole merge
     # must not depend on which log comes first: sort once, then require
     # unanimity. One log of another zone, or without a zone tag, anywhere
-    # under images_root refuses the merge (audit 2026-08-07).
+    # under images_root refuses the merge.
     zone_logs = sorted(zone_logs)
     zone_band = assert_one_zone(zone_logs, images_root)
     if zone_band is None:
@@ -641,7 +638,7 @@ def build_union_flight_log(images_root: str, output_dir: str, logger,
     # A union log with NO rows is not a georeferenced merge: the workflow
     # imports it, runs -update against zero constraints, and ships an
     # UNGEOREFERENCED merged component with workflow_success true
-    # (audit 2026-08-07). Refuse instead, naming what was asked for.
+    # Refuse instead, naming what was asked for.
     if not rows:
         raise ValueError(
             f'The union flight log for {output_dir} would have ZERO rows: '
@@ -686,7 +683,7 @@ def rs_finalizing_counts(rslog_path: str,
     A snapshot is only trusted when EVERY complist path appears as an
     importComponent parameter - RealityScan truncates its global log per
     launch, so a concurrent instance turns the snapshot into a splice of two
-    runs (FINDINGS 2026-07-27). The count's exact semantics are NOT
+    runs. The count's exact semantics are NOT
     established (new components? scene total?), so callers record this as a
     cross-check and never gate on it.
     """
@@ -763,16 +760,13 @@ def merge_cluster(cli: RealityScanCLI, cluster: list[dict], cluster_idx: int,
                   output_dir: str, images_root: str, ladder: list[dict],
                   min_size: int, logs_dir: str, logger,
                   merge_scope: str = 'neighbour',
-                  # POLICY PROVENANCE (requested analysis, 2026-08-07).
-                  # The 0.0 default and the drivers' explicit 0.0025 are the
-                  # TWO HALVES of one project decision (DECISION IN FORCE,
-                  # 2026-07-28, status log): "Bounded loss at 0.25% of input
-                  # cameras... Default remains 0 (exact only) - the 0.25% is
-                  # passed explicitly by the driver, warned at startup."
-                  # Forced by the hull incident: RealityScan fused 4,860 of
-                  # 4,865 cameras on every rung and exact-subset arithmetic
-                  # rejected it three times - the ACCEPTANCE MATH, not the
-                  # fusion, was the failure. Small loss is EVIDENCE FOR a
+                  # POLICY: the 0.0 default and the drivers' explicit 0.0025
+                  # are the TWO HALVES of one decision: bounded loss at 0.25%
+                  # of input cameras; the default remains 0 (exact only) and
+                  # the 0.25% is passed explicitly by the driver, warned at
+                  # startup. A fusion that drops a few cameras on every rung
+                  # is otherwise rejected by exact-subset arithmetic - the
+                  # ACCEPTANCE MATH, not the fusion, is the failure. Small loss is EVIDENCE FOR a
                   # real joint solve (weak seam cameras shed; zero loss on a
                   # zero-shared-imagery "fusion" is the co-location
                   # signature - the rigid-glue lesson). The budget stays
@@ -782,9 +776,8 @@ def merge_cluster(cli: RealityScanCLI, cluster: list[dict], cluster_idx: int,
                   # instrument noise (locked sidecars read as a silent -2).
                   # Library stays exact-only; every driver opts in
                   # EXPLICITLY and the choice is logged per attempt. Do not
-                  # move this into rs_settings defaults - drivers inheriting
-                  # another session's stored merge options is a recorded
-                  # incident (final review 2026-07-29, item c).
+                  # move this into rs_settings defaults - drivers must not
+                  # inherit another session's stored merge options.
                   loss_tolerance_frac: float = 0.0,
                   pair_gate: str = 'overlap',
                   max_scene_cameras: int = MAX_MERGE_SCENE_CAMERAS) -> dict:
@@ -832,11 +825,10 @@ def merge_cluster(cli: RealityScanCLI, cluster: list[dict], cluster_idx: int,
     # components whose bbox borders it (find_borders expands BOTH boxes by
     # DEFAULT_BORDER_MARGIN_M, so the effective gap tolerance is 20 m) - exactly
     # what find_borders' docstring says merging should be attempted between, and
-    # which the pre-2026-07-27 code computed and then threw away. Observed cost
-    # of throwing it away: H2024 cluster_1 put 12 components in one scene, so a
-    # failure named no pair; cluster_0 ran all three rungs with a 0.236-scale
-    # component in the scene every time, so we never learned whether its two
-    # sound siblings would have fused alone.
+    # which an all-at-once cluster scene ignores. Putting a whole cluster in
+    # one scene means a failure names no pair, and one scale-collapsed
+    # component in the scene hides whether its sound siblings would have
+    # fused alone.
     #
     # 'cluster' scope keeps the old all-at-once behaviour so the two can be
     # COMPARED rather than assumed.
@@ -890,17 +882,16 @@ def merge_cluster(cli: RealityScanCLI, cluster: list[dict], cluster_idx: int,
             attempted.add(subset_sig)
 
         # Memory-envelope guard: refuse over-ceiling scenes BEFORE any RS
-        # time is spent (C-20260802-01 - an over-envelope attempt burned
-        # 5.6 unattended hours and then OOM'd; the next one killed the
-        # driver). Refusal, not resizing: subset sizing belongs to the
+        # time is spent (an over-envelope attempt can burn unattended hours
+        # and then run out of memory, or kill the driver). Refusal, not resizing: subset sizing belongs to the
         # driver's complists; the guard is the backstop.
         refuse, subset_cams = scene_ceiling_verdict(subset, max_scene_cameras)
         if refuse:
             logger.warning(
                 '%s: candidate subset of %d components sums to %s cameras - '
-                'OVER the %s-camera merge-scene ceiling (C-20260802-01: 44k '
-                'cams -> 0x8007000E at 319.5 GB commit on the 192 GB box; '
-                '34k fit at 262 GB). Attempt REFUSED before launch.',
+                'OVER the %s-camera merge-scene ceiling (over-ceiling scenes '
+                'can fail with 0x8007000E E_OUTOFMEMORY). Attempt REFUSED '
+                'before launch.',
                 tag, len(subset), f'{subset_cams:,}', f'{max_scene_cameras:,}')
             record['attempts'].append({
                 'label': 'over_scene_ceiling', 'refused': True,
@@ -948,9 +939,8 @@ def merge_cluster(cli: RealityScanCLI, cluster: list[dict], cluster_idx: int,
 
             sizes = peel_counts_from(adir)
             # INSTRUMENT INVARIANT: an empty peel next to a non-empty export is
-            # a broken instrument, not a result. Exactly this shape silently
-            # discarded 5h12m of correct GPU work across two runs (the junction
-            # blindness, FINDINGS 2026-07-27/28). Stop and report - never score.
+            # a broken instrument, not a result (for example the harvest is
+            # blind behind a directory junction). Stop and report - never score.
             first_export = os.path.join(adir, f'{export_name}_c0.rsalign')
             if result.success and not sizes and os.path.isfile(first_export):
                 raise RuntimeError(
@@ -961,7 +951,7 @@ def merge_cluster(cli: RealityScanCLI, cluster: list[dict], cluster_idx: int,
             # RealityScan's own per-op component line, recorded as a
             # cross-check. Only trusted when the snapshot provably belongs to
             # THIS attempt (every complist path present as an importComponent
-            # line - rslog snapshots can be splices, FINDINGS 2026-07-27).
+            # line - rslog snapshots can be splices).
             # Semantics of the count are NOT established; record, never gate.
             entry_rs = rs_finalizing_counts(
                 os.path.join(adir, 'rslog.txt'),
@@ -1023,8 +1013,7 @@ def merge_cluster(cli: RealityScanCLI, cluster: list[dict], cluster_idx: int,
                     # peel_index restarts at 0 every attempt, so without the
                     # attempt number two accepted fusions in one cluster both
                     # claimed `<tag>_m_c0`: find_borders' _validate raised
-                    # "duplicate component identity" and killed the run (H2024
-                    # 2026-07-28, cluster_1 attempts 1 and 5), and the second
+                    # "duplicate component identity" and killed the run, and the second
                     # silently clobbered the first's origin_map entry, losing
                     # the scale-gate lineage.
                     comp_name = f'{export_name}_c{res["peel_index"]}'
@@ -1126,8 +1115,7 @@ def main() -> int:
                         default=MAX_MERGE_SCENE_CAMERAS,
                         help='pre-launch refusal ceiling on merge-scene '
                              'camera count (default %(default)s; '
-                             'C-20260802-01: 44k cams OOMed at 319.5 GB '
-                             'commit on the 192 GB box, 34k fit). Plain '
+                             'larger scenes can exhaust memory). Plain '
                              'argparse default by design - safety limits '
                              'never inherit from rs_settings.')
     parser.add_argument('--min_size', type=int, default=None,
@@ -1135,14 +1123,14 @@ def main() -> int:
     parser.add_argument('--target', type=float, default=None,
                         help='INFORMATIONAL ONLY: fraction reported against, never a gate')
     parser.add_argument('--project_label', default=None,
-                        help='expedition_dive label for RC_projects daily saves')
+                        help='dataset label for RC_projects daily saves')
     parser.add_argument('--complist', default=None,
                         help='optional explicit .rsalign list (grow->merge handoff)')
     parser.add_argument('--visible', default=None,
                         help='true = GUI-visible RealityScan instances (RS_HEADLESS=0)')
     parser.add_argument('--auto_model', default=None,
                         help='true = run GenerateModel per surviving component '
-                             '>= min_size. DEPRECATED (2026-08-07): prefer '
+                             '>= min_size. DEPRECATED: prefer '
                              'run_models.py --workspace, which adds '
                              'smallest-first ordering, resumability and the '
                              'quantile-ratio scale fallback for fused '
@@ -1160,7 +1148,7 @@ def main() -> int:
     parser.add_argument('--pair_gate', default=None,
                         help='overlap (default) = components relate only when '
                              'they share imagery or their bboxes truly overlap '
-                             '(uniqueness criterion 2026-07-28); border = '
+                             '(uniqueness criterion); border = '
                              'the old 10 m-margin adjacency, kept for comparison')
     parser.add_argument('--assemble_only', default=None,
                         help='true = skip the merge ladder entirely; collect '
@@ -1193,16 +1181,15 @@ def main() -> int:
     # --visible's DEFAULT routes through the shared machine-constant
     # resolution (module_base.settings_store.realityscan_env - the single
     # RS_HEADLESS source of truth; headless defaults False = visible,
-    # project decision 2026-08-07, and an RS_HEADLESS already in the
+    # and an RS_HEADLESS already in the
     # environment seeds the default too). The CLI flag / stored merge
     # answer stay the explicit per-run override.
     rs_env = realityscan_env(settings)
     if args.visible is None and 'RS_HEADLESS' in os.environ:
         # An EXPLICIT env var wins outright over any stored answer - a
         # previous session's persisted visible=true silently overriding
-        # RS_HEADLESS=1 on an unattended run is exactly the recorded
-        # "inherited another session's stored options" incident class
-        # (final review 2026-07-29 item c; clean-sweep 2026-08-07).
+        # RS_HEADLESS=1 on an unattended run is the "inherited another
+        # session's stored options" failure this guards against.
         visible = os.environ['RS_HEADLESS'] == '0'
     else:
         visible = truthy(ask('visible', args.visible,
@@ -1266,9 +1253,7 @@ def main() -> int:
     try:
         assert_harvestable(images_root, logger)
     except RuntimeError as exc:
-        logger.error('%s The peel harvest cannot cross a directory junction '
-                     '- FINDINGS "The peel harvest cannot cross a '
-                     'directory junction (2026-07-27)".', exc)
+        logger.error('%s The peel harvest cannot cross a directory junction.', exc)
         return 1
 
     try:
@@ -1282,8 +1267,8 @@ def main() -> int:
 
     # Metric scale FIRST, before any ladder spends GPU hours: a component
     # that is metrically broken is not worth merging or modelling, and this is
-    # the check that a camera-counting gate cannot make. An H2024 component
-    # solved at 0.236 passed every other check and reached a deliverable.
+    # the check that a camera-counting gate cannot make: a scale-collapsed
+    # component can pass every other check and reach a deliverable.
     try:
         gate_log, _gate_params = build_union_flight_log(
             images_root, output_dir, logger, tag='scalegate')
@@ -1325,7 +1310,7 @@ def main() -> int:
 
     for i, cluster in enumerate(clusters):
         if assemble_only:
-            # Planned staging (2026-07-28): the inputs are already at
+            # Planned staging: the inputs are already at
             # their maximum - collect, georeference, save. No ladder. Every
             # input is carried to the assembly untouched.
             record = {
@@ -1377,7 +1362,7 @@ def main() -> int:
     # Sidecar hygiene only. Assemble mode exports NO XMPs (it imports
     # components and georeferences them), so a sidecar scan here cannot
     # observe the assembly - it reads leftovers from whatever ran last,
-    # and reported 0 for a sound 4,496-camera assembly on 2026-07-25.
+    # and can report 0 for a sound assembly.
     # The assembly's camera count is the manifest sum, tagged as such.
     calibration_sidecars.sanitize_and_census(images_root)
 
@@ -1427,7 +1412,7 @@ def main() -> int:
               f'total cameras across components: {total_registered} '
               f'({100.0 * total_registered / max(total_images, 1):.1f}% of unique '
               f'images; informational target was {target:.0%})',
-              'Multi-component outcomes are CORRECT for multi-feature dives '
+              'Multi-component outcomes are CORRECT for multi-feature datasets '
               '(bow/hull). Evaluate each component in the GUI before models.',
               '',
               '', 'METRIC SCALE (modules/scale_oracle.py, band '
@@ -1449,7 +1434,7 @@ def main() -> int:
     # The gate file is a TERMINAL-STATE document naming a project the
     # census then reads as "merge done". Writing it before checking the
     # assembly workflow's result declared that state for a project that
-    # was never saved (audit 2026-08-07): gate the write on success, and
+    # was never saved: gate the write on success, and
     # on failure leave an equally loud EVALUATION_BLOCKED.txt instead.
     if not result.success:
         blocked_path = os.path.join(output_dir, 'EVALUATION_BLOCKED.txt')
@@ -1495,9 +1480,7 @@ def main() -> int:
             # Snapshot per component, ALWAYS. RealityScan overwrites
             # Temp\RealityScan.log when the next instance starts, and the
             # next component starts seconds later - so a crash here leaves
-            # no authoritative log at all unless it is copied now. Learned
-            # from the 2026-07-26 hull crash, whose log was overwritten
-            # three seconds after the minidump was written.
+            # no authoritative log at all unless it is copied now.
             rslog = os.path.join(logs_dir, f'rslog_model_{comp_name}.txt')
             snapshot_rs_log(rslog, logger)
             if not res.success:
@@ -1512,7 +1495,7 @@ def main() -> int:
         # run_models.py stops on the first model failure "so evidence
         # survives"; this loop logged every failure and still fell through
         # to 'Merge stage complete' / return 0, so a run in which NO model
-        # was produced reported success (audit 2026-08-07). Same contract
+        # was produced reported success. Same contract
         # in both callers of GenerateModel.bat now: an aggregate check.
         logger.info('auto_model: %d of %d model(s) succeeded',
                     len(model_targets) - len(model_failures),
