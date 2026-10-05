@@ -3,11 +3,11 @@
 
 The batcher's summary was built from the ZONE LISTS, never from the copy.
 A flight-log filename that matched nothing on disk emitted one warning and
-`continue`d, so a whole-dive mismatch - extension CASE being the commonest
+`continue`d, so a whole-run mismatch - extension CASE being the commonest
 on Windows - created zone folders holding ZERO images, reported
 Success=True with a plausible 'Total Images in Batches', wrote the
 'complete' fingerprint (which then blessed the empty tree for reuse) and
-handed empty folders to alignment (audit 2026-08-07).
+handed empty folders to alignment.
 
 Also here:
   - a flight log whose name column is neither 'filename' nor 'Name' blew
@@ -75,17 +75,17 @@ def _log(path, names):
 
 # ------------------------------------------------------- copy accounting
 
-def test_a_whole_dive_mismatch_copies_nothing_and_says_so(tmp_path):
+def test_a_whole_run_mismatch_copies_nothing_and_says_so(tmp_path):
     """Extension CASE: the log says .JPG, the disk says .jpg. Windows
     filesystems are case-insensitive, so this is a pure lookup bug - but
     it produced empty zones that reported success."""
     source = tmp_path / 'src'
     source.mkdir()
     for i in range(3):
-        (source / f'C231C000{i}.jpg').write_bytes(b'j')
+        (source / f'IMG_000{i}.jpg').write_bytes(b'j')
 
     module = _module()
-    zones = [['C231C0000.JPG', 'C231C0001.JPG'], ['C231C0002.JPG']]
+    zones = [['IMG_0000.JPG', 'IMG_0001.JPG'], ['IMG_0002.JPG']]
     out = tmp_path / 'batched'
     out.mkdir()
     copied, missing = module._BatchDirectory__create_batch_folders(
@@ -95,21 +95,21 @@ def test_a_whole_dive_mismatch_copies_nothing_and_says_so(tmp_path):
     # The copy keeps the FLIGHT LOG's spelling (unchanged behaviour), so
     # the per-zone log and the file on disk stay identical strings.
     assert sorted(p.name for p in (out / 'zone_1').rglob('*.JPG')) == \
-        ['C231C0000.JPG', 'C231C0001.JPG']
+        ['IMG_0000.JPG', 'IMG_0001.JPG']
     assert sorted(p.name for p in (out / 'zone_2').rglob('*.JPG')) == \
-        ['C231C0002.JPG']
+        ['IMG_0002.JPG']
 
 
 def test_genuinely_absent_files_are_counted_not_just_warned(tmp_path):
     source = tmp_path / 'src'
     source.mkdir()
-    (source / 'C231C0000.jpg').write_bytes(b'j')
+    (source / 'IMG_0000.jpg').write_bytes(b'j')
 
     module = _module()
     out = tmp_path / 'batched'
     out.mkdir()
     copied, missing = module._BatchDirectory__create_batch_folders(
-        str(out), [['C231C0000.jpg', 'GONE_A.jpg', 'GONE_B.jpg']],
+        str(out), [['IMG_0000.jpg', 'GONE_A.jpg', 'GONE_B.jpg']],
         str(source), None)
     assert copied == 1
     assert missing == 2
@@ -308,10 +308,9 @@ def unattended(monkeypatch):
     monkeypatch.setattr('builtins.input', eof)
 
 
-def test_cli_zone_size_outranks_another_expeditions_stored_value(unattended):
-    """Measured: stored batch.min_zone_size=300 (from NA173) against a CLI
-    --b_min of 2000 -> the batcher used 300. Same fail-open that was
-    closed for the merge driver, still open here."""
+def test_cli_zone_size_outranks_a_previous_runs_stored_value(unattended):
+    """A stored batch.min_zone_size=300 from an earlier run must not beat
+    a CLI --b_min of 2000."""
     store = FakeStore({'batch': {'min_zone_size': 300}})
     module = _module(store)
     module.params = {'batch_min_zone_size': _int_param(1000, 2000)}
@@ -390,8 +389,7 @@ def test_disagreeing_zone_logs_are_an_error_line_not_a_traceback(tmp_path):
     UTM zones. __get_flight_log_path is called from validate_parameters,
     OUTSIDE run()'s try/except, so an uncaught ValueError there is an
     unhandled traceback out of main.py - the shape the KeyError fix in this
-    same file exists to remove (audit-verification 2026-08-07: the catch
-    shipped with no test)."""
+    same file exists to remove."""
     raw = tmp_path / 'raw_images'
     raw.mkdir()
     _log(raw / 'flight_log_53N_UTM.txt', ['a.jpg'])
@@ -424,7 +422,7 @@ def test_a_single_zone_directory_is_still_found(tmp_path):
     assert got and os.path.basename(got) == 'flight_log_53N_UTM.txt'
 
 
-# ---------------- absolute-path flight-log rows (C-20260827-06)
+# ---------------- absolute-path flight-log rows
 
 def test_absolute_path_rows_resolve_by_basename(tmp_path):
     """export_rs_flightlog --path-mode=absolute names the canonical pool
@@ -432,17 +430,17 @@ def test_absolute_path_rows_resolve_by_basename(tmp_path):
     raw row used to match nothing and every image went 'missing'."""
     source = tmp_path / 'src'
     source.mkdir()
-    (source / 'C231C0000.jpg').write_bytes(b'j')
+    (source / 'IMG_0000.jpg').write_bytes(b'j')
     module = _module()
     dest = tmp_path / 'zone_1'
     dest.mkdir()
     copied, missing = module._BatchDirectory__copy_files(
-        str(source), str(dest), ['M:\\pool\\cammid\\C231C0000.jpg'])
+        str(source), str(dest), ['M:\\pool\\images\\IMG_0000.jpg'])
     assert (copied, missing) == (1, 0)
     # The copy lands under the row's BASENAME - an absolute row must
     # never be joined onto the camera dir (os.path.join would swallow it).
     landed = [p for p in dest.rglob('*.jpg')]
-    assert [p.name for p in landed] == ['C231C0000.jpg']
+    assert [p.name for p in landed] == ['IMG_0000.jpg']
     assert str(dest) in str(landed[0])
 
 
@@ -481,8 +479,8 @@ def test_exact_source_path_selects_the_intended_duplicate(tmp_path):
     first, second = source / 'a', source / 'b'
     first.mkdir(parents=True)
     second.mkdir()
-    (first / 'C231C0000.jpg').write_bytes(b'first')
-    intended = second / 'C231C0000.jpg'
+    (first / 'IMG_0000.jpg').write_bytes(b'first')
+    intended = second / 'IMG_0000.jpg'
     intended.write_bytes(b'second')
     dest = tmp_path / 'zone'
     module = _module()
@@ -507,9 +505,9 @@ def test_outside_tree_path_uses_selected_processed_source(tmp_path):
     selected = tmp_path / 'processed'
     raw.mkdir()
     selected.mkdir()
-    (raw / 'C231C0000.jpg').write_bytes(b'raw pixels')
-    (selected / 'C231C0000.jpg').write_bytes(b'processed pixels')
+    (raw / 'IMG_0000.jpg').write_bytes(b'raw pixels')
+    (selected / 'IMG_0000.jpg').write_bytes(b'processed pixels')
     dest = tmp_path / 'zone'
     assert _module()._BatchDirectory__copy_files(
-        str(selected), str(dest), [str(raw / 'C231C0000.jpg')]) == (1, 0)
+        str(selected), str(dest), [str(raw / 'IMG_0000.jpg')]) == (1, 0)
     assert next(dest.rglob('*.jpg')).read_bytes() == b'processed pixels'

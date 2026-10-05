@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Fresh-user / hostile-input guards on the user-facing surface.
 
-Everything here was reachable by a new operator on a new expedition and
-produced either a raw traceback or a plausible-looking wrong answer
-(audit 2026-08-07):
+Everything here was reachable by a new operator on a new survey and
+produced either a raw traceback or a plausible-looking wrong answer:
 
   modules/flight_logs.py
     - two logs of DIFFERENT UTM zones in one directory: discovery picked
-      the lexicographically first and georeferenced the other cruise's
+      the lexicographically first and georeferenced the other survey's
       imagery ~2,000 km away, silently
     - zone 99 band 'Z' produced '+proj=utm +zone=99' / 'epsg:32699' with
       exit code 0, and any unknown band fell into the NORTHERN branch, so
@@ -63,14 +62,14 @@ def _log(directory, name, rows=1):
 # ------------------------------------------------------ mixed-zone refusal
 
 def test_two_logs_of_different_zones_refuse_to_resolve(tmp_path):
-    _log(tmp_path, 'flight_log_NA001_57L_UTM.txt')
-    _log(tmp_path, 'flight_log_NA002_53N_UTM.txt')
+    _log(tmp_path, 'flight_log_run_a_57L_UTM.txt')
+    _log(tmp_path, 'flight_log_run_b_53N_UTM.txt')
     with pytest.raises(ValueError) as exc:
         find_flight_log(str(tmp_path))
     message = str(exc.value)
     # Both offenders must be named - "one of them is wrong" is useless.
-    assert 'flight_log_NA001_57L_UTM.txt' in message
-    assert 'flight_log_NA002_53N_UTM.txt' in message
+    assert 'flight_log_run_a_57L_UTM.txt' in message
+    assert 'flight_log_run_b_53N_UTM.txt' in message
     assert '57L' in message and '53N' in message
 
 
@@ -84,11 +83,11 @@ def test_tagged_and_untagged_logs_refuse_to_resolve(tmp_path):
 
 
 def test_several_logs_of_the_SAME_zone_still_resolve(tmp_path):
-    """The guard must not break the ordinary multi-dive-one-zone case."""
-    _log(tmp_path, 'flight_log_NA001_53N_UTM.txt')
-    _log(tmp_path, 'flight_log_NA002_53N_UTM.txt')
+    """The guard must not break the ordinary multi-run-one-zone case."""
+    _log(tmp_path, 'flight_log_run_a_53N_UTM.txt')
+    _log(tmp_path, 'flight_log_run_b_53N_UTM.txt')
     picked = find_flight_log(str(tmp_path))
-    assert os.path.basename(picked) == 'flight_log_NA001_53N_UTM.txt'
+    assert os.path.basename(picked) == 'flight_log_run_a_53N_UTM.txt'
     assert assert_one_zone([picked], str(tmp_path)) == (53, 'N')
 
 
@@ -135,7 +134,7 @@ def test_real_zones_still_write(tmp_path):
 
 def test_crs_for_flight_log():
     assert crs_for_flight_log('flight_log_53N_UTM.txt') == 'EPSG:32653'
-    assert crs_for_flight_log('flight_log_NA167_H2075_57L_UTM.txt') == \
+    assert crs_for_flight_log('flight_log_transect-01_57L_UTM.txt') == \
         'EPSG:32757'
     assert crs_for_flight_log('flight_log_UTM.txt') is None
     assert crs_for_flight_log(None) is None
@@ -235,9 +234,7 @@ def test_get_and_set_survive_an_in_process_non_dict_section(tmp_path):
     A section can still become a non-dict in memory (a driver assigning
     `store._data['batch'] = None`, or a test double), and both accessors
     assumed a dict - `AttributeError: 'NoneType' object has no attribute
-    'get'` out of whichever driver touched it first
-    (audit-verification 2026-08-07: the shape guard shipped with no test;
-    only the file-level normalisation was covered)."""
+    'get'` out of whichever driver touched it first."""
     store = SettingsStore(str(tmp_path / 'rs_settings.json'))
     for broken in (None, 'RS1', ['RS1'], 7):
         store._data['realityscan'] = broken

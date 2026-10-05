@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Unit tests for neighbour-scoped merge attempts (design 2026-07-27).
+"""Unit tests for neighbour-scoped merge attempts.
 
 `find_borders` computes the pairs whose 10 m-expanded UTM bboxes touch, and its
 docstring says "These are the only pairs merging should be attempted between" -
 but the pairs were used only to build clusters and then discarded, so every
 attempt handed the WHOLE cluster to RealityScan.
 
-Observed cost on H2024: cluster_1 put 12 components in one scene, so a failure
-named no pair; cluster_0 ran all three rungs with the 0.236-scale zone_3_c0
-present every time, so we never learned whether its two sound siblings would
-have fused alone.
+Whole-cluster attempts put many components in one scene, so a failure names
+no pair, and one collapsed-scale component present in every rung hides whether
+its sound siblings would have fused alone.
 
 These tests cover the selection and ordering logic, plus the termination
 argument for the target loop. They deliberately do NOT drive RealityScan.
@@ -96,7 +95,7 @@ def test_border_margin_applies_to_both_bboxes():
 def test_neighbour_subset_picks_up_margin_neighbours_under_border_gate():
     """C is 5 m from B - inside the 10 m margin, but with no shared imagery
     and no true overlap. The legacy 'border' gate relates them; the default
-    'overlap' gate (uniqueness criterion 2026-07-28) does not."""
+    'overlap' gate does not."""
     subset = merge_zones.neighbour_subset([A, B, C, D],
                                           component_analysis.component_key(B),
                                           LOG, pair_gate='border')
@@ -167,7 +166,7 @@ def test_fusion_shrinks_the_cluster_and_grows_the_bbox():
 
     Which targets reopen is owned by test_targeted_reopen_only_touches_borderers;
     an earlier version of this test asserted clear-everything, the quadratic
-    behaviour the 2026-07-27 review flagged.
+    behaviour.
     """
     current = [A, B, C, D]
     fused = comp('cluster_0', 'm_c0', A['camera_count'] + B['camera_count'],
@@ -193,8 +192,8 @@ def test_cluster_scope_still_takes_everything():
     assert len(subset) == 4
 
 
-# ------------------------------------------------- pair gate (criterion
-# 2026-07-28: unique = no shared images AND no true spatial overlap)
+# ------------------------------------------------- pair gate (unique =
+# no shared images AND no true spatial overlap)
 
 def test_pair_related_by_shared_imagery():
     a = comp('z1', 'P', 4, (0, 0, 10, 10), images=['x1.jpg', 'x2.jpg'])
@@ -243,9 +242,8 @@ def test_overlap_gate_splits_the_transitive_chain():
 
 def test_acceptance_verdict_is_the_wired_decision():
     """Drives merge_zones.acceptance_verdict - the function merge_cluster
-    actually calls - across the real H2024 outcomes (final review must-fix:
-    the loss-budget tests only reached attribute_result, so the accept
-    wiring itself was unguarded)."""
+    actually calls - across real merge outcomes, so the accept wiring is
+    guarded and not only attribute_result."""
     tol = merge_zones.loss_budget(4865, 0.0025)
     assert tol == 12
 
@@ -282,7 +280,8 @@ def test_acceptance_verdict_is_the_wired_decision():
 
 def test_effective_ladder_is_the_wired_mechanism_filter():
     """Drives merge_zones.effective_ladder_for - what merge_cluster consumes
-    (final review: shared_graph_spans was only tested as a predicate)."""
+    so shared_graph_spans is tested through its caller, not only as a
+    predicate."""
     ladder = merge_zones.LADDERS['merge_first']
     p = comp('z1', 'P', 4, (0, 0, 10, 10), images=['a.jpg', 's.jpg'])
     q = comp('z4', 'Q', 4, (5, 0, 15, 10), images=['s.jpg'])
@@ -318,8 +317,7 @@ def test_merge_rungs_need_a_spanning_shared_graph():
 
 
 
-# ------------------------------------------- regressions from the 2026-07-27
-# adversarial review of the merge-scope changes (F:/_copylogs/merge_logic_review.md)
+# ------------------------------------------- merge-scope regressions
 
 def test_symmetric_pair_is_attempted_once_not_twice():
     """A-B is one subset regardless of which one is the growth target.
@@ -411,19 +409,18 @@ def test_scale_gate_still_blocks_a_fusion_containing_a_bad_input():
 
 
 # ---------------------------------------------------------------------------
-# Fused-component identity must be unique across attempts (H2024 2026-07-28)
+# Fused-component identity must be unique across attempts
 # ---------------------------------------------------------------------------
 #
 # peel_index restarts at 0 on every attempt, so naming a fusion
 # `<tag>_m_c<peel_index>` gave BOTH accepted fusions in cluster_1 the identity
 # `cluster_1/cluster_1_m_c0`. The next find_borders call raised
-# "duplicate component identity" and killed a 1h47m run after two good fusions.
+# "duplicate component identity" and killed the run after two good fusions.
 
 
 def fused_name(tag, attempt_no, peel_index):
     """The REAL naming helper merge_cluster uses - not a mirror. A mirror
-    here kept passing while the driver could regress (final review,
-    must-fix; the audit-#17 shape)."""
+    here kept passing while the driver could regress."""
     return f'{merge_zones.fused_export_name(tag, attempt_no)}_c{peel_index}'
 
 
@@ -448,11 +445,11 @@ def test_the_old_scheme_would_still_be_caught():
 
 
 # ---------------------------------------------------------------------------
-# Bounded-loss attribution (project decision 2026-07-28: 0.25% of input cameras)
+# Bounded-loss attribution (budget: 0.25% of input cameras)
 # ---------------------------------------------------------------------------
 #
-# H2024's hull fused 4,860 of 4,865 cameras on every rung and was rejected all
-# three times, because 4,860 is not an exact subset sum of {2241, 1407, 1217}.
+# A real three-zone hull fusion kept 4,860 of 4,865 cameras on every rung and
+# was rejected all three times, because 4,860 is not an exact subset sum of {2241, 1407, 1217}.
 
 
 HULL = [comp('zone_5', 'zone_5_c0', 2241, (0, 0, 100, 100)),
@@ -518,7 +515,7 @@ def test_tolerance_zero_is_the_old_behaviour():
     assert fused[0]['camera_count'] == 120 and fused[0]['loss'] == 0
 
 
-# ---------------------------------------------------------------- audit #5
+# ------------------------------------------------------- scale band wiring
 # --scale_min/--scale_max were accepted, persisted, and PRINTED as the band in
 # EVALUATION_READY - and never reached the verdict. Tightening the gate was a
 # silent no-op under a report claiming it was applied.

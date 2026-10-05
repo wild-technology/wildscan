@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for the Batch Directory reuse guard (batch_inputs.json).
 
-Regression cover for two near-misses on 2026-07-26:
+Regression cover for two reuse failures:
 
 1. The zone folders silently held a BLEND of two zonings - 12,679 images on
    disk against 9,834 reported - because a changed flight log was allowed to

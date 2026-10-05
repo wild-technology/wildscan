@@ -44,7 +44,7 @@ def test_nav_content_change_is_material_and_blocks_resume(tmp_path):
     out = tmp_path / "zone_1"
     out.mkdir()
     write_fingerprint(str(out), build_fingerprint(nav, flp, ap, 50))
-    # edit the nav IN PLACE (the two-frames incident class)
+    # edit the nav IN PLACE (nav edited after alignment must be detected)
     with open(nav, "a", encoding="utf-8") as fh:
         fh.write("4;5;6\n")
     fp2 = build_fingerprint(nav, flp, ap, 50)

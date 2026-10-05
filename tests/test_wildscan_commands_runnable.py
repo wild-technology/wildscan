@@ -6,7 +6,7 @@ builds its argparse from the ENABLED modules only and rejects unknown
 flags with exit 2 - and build_commands forwarded the WHOLE persisted
 answer set plus the forced alignment flags, unconditionally.
 
-Measured (audit 2026-08-07): 16 of 31 stage selections rejected on a first
+Measured: 16 of 31 stage selections rejected on a first
 session, 29 of 31 once rs_settings.json carried a previous full run's
 answers. default_enabled() deliberately unticks completed stages, so the
 SECOND session always landed in the broken region. The six existing
@@ -290,12 +290,12 @@ def test_publish_carries_the_workspace_crs(tmp_path, tag, epsg):
     session = Session(results_root=str(ws), enabled=['publish'])
     argv = build_commands(session)[0].argv
     # Placement now comes from each mesh's own .rsInfo sidecar; the flight
-    # log rides along as the INDEPENDENT nav check (2026-08-31).
+    # log rides along as the INDEPENDENT nav check.
     assert '--flight-log' in argv
     assert f'flight_log_{tag}_UTM.txt' in argv[argv.index('--flight-log') + 1]
 
 
-def test_publish_omits_the_crs_for_a_local_frame_campaign(tmp_path):
+def test_publish_omits_the_crs_for_a_local_frame_run(tmp_path):
     ws = tmp_path / 'ws'
     (ws / 'raw_images').mkdir(parents=True)
     (ws / 'raw_images' / 'flight_log_UTM.txt').write_text(
@@ -310,8 +310,8 @@ def test_the_publish_argv_is_accepted_by_publish_batchs_own_parser(tmp_path):
 
     Every stage selection is fed to main.py's real parser above, but the
     publish stage builds a publish_batch.py argv that nothing ever parsed.
-    On 2026-08-31 `--input-crs` was removed from publish_batch while WildScan
-    kept passing it: argparse exit 2, the whole publish stage dead, and the
+    When `--input-crs` was removed from publish_batch while WildScan
+    kept passing it, the result was argparse exit 2, the whole publish stage dead, and the
     full suite still green. Parse it for real, against publish_batch's OWN
     parser, so the two cannot drift again.
     """

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""The overlap-donation cap and distance ceiling (2026-07-28).
+"""The overlap-donation cap and distance ceiling.
 
 Regression cover for the zoning-nullification defect: the donation slice
 `np.argsort(score)[:overlap_size]` was sized only by the RECEIVER (20% of the
 zone) with no reference to the donor pool, so a large zone swallowed most of
-everything else. Measured on H2023: zone_1 ended with 4,540 of 4,598 unique
-images - 98.7% of the dive, spanning all three co-visibility blocks, 756 of
-its images structurally unable to match its own main block.
+everything else: one zone could end up with ~99% of the unique images,
+spanning every co-visibility block, many of them structurally unable to
+match its own main block.
 
 The fix is a symmetric cap (at most overlap%% of the receiver AND of the donor
 pool) plus an optional absolute distance ceiling (0 = legacy uncapped, band
@@ -76,8 +76,8 @@ def test_donor_pool_cap_limits_the_big_zone():
             f'over the donor-pool cap of {cap}')
 
 
-def test_no_zone_holds_practically_the_whole_dive():
-    """The H2023 shape: one zone ending with ~99% of unique images."""
+def test_no_zone_holds_practically_the_whole_survey():
+    """The failure shape: one zone ending with ~99% of unique images."""
     gdf = survey_gdf()
     zones, _ = make_zones(gdf, overlap_percent=20.0, max_distance=0.0)
     unique = len(gdf)
