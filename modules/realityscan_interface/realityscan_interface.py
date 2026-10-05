@@ -116,46 +116,6 @@ class RealityScanAlignment(RSModule):
             prompt_user=False
         )
 
-        additional_params['rs_model_generate'] = Parameter(
-            name='Generate Model',
-            cli_short='r_m',
-            cli_long='r_model_generate',
-            type=bool,
-            default_value=True,
-            description='Whether to automatically generate the model',
-            prompt_user=True
-        )
-
-        additional_params['rs_model_cull_poly'] = Parameter(
-            name='Model Polygon Culling',
-            cli_short='r_c',
-            cli_long='r_model_cull_poly',
-            type=bool,
-            default_value=True,
-            description='Whether to automatically cull large and floating polygons on the generated model',
-            prompt_user=True
-        )
-
-        additional_params['rs_model_texture'] = Parameter(
-            name='Model Texturing',
-            cli_short='r_t',
-            cli_long='r_model_texture',
-            type=bool,
-            default_value=True,
-            description='Whether to automatically texture the generated model',
-            prompt_user=True
-        )
-
-        additional_params['rs_model_simplify'] = Parameter(
-            name='Model Simplification',
-            cli_short='r_s',
-            cli_long='r_model_simplify',
-            type=bool,
-            default_value=True,
-            description='Whether to automatically simplify the generated model',
-            prompt_user=True
-        )
-
         return {**super().get_parameters(), **additional_params}
 
     @staticmethod
@@ -388,14 +348,8 @@ class RealityScanAlignment(RSModule):
 
         files_before = set(os.listdir(output_folder))
 
-        # RS_ALIGN_SCRIPT: test-cell override (calibration ladder
-        # 2026-08-08). A variant .bat with the SAME contract can be
-        # substituted without editing AlignZone.bat, which a live
-        # production run may hold open (cmd reads .bat by byte offset;
-        # a mid-run edit corrupts execution). Unset = production script.
-        align_script = os.environ.get('RS_ALIGN_SCRIPT') or 'AlignZone.bat'
         result = self.cli.run_batch_script(
-            align_script,
+            'AlignZone.bat',
             [input_folder, output_folder, flight_log_path, flight_log_params_path,
              scene_name, str(min_component_size)],
             log_dir, display_output)
@@ -647,10 +601,6 @@ class RealityScanAlignment(RSModule):
         # Parameters are validated by the orchestrator before run()
         output_dir = os.path.join(self.params['output_dir'].get_value(), "aligned_components")
         display_output = self.params['rs_display_output'].get_value()
-        generate_model = self.params['rs_model_generate'].get_value()
-        cull_polygons = self.params['rs_model_cull_poly'].get_value()
-        texture_model = self.params['rs_model_texture'].get_value()
-        simplify_model = self.params['rs_model_simplify'].get_value()
 
         # An explicit rs_flight_log_params wins; otherwise the repository's
         # UTM template. Either way __align_zone rewrites its zone from each
@@ -781,15 +731,6 @@ class RealityScanAlignment(RSModule):
         output_data['Components'] = {}
         output_data['Scenes'] = {}
 
-        if generate_model or cull_polygons or texture_model or simplify_model:
-            # Models are generated ONCE, on the merged component, not per
-            # zone (per-zone meshes waste GPU-hours on geometry the merge
-            # supersedes). See GenerateModel.bat / merge_zones.py.
-            self.logger.warning(
-                'Model generation flags are ignored during zone alignment; '
-                'run the merge workflow and GenerateModel.bat on the merged '
-                'component instead.')
-
         bar = self._initialize_loading_bar(len(process_data), "Aligning Batches")
 
         # process the data sequentially - each run gets exclusive use of the
@@ -881,17 +822,6 @@ class RealityScanAlignment(RSModule):
 
         if not 'rs_display_output' in self.params:
             return False, 'Display output parameter not found'
-
-        if not 'rs_model_generate' in self.params:
-            return False, 'Generate model parameter not found'
-
-        # missing optional params get a real Parameter defaulting to False so
-        # run() can still call get_value() on them
-        for optional_param in ('rs_model_cull_poly', 'rs_model_texture', 'rs_model_simplify'):
-            if optional_param not in self.params:
-                self.params[optional_param] = Parameter(
-                    name=optional_param, cli_short=None, cli_long=optional_param,
-                    type=bool, default_value=False, prompt_user=False)
 
         # fail fast if RealityScan itself cannot be found
         try:

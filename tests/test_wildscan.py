@@ -322,7 +322,7 @@ def test_chain_runs_as_one_invocation_preserving_handoff(tmp_path):
         "hand-off is the pipeline's current data handling")
     argv = " ".join(chain.argv)
     assert chain.argv[chain.argv.index('--g_input') + 1] == os.path.abspath('D:/x')
-    assert "--r_model_generate false" in argv, "model flags forced off"
+    assert "--r_display_output false" in argv, "console display forced off"
     assert chain.needs_realityscan
 
 

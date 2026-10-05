@@ -4,7 +4,7 @@
 WildScan builds one main.py invocation for the enabled chain. main.py
 builds its argparse from the ENABLED modules only and rejects unknown
 flags with exit 2 - and build_commands forwarded the WHOLE persisted
-answer set plus the five forced model flags, unconditionally.
+answer set plus the forced alignment flags, unconditionally.
 
 Measured (audit 2026-08-07): 16 of 31 stage selections rejected on a first
 session, 29 of 31 once rs_settings.json carried a previous full run's
@@ -227,20 +227,18 @@ def test_disabled_paths_keep_their_identity_when_a_later_run_changes_cwd(
 
 
 def test_forced_model_flags_only_ride_with_align(tmp_path):
-    """The five --r_model_* / --r_display_output flags belong to
-    RealityScan Alignment; appending them unconditionally alone rejected
-    every align-less selection."""
+    """The forced --r_display_output flag belongs to RealityScan
+    Alignment; appending it unconditionally alone rejected every
+    align-less selection."""
     for enabled in (['georeference'], ['georeference', 'preprocess', 'batch'],
                     ['extract']):
         session = Session(results_root=str(tmp_path / 'ws'),
                           enabled=list(enabled), answers=dict(FULL_ANSWERS))
         argv = _chain_command(session).argv
-        assert '--r_model_generate' not in argv, enabled
         assert '--r_display_output' not in argv, enabled
     session = Session(results_root=str(tmp_path / 'ws'),
                       enabled=['batch', 'align'], answers=dict(FULL_ANSWERS))
     argv = _chain_command(session).argv
-    assert '--r_model_generate' in argv
     assert '--r_display_output' in argv
 
 

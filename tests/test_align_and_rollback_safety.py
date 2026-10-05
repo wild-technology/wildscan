@@ -136,10 +136,6 @@ def test_a_batched_root_is_expanded_per_zone(tmp_path, monkeypatch):
         'output_dir': _param('output_dir', str(tmp_path)),
         'rs_input_image_dir': _param('rs_input_image_dir', str(batched)),
         'rs_display_output': _param('rs_display_output', False),
-        'rs_model_generate': _param('rs_model_generate', False),
-        'rs_model_cull_poly': _param('rs_model_cull_poly', False),
-        'rs_model_texture': _param('rs_model_texture', False),
-        'rs_model_simplify': _param('rs_model_simplify', False),
         'rs_project_label': _param('rs_project_label', ''),
     }
     module, queued = _module_with_stub(tmp_path, monkeypatch, params)
@@ -158,10 +154,6 @@ def test_a_plain_image_folder_is_still_one_scene(tmp_path, monkeypatch):
         'output_dir': _param('output_dir', str(tmp_path)),
         'rs_input_image_dir': _param('rs_input_image_dir', str(images)),
         'rs_display_output': _param('rs_display_output', False),
-        'rs_model_generate': _param('rs_model_generate', False),
-        'rs_model_cull_poly': _param('rs_model_cull_poly', False),
-        'rs_model_texture': _param('rs_model_texture', False),
-        'rs_model_simplify': _param('rs_model_simplify', False),
         'rs_project_label': _param('rs_project_label', ''),
     }
     module, queued = _module_with_stub(tmp_path, monkeypatch, params)
@@ -202,10 +194,6 @@ def _chained_params(tmp_path):
     return {
         'output_dir': _param('output_dir', str(tmp_path)),
         'rs_display_output': _param('rs_display_output', False),
-        'rs_model_generate': _param('rs_model_generate', False),
-        'rs_model_cull_poly': _param('rs_model_cull_poly', False),
-        'rs_model_texture': _param('rs_model_texture', False),
-        'rs_model_simplify': _param('rs_model_simplify', False),
         'rs_project_label': _param('rs_project_label', ''),
     }
 
