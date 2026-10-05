@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
-authors = [{ name = "Wild Technology", email = "jonathan@wildtechnology.org" }]
+authors = [{ name = "Wild Technologies", email = "jonathan@wildtechnology.org" }]
 keywords = [
     "photogrammetry", "rov", "subsea", "realityscan",
     "georeferencing", "3d-reconstruction", "ocean-exploration",
