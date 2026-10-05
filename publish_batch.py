@@ -14,7 +14,7 @@ Results land in <workspace>/publish_report.json so WildScan can show them.
 Dry runs write publish_plan.json and preserve the publication report.
 
 Example (PowerShell, from the Git checkout):
-    & "./.venv/Scripts/python.exe" publish_batch.py --workspace "F:/na156_h2024_v2" `
+    & "./.venv/Scripts/python.exe" publish_batch.py --workspace "<workspace>" `
         --prefix "IN-401" --dry-run
 
 Add --flight-log with a quoted path for an independent navigation check.
@@ -108,7 +108,7 @@ def main() -> int:
     parser.add_argument('--prefix', required=True,
                         help='asset-name prefix, e.g. the wreck name')
     parser.add_argument('--flight-log', default=None,
-                        help='flight log for this cruise. Its nav envelope '
+                        help='flight log for this dataset. Its nav envelope '
                              'is an independent check on how each mesh is '
                              'placed (default: resolved from the workspace)')
     parser.add_argument('--components', nargs='*', default=None,

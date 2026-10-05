@@ -352,7 +352,7 @@ def chain_arg_names(chain: list[str]) -> set[str]:
     with exit 2, so forwarding the full persisted answer set made the
     portal's own command unrunnable on 29 of 31 stage selections - and
     default_enabled() unticks completed stages, so the SECOND session
-    always landed in the broken region (audit 2026-08-07).
+    always landed in the broken region.
     """
     names = {"output_dir", "continue_automatically"}
     enabled_displays = {MODULE_DISPLAY[k] for k in chain if k in MODULE_DISPLAY}
@@ -493,8 +493,8 @@ def build_commands(session: Session) -> list[StageCommand]:
     # RealityScan machine constants (RS_INSTANCE / RS_CACHE_DIR /
     # RS_HEADLESS), resolved ONCE per run plan from the settings store's
     # 'realityscan' section (module_base.settings_store.realityscan_env -
-    # the single source of truth; headless defaults False = visible, project
-    # decision 2026-08-07). PRECEDENCE: a variable already set in the
+    # the single source of truth; headless defaults False = visible).
+    # PRECEDENCE: a variable already set in the
     # user's environment wins over the stored default - realityscan_env
     # returns the env value unchanged in that case, so when CommandRunner
     # overlays this dict onto the inherited environment the user's
@@ -543,17 +543,16 @@ def build_commands(session: Session) -> list[StageCommand]:
                 "--visible", "true", "--auto_model", "false",
                 "--ladder", "merge_first", "--merge_scope", "neighbour",
                 "--pair_gate", "overlap", "--assemble_only", "false",
-                # 0.0025 = the bounded-loss decision (2026-07-28):
-                # 0.25% of input cameras, sized from the hull's real loss
-                # (5-11 of 4,865) with an order of magnitude of headroom.
+                # 0.0025 = the bounded-loss decision:
+                # 0.25% of input cameras, an order of magnitude above the
+                # loss of a sound joint solve.
                 # Pinned HERE deliberately (not rs_settings): drivers that
                 # left merge options unpinned inherited another session's
-                # stored values (final review 2026-07-29, item c), and
+                # stored values, and
                 # test_wildscan pins this flag by test. Scale band 0.90-1.10
-                # is the metric-scale oracle gate (2026-07-26), set after two
-                # align-time scale collapses (0.175, 0.236) shipped with
-                # camera-count oracles green; known-good components measure
-                # 0.937-1.119. Full provenance: merge_zones.merge_cluster's
+                # is the metric-scale oracle gate: align-time scale collapses
+                # can pass camera-count oracles, and known-good components
+                # fall inside the band. Full provenance: merge_zones.merge_cluster's
                 # loss_tolerance_frac comment.
                 "--loss_tolerance", "0.0025", "--scale_gate", "true",
                 "--scale_min", "0.9", "--scale_max", "1.1"]
@@ -576,7 +575,7 @@ def build_commands(session: Session) -> list[StageCommand]:
         # Popen had no instance lock, no marker hygiene, no verified
         # shutdown, broke on space-containing checkout paths, and let the
         # 'start ""'-booted RealityScan GUI inherit the runner's stdout
-        # PIPE (WINDOWS TRAP 2026-08-07) - run_batch_script gives the .bat
+        # PIPE (a Windows trap) - run_batch_script gives the .bat
         # a log file instead. Deliverable pinning (OBJ_NiraParts /
         # FBX_Parts / dense PLY) stays in ExportDeliverables.bat and its
         # Metadata presets; the driver only carries the same three
@@ -601,10 +600,9 @@ def build_commands(session: Session) -> list[StageCommand]:
         # what the exporter actually did. The flight log is pinned here as the
         # INDEPENDENT nav check on that reading - and pinned rather than left
         # to publish_batch for the same reason --loss_tolerance is: the portal
-        # states what it ran (audit 2026-08-07). Before 2026-08-31 this passed
-        # --input-crs, which the exports needed because they carry raw UTM
-        # metres; that flag is gone, and the vertical it could never express
-        # was the reason every published wreck sat at the sea surface.
+        # states what it ran. --input-crs is no longer passed: it could not
+        # express the vertical, which left published models at the sea
+        # surface.
         log = workspace_flight_log(ws)
         if log:
             argv += ["--flight-log", str(log)]

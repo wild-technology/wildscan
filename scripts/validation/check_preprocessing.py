@@ -8,7 +8,7 @@ dataset; otherwise the check uses a temporary directory.
 
 Example (PowerShell, from the Git checkout):
     & "./.venv/Scripts/python.exe" scripts/validation/check_preprocessing.py `
-        --dataset "D:/survey/zone"
+        --dataset "<dataset>"
 """
 from __future__ import annotations
 

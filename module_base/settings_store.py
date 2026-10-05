@@ -45,7 +45,7 @@ DEFAULT_SETTINGS_PATH = os.path.join(_REPO_ROOT, "rs_settings.json")
 #                   Default: 'RS1'.
 #   headless      - boot instances without a GUI, exported as RS_HEADLESS
 #                   ('1' = headless, '0' = visible). Default: False
-#                   (VISIBLE) - PROJECT DECISION 2026-08-07: visible by
+#                   (VISIBLE) - visible by
 #                   default is supervision-friendly; headless is the
 #                   per-machine override. The .bat layer's own fallback when
 #                   RS_HEADLESS is absent remains headless
@@ -63,7 +63,7 @@ DEFAULT_SETTINGS_PATH = os.path.join(_REPO_ROOT, "rs_settings.json")
 # attach mode must never export it, and run_batch_script's own
 # gpu_devices= argument has to win over the stored value. Every driver
 # reaches RealityScan through that layer, so nothing loses the pin by
-# using realityscan_env() for the rest (audit 2026-08-07).
+# using realityscan_env() for the rest.
 
 REALITYSCAN_SECTION = "realityscan"
 DEFAULT_INSTANCE_NAME = "RS1"
@@ -97,7 +97,7 @@ def realityscan_env(store) -> dict:
         # `or DEFAULT_INSTANCE_NAME` on the STORED value too: a stored
         # empty string used to be exported verbatim as RS_INSTANCE='',
         # which every .bat then interpolates into an empty
-        # -delegateTo/-getStatus argument (audit 2026-08-07).
+        # -delegateTo/-getStatus argument.
         "RS_INSTANCE": os.environ.get("RS_INSTANCE")
         or str(store.get(REALITYSCAN_SECTION, "instance_name",
                          DEFAULT_INSTANCE_NAME) or DEFAULT_INSTANCE_NAME),
@@ -130,7 +130,7 @@ class SettingsStore:
             # assume dicts, so such a section used to crash every driver at
             # startup with AttributeError/TypeError - and the corrupt-file
             # quarantine above never fired, because the JSON parses fine
-            # (audit 2026-08-07). Drop the bad sections loudly instead.
+            # Drop the bad sections loudly instead.
             bad = sorted(k for k, v in data.items() if not isinstance(v, dict))
             if bad:
                 print(f"WARNING: {self.path}: ignoring non-object settings "
@@ -183,7 +183,7 @@ class SettingsStore:
         bare input() then aborts the driver with an EOFError traceback.
         ``ask()`` has always guarded this; ``prompt``/``prompt_bool`` did
         not, so standalone scripts that prompt could not run unattended
-        at all (audit 2026-08-07). Returns ``default`` on EOF; raises a
+        at all. Returns ``default`` on EOF; raises a
         NAMED error when there is no default to fall back to.
         """
         try:
@@ -222,7 +222,7 @@ class SettingsStore:
 
     def ask(self, section: str, key: str, cli_value, fallback):
         """CLI-argument-aware prompt, safe for unattended runs (promoted
-        from the identical grow_zone/merge_zones helpers, 2026-08-07).
+        from the identical grow_zone/merge_zones helpers).
 
         An explicit CLI value wins and is persisted; otherwise the stored
         value (or ``fallback``) is offered as the prompt default.
@@ -237,7 +237,7 @@ class SettingsStore:
         stored = self.get(section, key, fallback)
         # sys.stdin is None under pythonw / no-console hosts; isatty()
         # on None would raise AttributeError before the EOFError guard
-        # ever gets a chance (clean-sweep 2026-08-07).
+        # ever gets a chance.
         if sys.stdin is None or not sys.stdin.isatty():
             self.set(section, key, stored)
             return stored

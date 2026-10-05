@@ -12,20 +12,18 @@ SAFETY PROPERTY - attach-only, scene never reset:
     performs no shutdown before or after, and clears no marker files. It
     NEVER calls startRealityScan.bat: that boot script's already-running
     branch issues ``-newScene -deleteAutosave``, which destroys the live
-    scene. That is exactly the incident the ON2026 delivery had to dodge
-    (status log, 2026-08-07): the ON2026 mesh was reconstructed
-    interactively over ~9 h in a GUI session, and every boot-path workflow
-    would have reset it - ModelToFinal.bat attaches instead, and this
-    driver preserves that property end to end.
+    scene. A mesh reconstructed interactively in a GUI session would be
+    reset by every boot-path workflow - ModelToFinal.bat attaches instead,
+    and this driver preserves that property end to end.
 
 The per-operation error gate lives in ModelToFinal.bat's :run subroutine
 (rev/lastError baselining via -getStatus), because a GUI-launched instance
 never writes errors_<instance>.txt.
 
 Example (PowerShell, from the Git checkout):
-    & "./.venv/Scripts/python.exe" finish_model.py --outdir "M:/dive/final" `
+    & "./.venv/Scripts/python.exe" finish_model.py --outdir "<workspace>/final" `
         --instance RS1 --name Final --preset 4x8k --simplify true `
-        --format objmetric --save-path "M:/dive/final/scene.rsproj"
+        --format objmetric --save-path "<workspace>/final/scene.rsproj"
 
 ``--instance`` defaults to ``*`` ("first available") - fine for a single
 interactive session, ambiguous with two instances running: name one
@@ -98,7 +96,7 @@ def main() -> int:
                              'freshly -load-ed scene: load restores the '
                              'scene with NO model selected, and '
                              '-calculateTexture then fails 0x80004005 '
-                             'immediately (live gate B9, 2026-08-07). Only '
+                             'immediately. Only '
                              'omit when the target instance has a model '
                              'actively selected (e.g. just computed in the '
                              'GUI session).')
@@ -152,7 +150,7 @@ def main() -> int:
         # -silent auto-answers the "Export Selection" dialog and exports
         # NOTHING (MergeZoneComponents.bat records the census reading 0) -
         # so "the workflow returned 0" is not evidence a deliverable
-        # exists (audit 2026-08-07).
+        # exists.
         missing = missing_exports(outdir, args.name, args.format)
         if missing:
             logger.error(
