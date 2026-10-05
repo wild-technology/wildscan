@@ -165,13 +165,12 @@ project status and decisions. The distilled, self-contained counterpart is
 
 Python files, functions and variables use `snake_case`; class names retain
 their established `PascalCase`. Names describe the operation:
-`georeference_survey.py`, `decimate_images.py` and `poses_to_flight_log.py`.
+`decimate_images.py` and `poses_to_flight_log.py`.
 
 Preserve existing native commands, workflow filenames, public framework
-methods, environment variables, and serialized/settings keys. The former
-root filenames `geoall.py`, `decimator.py`, and `poses2flightlog.py` are
-compatibility aliases for commands and imports; the corresponding
-`SettingsStore` sections keep their existing keys.
+methods, environment variables, and serialized/settings keys.
+`poses_to_flight_log.py` keeps its `poses2flightlog` `SettingsStore` section
+so saved answers continue to work.
 
 Everything in this repo says **RealityScan** (`RS`), never RealityCapture.
 Exceptions that must NOT be renamed:
@@ -313,8 +312,8 @@ Exceptions that must NOT be renamed:
   use, the dive's nav envelope, and a determinant test that rules out
   mirrored readings), then converts the anchor's SEA-SURFACE depth to an
   ELLIPSOIDAL height through EGM2008 and localises the mesh into East-North-Up
-  metres. **The vertical is the whole point:** `georeference_survey.py` writes
-  `-abs(kalman_depth)`, i.e. a depth below the sea surface, and Cesium reads
+  metres. **The vertical is the whole point:** the georeference stage writes
+  `-abs(depth)`, i.e. a depth below the sea surface, and Cesium reads
   every height as above the ellipsoid — the gap is the geoid undulation, up to
   +72.7 m on this repo's own data. PROJ silently applies a ZERO correction
   when the geoid grid is missing, so every transformer here passes
@@ -326,8 +325,8 @@ Exceptions that must NOT be renamed:
 
 **Standalone / retired**
 
-- `georeference_survey.py`, `poses_to_flight_log.py`, `decimate_images.py`, `timestamp_rename.py`,
-  `organize_by_date.py` — data prep; they do not invoke RealityScan.
+- `poses_to_flight_log.py`, `decimate_images.py` — data prep; they do not
+  invoke RealityScan.
 - [archive/colmap/](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/colmap/) — retired COLMAP scripts; do not resurrect into the
   active pipeline. The live COLMAP work is the separate `colmap_studio`
   project, whose fact base is frozen at `docs/COLMAP_FINDINGS_UNIFIED.md`
@@ -358,9 +357,9 @@ Exceptions that must NOT be renamed:
 5. Data lives on large local/NAS volumes with user-specific paths — never
    hardcode them. Use `SettingsStore` prompts with the previous value as
    default.
-6. `georeference_survey.py` is the canonical georeferencing implementation; port
-   improvements from it into `modules/georeference/` rather than letting
-   the two diverge further.
+6. Keep exactly one georeferencing implementation, the pipeline module
+   that `main.py` runs; never add a second, standalone copy that can drift
+   from it.
 7. Import components (`-importComponent`) ONLY from their original export
    location — a relocated `.rsalign` hangs the instance forever in a
    `#timeout` state.

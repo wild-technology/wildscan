@@ -244,7 +244,7 @@ def scan_raw_data(location: str | Path) -> RawDataScan:
             image_dirs[Path(dirpath)] = images_here
     scan.image_count = sum(image_dirs.values())
     scan.image_dirs = sorted(image_dirs, key=lambda p: -image_dirs[p])
-    # Prefer *final_datatable* nav files, mirroring geoall's own preference.
+    # Prefer *final_datatable* nav files.
     scan.nav_files.sort(key=lambda p: ("final_datatable" not in p.name.lower(),
                                        p.name.lower()))
     return scan
@@ -498,7 +498,7 @@ def scan_processed_data(location: str | Path) -> dict[str, list[Path]]:
                 out["datatables"].append(Path(dirpath) / name)
             elif low.startswith("flight_log") and low.endswith("_utm.txt"):
                 out["utm_logs"].append(Path(dirpath) / name)
-    # geoall's own preference: *final_datatable* first.
+    # *final_datatable* first.
     out["datatables"].sort(key=lambda p: ("final_datatable" not in p.name.lower(),
                                           p.name.lower()))
     return out

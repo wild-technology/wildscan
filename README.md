@@ -173,11 +173,8 @@ working copies or the pipeline's prepared zone tree.
 | `publish_cesium.py` | Uploads one mesh export (OBJ) to Cesium ion as a tiled 3D asset via ion's REST flow — the scripted equivalent of the GUI-only "Share to Cesium ion" button |
 | `publish_nira.py` | Uploads one export to Nira through the official `niraclient` (Enterprise plan required), building the explicit typed file list Nira's docs recommend |
 | `modules/camera_registry.py` | Single source of truth for the four physical rig cameras (lens, calibration groups, XMP content, filename families) |
-| `georeference_survey.py` | Standalone georeferencing (ROV nav CSV → RealityScan flight logs), including multiprocessing image copying. |
 | `poses_to_flight_log.py` | Post-alignment: rewrite camera locations back to UTM from the computed poses (XMP sidecars), producing a refined flight log + per-image nav-error QC |
 | `decimate_images.py` | Copy a percentage of images to a new folder (dataset thinning) |
-| `timestamp_rename.py` | Rename `cam*_TIMESTAMP.jpg` → `TIMESTAMP_cam*.jpg` and validate JPEG integrity (was the misnamed `masking.py` — it never masked; renamed 2026-08-07) |
-| `organize_by_date.py` | Sort images into per-date subfolders (was `test.py`) |
 | `module_base/` | Framework: `RSModule` base class, `Parameter`, `SettingsStore` |
 | `modules/realityscan_interface/` | Everything that talks to RealityScan — see below |
 | `modules/extract_images/`, `modules/georeference/`, `modules/preprocess_images/`, `modules/image_batcher/` | Pipeline modules used by `main.py` |
@@ -186,11 +183,6 @@ working copies or the pipeline's prepared zone tree.
 | `docs/validation/`, `docs/validation/results/` | Dated experiment plans and preserved result evidence |
 | `flightlogs.xml`, `sensorsdb.xml` | RealityScan reference data |
 | `docs/code-review-2026-07.md` | What the first-machine validation changed and why (read before trusting older assumptions about the CLI layer) |
-
-The canonical utility names are `georeference_survey.py`, `decimate_images.py`,
-and `poses_to_flight_log.py`. The former names `geoall.py`, `decimator.py`, and
-`poses2flightlog.py` remain command and import aliases. Existing settings
-sections keep those old keys, so saved answers continue to work.
 
 Manual validation is separate from pytest. For a small preprocessing check
 on copies of your images, use:
@@ -217,16 +209,6 @@ and texturing. The default was A/B-measured on a zone_9 400-image subset
 (2026-07-21): baseline registered 0% (no component at all), CLAHE 2.0/8×8 registered 59.8% and beat every neighboring clip/tile
 setting; gray-world white balance *reduced* registration (~34%) and is
 off by default.
-
-### Known duplication
-
-`georeference_survey.py` (standalone) and `modules/georeference/georeference_images.py`
-(pipeline module) implement the same georeferencing workflow. The standalone
-uses multiprocessing for image copying; the module is wired into `main.py`.
-Both share the camera and mount registries, and regression tests check their
-orientation and offset calculations agree. Use `georeference_survey.py` for
-standalone runs and keep the shared behavior consistent when either workflow
-changes.
 
 ## Persisted settings (`rs_settings.json`)
 
@@ -458,12 +440,6 @@ Standalone zone alignment (from `modules/realityscan_interface/RS_CLI/Scripts`):
 
 ```
 AlignZone.bat "D:\zones\zone_01" "D:\dive\aligned_components\zone_01" "D:\zones\zone_01\flight_log_4Q_UTM.txt" "..\Metadata\FlightLogParams.xml" zone_01 50
-```
-
-Standalone georeferencing:
-
-```powershell
-& ".\.venv\Scripts\python.exe" georeference_survey.py
 ```
 
 All prompts default to your previous answers (see `rs_settings.json`).
