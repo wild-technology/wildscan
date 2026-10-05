@@ -59,9 +59,9 @@ Mount, per camera (`families[].mount`); none of these values is measured:
 
 The rig `ilx_lr1_stereo` keeps the stereo geometry as data only:
 
-- `stereo_baseline_m` = `0.225425`. The baseline is supplied, not measured from
-  the calibration: the checkerboard square size is unknown, so the stereo solve
-  is in square units and this baseline sets its scale.
+- `stereo_baseline_m` = `0.225425`. The baseline was measured on the rig; the
+  calibration did not estimate it: the checkerboard square size is unknown, so
+  the stereo solve is in square units and this measured baseline sets its scale.
 - `extrinsics_left_to_right`: rotation `R` and translation `T_m` in the OpenCV
   convention (`X_right = R * X_left + T`; camera axes x right, y down,
   z forward; metres), a relative rotation of 1.827 degrees.

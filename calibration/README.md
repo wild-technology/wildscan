@@ -11,7 +11,7 @@ files agree. Change both together, and only from a new calibration.
 | Field | Content |
 |---|---|
 | `cameras.ilx_left`, `cameras.ilx_right` | calibration and lens-distortion group, prior level (`approximate`), image size 4096 x 3000, 3 x 3 intrinsic matrix in pixels, OpenCV distortion `k1, k2, p1, p2, k3` (k3 and the tangential terms held at 0), the same calibration in RealityScan's normalised form (`focal_length_35mm`, `principal_point_u`, `principal_point_v`), distortion model `brown3`, provenance |
-| `rigs.ilx_lr1_stereo` | eyes, image size, nominal focal length 16 mm, stereo baseline 0.225425 m (supplied, not measured: it sets the scale of a solve made in checkerboard-square units), extrinsics left to right in the OpenCV convention, stereo solve quality, the image pairs used |
+| `rigs.ilx_lr1_stereo` | eyes, image size, nominal focal length 16 mm, stereo baseline 0.225425 m (measured on the rig; it sets the scale of a solve made in checkerboard-square units), extrinsics left to right in the OpenCV convention, stereo solve quality, the image pairs used |
 
 The calibration images were taken in a pool on 2026-05-18 and solved on
 2026-09-30. They carry no EXIF; the 16 mm focal length is as stated for the

@@ -177,7 +177,7 @@
         }
       },
       "stereo_baseline_m": 0.225425,
-      "_stereo_baseline_comment": "SUPPLIED, not measured here: 225.425 mm from docs/rs-reference/13 section 3.5, confirmed by the operator. The checkerboard square size is unknown, so the solve is in square units (|T|=19.38 squares) and this baseline sets the scale; implied square 11.63 mm.",
+      "_stereo_baseline_comment": "MEASURED on the rig: 225.425 mm (docs/rs-reference/13 section 3.5). The checkerboard solve did not estimate it and was not given it: the square size is unknown, so the solve is in square units (|T|=19.38 squares) and this measured baseline sets the scale afterwards; implied square 11.63 mm.",
       "extrinsics_left_to_right": {
         "_convention": "OpenCV: X_right = R * X_left + T, camera frames x right, y down, z forward, T in metres.",
         "R": [
