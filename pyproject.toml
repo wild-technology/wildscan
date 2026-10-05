@@ -5,15 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "wildscan"
 dynamic = ["version"]
-description = "Subsea photogrammetry pipeline: ROV imagery to georeferenced 3D models via RealityScan 2.2"
+description = "RealityScan 2.2 pipeline for a two-camera Sony ILX-LR1 rig captured with Wild Sync: images to positioned 3D models"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 authors = [{ name = "Wild Technologies", email = "jonathan@wildtechnology.org" }]
 keywords = [
-    "photogrammetry", "rov", "subsea", "realityscan",
-    "georeferencing", "3d-reconstruction", "ocean-exploration",
+    "photogrammetry", "stereo-camera", "ilx-lr1", "realityscan",
+    "wild-sync", "3d-reconstruction", "ocean-exploration",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -27,8 +27,8 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
 
-# Floors start from the H2023/H2024/ON2026 deliverable environment
-# (the HONEYBADGER box, 2026-08-08), with security fixes applied where needed.
+# Floors start from the environment the pipeline was last validated in,
+# with security fixes applied where needed.
 # Keep this list and requirements.txt in step; the latter is maintained by hand.
 #
 # NOTE on the Python floor: numpy>=2.5 and scipy>=1.18 are themselves
