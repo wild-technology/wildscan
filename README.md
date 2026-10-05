@@ -69,7 +69,9 @@ py -3.13 -m venv .venv
 Use any installed Python 3.12 or newer in place of `py -3.13`. The install
 must be editable (`-e`) from a Git clone: the application runs the driver
 scripts and the RealityScan `.bat` workflows from the checkout, and the `.bat`
-files need the CRLF line endings Git applies.
+files need the CRLF line endings Git applies. A built wheel is not a supported
+way to run the pipeline; `wildscan` refuses to start without the driver
+scripts.
 
 Before the first alignment, install the pipeline's 13-column flight-log format
 into RealityScan's `flightlogs.xml`

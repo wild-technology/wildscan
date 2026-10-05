@@ -47,6 +47,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run offline tests
         run: python -m pytest -ra --junitxml=test-results.xml
+      # Proves only that the package metadata and distributions build. The
+      # wheel is not a runnable install: the driver scripts at the
+      # repository root are not in it, and the pipeline runs only from an
+      # editable source checkout.
       - name: Build distributions
         run: python -m build
       - name: Save test results

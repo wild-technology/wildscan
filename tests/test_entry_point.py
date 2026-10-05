@@ -61,6 +61,32 @@ def test_broken_import_keeps_the_actual_diagnostic(monkeypatch, failure):
     assert 'missing dependency' not in str(error.value)
 
 
+@pytest.mark.parametrize('missing', ['main.py', 'merge_zones.py',
+                                     'run_models.py', 'publish_batch.py'])
+def test_a_missing_driver_script_fails_with_one_clear_message(tmp_path,
+                                                             monkeypatch,
+                                                             missing):
+    """A built wheel holds the packages but not the repository-root driver
+    scripts the stages run; the application must say so before it starts,
+    not fail later inside a stage."""
+    from wildscan import app
+    checkout = tmp_path / 'site-packages'
+    (checkout / 'wildscan').mkdir(parents=True)
+    for name in ('main.py', 'merge_zones.py', 'run_models.py',
+                 'publish_batch.py'):
+        if name != missing:
+            (checkout / name).write_text('', encoding='utf-8')
+    monkeypatch.setattr(entry, '__file__', str(checkout / 'wildscan' / '__main__.py'))
+    monkeypatch.setattr(app, 'main', lambda: pytest.fail('the UI started'))
+    with pytest.raises(SystemExit) as error:
+        entry.main()
+    message = str(error.value)
+    assert missing in message
+    assert str(checkout) in message
+    assert 'pip install -e' in message
+    assert 'wheel' in message
+
+
 def test_entry_point_preserves_application_exit_status(monkeypatch):
     from wildscan import app
     monkeypatch.setattr(app, 'main', lambda: 7)

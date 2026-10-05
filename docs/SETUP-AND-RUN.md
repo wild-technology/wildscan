@@ -114,7 +114,9 @@ an execution-policy change are unnecessary. Run them from the checkout folder.
   activated environment. Use it only to create the environment.
 
 The installation must stay editable (`-e`): the application runs the driver
-scripts and the RealityScan workflows from the checkout.
+scripts and the RealityScan workflows from the checkout. A built wheel is not
+a supported way to run the pipeline; `wildscan` refuses to start without the
+driver scripts.
 
 **Verify before touching real data:**
 
