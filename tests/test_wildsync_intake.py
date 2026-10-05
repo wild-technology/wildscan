@@ -388,6 +388,21 @@ def test_raw_is_refused_as_an_input_format(run_dir, workspace, variant):
     assert not workspace.exists()
 
 
+def test_macos_appledouble_files_are_ignored(run_dir, workspace):
+    """The 2026-08-20 runs reached Windows through a Mac copy that put an
+    AppleDouble '._<name>' beside every file; they are not frames."""
+    for cam in ('cam1', 'cam2'):
+        for path in list((run_dir / cam).iterdir()):
+            (path.parent / ('._' + path.name)).write_bytes(b'\x00\x05\x16\x07')
+    result = run_intake([str(run_dir)], str(workspace), log=QUIET)
+    assert result.manifest['images']['unmatched_images'] == 0
+    assert result.manifest['images']['matched'] == 6
+    assert [n['hidden_files_ignored']
+            for n in result.manifest['sources'][0]['nodes']] == [13, 13]
+    assert result.manifest['notices'][0].startswith('26 hidden file(s)')
+    assert not list((workspace / 'raw_images').rglob('._*'))
+
+
 def test_a_rerun_into_the_same_workspace_reuses_identical_copies(run_dir,
                                                                  workspace):
     first = run_intake([str(run_dir)], str(workspace), log=QUIET)
