@@ -14,7 +14,7 @@ setlocal
 :: components - the orphan images (the precious missing-link candidates
 :: this whole stage exists to register) are simply absent there, and if
 :: re-added manually they carry no trajectory data until a flight log is
-:: imported (confirmed 2026-07-23, FINDINGS).
+:: imported.
 ::
 :: Modes (%2):
 ::   global    - enable ALL images and re-align: RealityScan's component-
@@ -53,7 +53,7 @@ setlocal
 ::       through -editInputSelection "key=value" (inpEnabled /
 ::       aligFeaturesMode; tutorials/editselectioncommand.htm). The
 ::       key=value pair is passed as ONE quoted argument built inside
-::       this script, so cmd never splits the '=' (the B5 hazard only
+::       this script, so cmd never splits the '=' (that hazard only
 ::       bites when key=value crosses a .bat argument boundary).
 ::       "legacy": use -enableAlignment true|false / -setFeatureSource N
 ::       instead (kept as the verified fallback).
@@ -65,18 +65,19 @@ setlocal
 ::       regardless of RS_GROW_SELECT_CMDS.
 ::
 :: The XMP census export runs in the ORIGINAL zone scene, so sidecars
-:: keep image identity (<stem>.xmp - the ordinal-name degradation B10
-:: only affects imported-component scenes). The driver reads them as the
-:: registration census and restores calibration-only content (bug B7).
+:: keep image identity (<stem>.xmp - ordinal names only affect
+:: imported-component scenes). The driver reads them as the registration
+:: census and restores calibration-only content, so leftover pose sidecars
+:: never auto-import as exact-pose priors.
 
 echo Reading default variables
 call "%~dp0SetVariables.bat"
 if errorlevel 1 exit /b 1
 set "AlignmentParams=%Metadata%\AlignmentParams.xml"
-:: Campaign override, same contract as AlignZone.bat (run3 2026-08-28):
-:: without this, grow re-aligns applied the REPO template's settings
-:: (Division/Ultra/50k) under a campaign that aligned with different
-:: science parameters - a recorded incident class.
+:: Alignment-parameter override, same contract as AlignZone.bat: without
+:: this, grow re-aligns would apply the REPO template's settings
+:: (Division/Ultra/50k) to a dataset that aligned with different
+:: science parameters.
 if defined RS_ALIGN_PARAMS if not "%RS_ALIGN_PARAMS%" == "" set "AlignmentParams=%RS_ALIGN_PARAMS%"
 
 set "ResultsLog=%ErrorPath%\results_%RS_INSTANCE%.log"
@@ -108,7 +109,7 @@ if not defined mode_ok ( echo ERROR: unknown mode "%mode%" & exit /b 1 )
 
 :: Validation stays in single-line chained ifs: an "exit /b 1" inside a
 :: multi-statement parenthesized block LOSES its exit code (cmd returns
-:: 0 to the caller - reproduced 2026-07-23), silently disarming the
+:: 0 to the caller), silently disarming the
 :: driver's failure handling.
 if /i "%mode%" == "component" if "%payload%" == "" ( echo ERROR: component mode requires an imagelist payload & exit /b 1 )
 if /i "%mode%" == "component" if not exist "%payload%" ( echo ERROR: imagelist not found: %payload% & exit /b 1 )
@@ -149,15 +150,14 @@ echo Loading scene
 call :run -load "%scene_path%" || goto :fail
 
 :: A stray active selection makes selection-driven operations misfire
-:: (exports silently empty under -silent - FINDINGS); start clean.
+:: (exports silently empty under -silent); start clean.
 call :run -deselectAllImages || goto :fail
 
-:: Per-step flight-log reload (project decision 2026-08-08, FLIGHTLOG_
-:: ARCHITECTURE 1b): P4-verified - importing a flight log onto an
+:: Per-step flight-log reload (FLIGHTLOG_ARCHITECTURE 1b): importing a flight log onto an
 :: ALIGNED scene and running -update re-places the components onto the
 :: CURRENT priors without a re-align. Env-gated: legacy callers that do
 :: not set RS_GROW_FLIGHT_LOG are byte-identical in behavior. The
-:: import leaves matched images ACTIVELY SELECTED (FINDINGS 2026-07-23),
+:: import leaves matched images ACTIVELY SELECTED,
 :: so deselect afterwards.
 if defined RS_GROW_FLIGHT_LOG if not "%RS_GROW_FLIGHT_LOG%" == "" (
     if not exist "%RS_GROW_FLIGHT_LOG%" ( echo ERROR: RS_GROW_FLIGHT_LOG not found: %RS_GROW_FLIGHT_LOG% & goto :fail )
@@ -188,7 +188,7 @@ goto :align_and_export
 
 :: --------------------------------------------------------------- addgrow
 :: Add NEW images to a loaded scene (e.g. cross-zone orphan pickup in a
-:: COPY of the merged project - status log queue #4), re-import the union
+:: COPY of the merged project), re-import the union
 :: flight log so the added images get their georef priors (rows for
 :: images already in scene re-import harmlessly), then fall into the
 :: standard align+export path (AlignmentParams applied, never instance
@@ -270,7 +270,7 @@ call :run -deselectAllImages || goto :fail
 call :run -exportLatestComponents "%output_dir%" || goto :fail
 :: Identity XMP census for the driver's never-shrink invariant. Covers
 :: the LAST alignment's components >= min size; the driver restores the
-:: sidecars to calibration-only after reading (bug B7).
+:: sidecars to calibration-only after reading.
 call :run -exportXMP || goto :fail
 goto :save_quit
 
@@ -305,8 +305,8 @@ goto :save_quit
 :save_quit
 :: Component-mode passes disable most of the scene (inpEnabled=false)
 :: and that state PERSISTS INTO THE SAVE - a saved zone project must
-:: always be the all-enabled state (it is the authoritative artifact;
-:: FINDINGS 2026-07-24). Re-enable everything before every save; a
+:: always be the all-enabled state (it is the authoritative artifact).
+:: Re-enable everything before every save; a
 :: no-op for modes that never disabled anything.
 echo Re-enabling all images before save
 call :run -selectAllImages || goto :fail
@@ -315,7 +315,7 @@ call :run -deselectAllImages || goto :fail
 echo Saving scene in place
 call :run -save "%scene_path%" || goto :fail
 
-:: Daily project-save schema (project requirement 2026-07-23), armed by the
+:: Daily project-save schema, armed by the
 :: driver via set_project_save_env: {label}_{scene}_YYYYMMDD.rsproj.
 if defined RS_PROJECTS_DIR if defined RS_PROJECT_LABEL (
     if not exist "%RS_PROJECTS_DIR%" mkdir "%RS_PROJECTS_DIR%"
@@ -333,7 +333,7 @@ exit /b 1
 
 :: :selectFromList - compose the current selection as the UNION of every
 :: image path in the given list file. -selectImage <imagePath|regexp>
-:: [set|union|sub|intersect|toggle] (session notes B11), one image path
+:: [set|union|sub|intersect|toggle], one image path
 :: per delegated call. Selection commands are instant and delegated
 :: commands execute FIFO, so no per-command wait (the same pattern
 :: AlignZone.bat uses for -set): a :run-style double-wait per image would

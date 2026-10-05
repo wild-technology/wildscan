@@ -1,6 +1,6 @@
 @echo off
 setlocal
-:: Sanctioned cache flush (project decision 2026-08-09): the documented
+:: Sanctioned cache flush: the documented
 :: -clearCache requires a saved project first ("You must save the
 :: project before clearing the application cache"); Epic guidance says
 :: never hand-delete cache files from a live cache. Boots a throwaway
@@ -18,8 +18,8 @@ if errorlevel 1 exit /b 1
 call :run -newScene || goto :fail
 call :run -save "%~1" || goto :fail
 :: appAutoClearCache is a RETENTION policy (default 7 days) and
-:: -clearCache HONORS it: on a 2-day-old campaign the first flush
-:: freed 26 GB and left 918 GB (measured 2026-08-09). 0 = clear ALL;
+:: -clearCache HONORS it, so a cache younger than the retention period
+:: is barely freed. 0 = clear ALL;
 :: restored to the documented default afterwards so instance exits do
 :: not silently wipe warm caches from then on.
 %RealityScan% -delegateTo %RS_INSTANCE% -set "appAutoClearCache=0"

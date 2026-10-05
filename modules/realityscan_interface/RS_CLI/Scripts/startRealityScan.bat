@@ -30,8 +30,8 @@ if defined RS_GPU_DEVICES set CUDA_VISIBLE_DEVICES=%RS_GPU_DEVICES%
 :: The hook runs through the wscript VBS shim, NOT cmd /c directly: the
 :: process trigger fires for EVERY completed process (heartbeats
 :: included) and a direct cmd /c pops a visible console window each time
-:: - hundreds of flashing terminal windows over a long run (operator
-:: report, 2026-07-23). wscript is GUI-subsystem (no console); the shim
+:: - hundreds of flashing terminal windows over a long run. wscript is
+:: GUI-subsystem (no console); the shim
 :: runs ErrorWriter.bat hidden and synchronously. Paths are wrapped in
 :: escaped quotes (\") because checkout paths routinely contain spaces;
 :: without them the trigger would silently launch nothing and all error
@@ -39,12 +39,10 @@ if defined RS_GPU_DEVICES set CUDA_VISIBLE_DEVICES=%RS_GPU_DEVICES%
 :: Cache location (RS_CACHE_DIR, opt-in - unset keeps RealityScan's own
 :: default). WHY THIS EXISTS: processing writes cache files to the cache
 :: disk, and when that disk fills RealityScan aborts the operation and the
-:: progress is lost (Epic's own "Out of Disk Space" page). The H2023 hull
-:: model was killed three times this way - twice reported only as
-:: "result code 2147942512" (0x80070070) until the instance log was
-:: snapshotted and read "Processing failed: Out of disk space.". The cache
-:: was pinned to D:\rccache (1,089 GB) and filled the drive even after the
-:: PROJECT was moved to another disk, because the cache never moves with it.
+:: progress is lost (Epic's own "Out of Disk Space" page). The failure can
+:: surface only as "result code 2147942512" (0x80070070); the instance log
+:: reads "Processing failed: Out of disk space.". Moving the PROJECT to
+:: another disk does not help, because the cache never moves with it.
 :: Epic warns NOT to delete cache files by hand, so relocating is the safe
 :: lever. appAutoClearCache is deliberately left alone here - retention is
 :: an operator policy, not a per-run decision.
@@ -55,7 +53,7 @@ if defined RS_CACHE_DIR (
     echo Cache location: %RS_CACHE_DIR%
 )
 
-:: (-stdConsole removed 2026-07-23: it allocates a console window per
+:: (No -stdConsole: it allocates a console window per
 :: instance boot; nothing reads instance stdout - progress comes from
 :: -writeProgress and results from the ErrorWriter hook.)
 start "" %RealityScan% %RS_HEADLESS_FLAG% -silent "%ErrorPath%" -setInstanceName %RS_INSTANCE% %RS_CACHE_ARGS% -set "appAutoSaveMode=false" -set "appQuitOnError=false" -set "appProcessActionTime=0" -set "appProcessAction=ExecuteProgram" -set "appProcessExecCmd=wscript.exe //B \"%ErrorPath%\ErrorWriterLaunch.vbs\" $(processResult) $(processId) $(processDuration:d) %RS_INSTANCE%" -writeProgress "%ErrorPath%\progress_%RS_INSTANCE%.txt" 600
@@ -69,7 +67,7 @@ IF /I "%ERRORLEVEL%" == "0" goto :ready
 set /a startTries+=1
 :: Two Windows traps at once, both in the repo's own registry, both on the
 :: BOOT GATE - where a mis-propagated failure means every later :run fires
-:: at a nonexistent instance (audit 2026-08-07):
+:: at a nonexistent instance:
 ::  1. `exit /b N` inside a multi-statement parenthesized block returns 0 to
 ::     the process caller. MergeZoneComponents.bat and ModelToFinal.bat both
 ::     route around it via a label, and say so; this was the one holdout.

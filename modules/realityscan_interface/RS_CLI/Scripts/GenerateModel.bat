@@ -1,7 +1,6 @@
 @echo off
 setlocal
-:: Model generation for an already-aligned scene - specified recipe
-:: (2026-07-23):
+:: Model generation for an already-aligned scene - specified recipe:
 ::   Generate High -> remove marginal (edge) triangles -> remove large
 ::   triangles (30 threshold) -> keep largest connected component ->
 ::   close holes -> clean model (the CLI equivalent of the GUI Check
@@ -43,12 +42,12 @@ echo Reading default variables
 call "%~dp0SetVariables.bat"
 if errorlevel 1 exit /b 1
 set "MetadataDir=%Metadata%"
-:: Texture budget (decision 2026-07-29): no more than FOUR large textures,
+:: Texture budget: no more than FOUR large textures,
 :: adaptive. unwrapStyle=MaxTexturesCount IS the adaptive mode - texel size
 :: adapts to fit the count - so 4 x 16K caps the budget while small
 :: components use fewer/smaller. Previously 2 x 16K (high poly) and
 :: 1 x 16K (simplified unwrap).
-:: 8K cap (decision 2026-07-31): both texture passes limited to 4 x 8K.
+:: 8K cap: both texture passes limited to 4 x 8K.
 set "HighModelTexture=%MetadataDir%\Texturing_MaxTextureCount4_8k.xml"
 set "SimplifyNoise=%MetadataDir%\SimplifyNoise_Params.xml"
 set "SimplifySmooth=%MetadataDir%\SimplifySmooth_80per_Params.xml"
@@ -159,18 +158,16 @@ call :run -selectModel "%model_tag%_Simplified" || goto :fail
 call :run -renameSelectedModel "%model_tag%_Simplified_Textured" || goto :fail
 
 :: NO save before the cleanup loop. Saving with all ~15 models still present
-:: costs an inordinate amount of time and disk - observed, and measured
-:: here: zone_1_c0's saves consumed ~81 GB with the extra write in place. The
+:: costs an inordinate amount of time and disk. The
 :: deliverable is protected instead by the double-wait in :try_delete_model,
 :: which reliably detects a no-op select on a missing intermediate before any
-:: delete runs (audit #4). Only the three kept models are ever saved.
+:: delete runs. Only the three kept models are ever saved.
 echo Deleting intermediate models
 for %%M in (Cleanup1 Cleanup2 Cleanup3 Manifold HighPoly SimplifyPass1Raw SimplifyPass1 SimplifyPass2Raw SimplifyPass2 SimplifyPass3Raw SimplifyPass3 SimplifyPass4Raw) do (
     call :try_delete_model "%model_tag%_%%M"
 )
-:: A filter/simplify step can leave a DEFAULT-NAMED residual behind - the
-:: H2024 run produced one "Model N" per component (observed in the
-:: GUI, 2026-07-29), most likely from the large-triangle cleanup path.
+:: A filter/simplify step can leave a DEFAULT-NAMED residual behind - one
+:: "Model N" per component, most likely from the large-triangle cleanup path.
 :: Default names carry no component prefix, so they are swept separately.
 :: Residuals from EARLIER components persist in the shared project, so by
 :: the sixth component the name can be "Model 6" - sweep to 9.
@@ -185,9 +182,9 @@ for %%M in ("Model 1" "Model 2" "Model 3" "Model 4" "Model 5" "Model 6" "Model 7
 :: assumption the fact base says not to make (silence is not success)
 :: - and :try_delete_model own header records the hazard: a no-op
 :: -selectModel leaves the PREVIOUS selection live and the following
-:: -deleteSelectedModel then targeted the deliverable (audit #4).
+:: -deleteSelectedModel then targets the deliverable.
 :: One delegated op, and a silently eaten model can no longer be
-:: written to disk as if it were the product (audit 2026-08-07).
+:: written to disk as if it were the product.
 echo Verifying the deliverable still exists
 call :run -selectModel "%model_tag%_Simplified_Textured" || goto :deliverableGone
 
@@ -274,7 +271,7 @@ exit /b 0
 :: short wait could return before the instance picked the select up, so a
 :: no-op select on a missing name left the PREVIOUS selection live - which at
 :: loop entry is the final textured model - and the delete that followed
-:: targeted the deliverable (audit #4). Evidence moves get per-model names so
+:: targeted the deliverable. Evidence moves get per-model names so
 :: twelve iterations stop overwriting each other.
 :try_delete_model
 %RealityScan% -delegateTo %RS_INSTANCE% -selectModel "%~1"
