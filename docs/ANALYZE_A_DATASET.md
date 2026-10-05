@@ -131,9 +131,11 @@ static-fix warning (every row carries the same position, so position accuracy
 1000 m is written), an empty-depth warning (altitude 0 is written) and
 `calibration groups only` for both cameras.
 
-Alignment writes calibration sidecars beside the images it aligns and moves
-pose sidecars out of that tree; it works on the workspace copies, never on the
-run directory.
+Alignment writes calibration sidecars beside the images it aligns. A sidecar
+already there that the pipeline did not write is first moved to
+`aligned_components/<zone>/pre_existing_sidecars/`; pose sidecars RealityScan
+exports during the run are harvested out of that tree. It works on the
+workspace copies, never on the run directory.
 
 ## Interpret the results
 

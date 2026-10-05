@@ -41,6 +41,10 @@ def flight_log_params_template(metadata_dir: str,
 
 SCENE_EXTENSIONS = ('.rsproj', '.rcproj')
 
+# Folder in a zone's output where sidecars this pipeline did not write are
+# moved before calibration sidecars are written beside the images.
+PRE_EXISTING_SIDECARS = 'pre_existing_sidecars'
+
 
 def small_scene_min_component_size(configured: int, image_count: int) -> int:
     """Export threshold (cameras) for a scene of ``image_count`` images.
@@ -339,16 +343,20 @@ class RealityScanAlignment(RSModule):
                     'Re-run with IDENTICAL inputs (nav, frame, settings '
                     'unchanged) for %s - redoing the zone from scratch.',
                     output_folder)
+            # Sidecars moved aside by an earlier run are the user's data:
+            # they are kept like a project, never cleared.
             keepers = [f for f in os.listdir(output_folder)
-                       if f.endswith(COMPONENT_EXTENSIONS + SCENE_EXTENSIONS)]
+                       if f.endswith(COMPONENT_EXTENSIONS + SCENE_EXTENSIONS)
+                       or f == PRE_EXISTING_SIDECARS]
             if keepers:
                 superseded = self.__superseded_path(output_folder)
                 os.makedirs(os.path.dirname(superseded), exist_ok=True)
                 os.rename(output_folder, superseded)
                 self.logger.warning(
-                    'Previous run left %d project/component file(s) in %s - '
-                    'moved the whole folder to %s instead of deleting it. '
-                    'Remove it yourself once you no longer need it.',
+                    'Previous run left %d project/component file(s) or '
+                    'moved-aside sidecar folder(s) in %s - moved the whole '
+                    'folder to %s instead of deleting it. Remove it yourself '
+                    'once you no longer need it.',
                     len(keepers), output_folder, superseded)
             else:
                 self.logger.warning('Clearing previous exports in %s (no '
@@ -357,14 +365,21 @@ class RealityScanAlignment(RSModule):
                 shutil.rmtree(output_folder)
         self.__check_and_create_folder(output_folder)
 
-        # The pipeline WRITES INTO the folder it is given: AlignZone.bat's
-        # identity harvest MOVES every pose-bearing .xmp out of the image
-        # tree into <output>/identity_r0, and sanitize_and_census then
-        # rewrites or deletes whatever pose sidecars remain. That is
-        # correct for a pipeline-made zone tree and a surprise for a
-        # user-supplied folder of their own priors, which the goal
-        # explicitly supports ("run against user-given folders"). Say so
-        # once, loudly, before anything moves.
+        # Calibration delivery writes <stem>.xmp beside every image of a
+        # sidecar-mode camera. A sidecar already there that this pipeline
+        # did not write (a user's pose prior, an edited calibration) is
+        # MOVED under the zone output first, never overwritten.
+        if sidecar_modes:
+            self.__move_pre_existing_sidecars(image_paths, input_folder,
+                                              output_folder, sidecar_modes)
+
+        # The pipeline WRITES INTO the folder it is given. Any pose-bearing
+        # .xmp still beside an image is imported by RealityScan as a pose
+        # prior; RealityScan's pose export then overwrites it, the identity
+        # harvest moves those exports into <output>/identity_r*, and
+        # sanitize_and_census rewrites or deletes whatever pose sidecars
+        # remain. The original content is not kept. Say so once, loudly,
+        # before the run.
         # Pool layout (RS_ALIGN_POOL_DIR): the zone folder holds only an
         # .imagelist + flight log; exportXMP drops sidecars beside the
         # POOL images, so every sidecar sweep (pre-align warning, the
@@ -384,12 +399,13 @@ class RealityScanAlignment(RSModule):
                     continue
         if pose_sidecars:
             self.logger.warning(
-                'HEADS UP: %s contains %d pose-bearing .xmp sidecar(s). This '
-                'workflow MOVES them into %s (they are not returned) and '
-                'rewrites the remaining sidecars to calibration-only content '
-                '- leftover pose sidecars auto-import as exact-pose priors on '
-                'any later add. Copy the folder first if those '
-                'sidecars are yours.',
+                'HEADS UP: %s contains %d pose-bearing .xmp sidecar(s) beside '
+                'images that get no calibration sidecar. RealityScan imports '
+                'them as pose priors for this alignment; its pose export then '
+                'overwrites them, the identity harvest moves the exports into '
+                '%s, and the hygiene after the run rewrites or deletes any '
+                'that remain. Their content is not preserved: copy the folder '
+                'first if those sidecars are yours.',
                 hygiene_root, pose_sidecars,
                 os.path.join(output_folder, 'identity_r0'))
 
@@ -696,6 +712,23 @@ class RealityScanAlignment(RSModule):
             for root, _dirs, files in os.walk(os.path.abspath(image_folder))
             for name in files
             if os.path.splitext(name)[1].lower() in PROCESSABLE_IMAGE_EXTS)
+
+    def __move_pre_existing_sidecars(self, image_paths: list[str],
+                                     input_folder: str, output_folder: str,
+                                     modes: Mapping[str, str]) -> None:
+        """Move sidecars this pipeline did not write out of the way of the
+        calibration sidecars, into <output_folder>/pre_existing_sidecars."""
+        destination = os.path.join(output_folder, PRE_EXISTING_SIDECARS)
+        moved = calibration_sidecars.move_foreign_sidecars(
+            image_paths, modes, input_folder, destination)
+        if moved:
+            self.logger.warning(
+                '%d pre-existing sidecar(s) beside the images in %s were not '
+                'written by this pipeline (pose priors, edited or foreign '
+                'files). They were MOVED, unchanged and with their relative '
+                'paths, to %s before the calibration sidecars were written; '
+                'nothing was overwritten or deleted.',
+                len(moved), input_folder, destination)
 
     def __write_calibration_inputs(self, image_paths: list[str],
                                    output_folder: str, scene_name: str,

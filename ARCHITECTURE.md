@@ -137,7 +137,8 @@ For any RealityScan command-line question, start at
   (`STALL_WARNING_SECONDS`), and verified shutdown.
 - `realityscan_interface.py`: the RealityScan Alignment stage. Per zone it
   writes the calibration sidecars and the `.rscmd` when the intake decided
-  `prior` or `groups`, regenerates the flight-log parameter XML for the log's
+  `prior` or `groups` (first moving any sidecar in their place that the
+  pipeline did not write to `<zone output>/pre_existing_sidecars/`), regenerates the flight-log parameter XML for the log's
   UTM zone, runs `AlignZone.bat`, restores the decided sidecars and builds the
   component manifests.
 - `RS_CLI/Scripts/*.bat`: the workflows. Every operation runs through the
