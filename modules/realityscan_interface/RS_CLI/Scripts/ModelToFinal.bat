@@ -47,8 +47,8 @@ set "MetadataDir=%Metadata%"
 if not "%~1" == "" ( set "RS_TARGET=%~1" ) else ( if defined RS_INSTANCE_FROM_CALLER ( set "RS_TARGET=%RS_INSTANCE%" ) else ( set "RS_TARGET=*" ) )
 set "export_dir=%~2"
 if "%~3" == "" ( set "final_name=Final" ) else ( set "final_name=%~3" )
-:: Default preset 4x8k per the 8K cap (2026-07-31, reaffirmed for
-:: this script 2026-08-07): both texture passes limited to 4 x 8192, matching
+:: Default preset 4x8k per the 8K cap: both texture passes limited to
+:: 4 x 8192, matching
 :: GenerateModel.bat. "highpoly" (2 x 16K) remains available explicitly for
 :: the rare consumer that wants single big pages.
 if "%~4" == "" ( set "tex_preset=4x8k" ) else ( set "tex_preset=%~4" )
@@ -72,11 +72,9 @@ if /i "%tex_preset%" == "fixed50"   set "TexParams=%MetadataDir%\Texturing_Fixed
 if not defined TexParams goto :badPreset
 if not exist "%TexParams%" goto :noTexParams
 
-:: 80% per pass (decision 2026-08-07), matching GenerateModel.bat's
-:: SimplifySmooth: 0.80^4 ~ 41% of input triangles over the four passes.
-:: The previous SimplifyAutomationParams.xml (70%, ~24%) produced the
-:: 2026-08-04 ON2026 deliverable; the presets differ ONLY in
-:: mvsFltTargetTrisCountRel.
+:: 80% per pass, matching GenerateModel.bat's SimplifySmooth: 0.80^4 ~ 41%
+:: of input triangles over the four passes. SimplifyAutomationParams.xml
+:: (70%, ~24%) differs ONLY in mvsFltTargetTrisCountRel.
 set "SimplifyParams=%MetadataDir%\SimplifySmooth_80per_Params.xml"
 set "ReprojParams=%MetadataDir%\ReprojectionParams.xml"
 
@@ -97,8 +95,7 @@ set "ExportParams="
 if /i "%export_format%" == "obj" ( set "ExportExt=obj" & set "ExportParams=%MetadataDir%\ModelExportParamsObj.xml" )
 :: objmetric = the same OBJ at TRUE SCALE. Every stock export preset scales
 :: up (100 for the Unreal presets, 10 for GLB), which is right for engines
-:: and wrong for survey/GIS work: an ON2026 export at scale 100 put vertex 0
-:: at -179.90 1101.54 43.67 where the local frame is metres. Without this
+:: and wrong for survey/GIS work, where the local frame is metres. Without this
 :: branch ModelExportParamsObj_Metric.xml is unreachable dead config.
 if /i "%export_format%" == "objmetric" ( set "ExportExt=obj" & set "ExportParams=%MetadataDir%\ModelExportParamsObj_Metric.xml" )
 if /i "%export_format%" == "fbx" ( set "ExportExt=fbx" & set "ExportParams=%MetadataDir%\ModelExportParamsFBX_U1V1_material.xml" )
@@ -295,8 +292,8 @@ exit /b 1
 :: Baseline BOTH fields first. lastError is STICKY between operations
 :: (a failed -save left lastError:-2113863583 across four idle polls), so
 :: gating on lastError alone blames this command for someone else's error.
-:: And "rev" tracks scene MUTATIONS, not operations - live-probed
-:: 2026-08-07: a failed -selectModel left rev unchanged (11 -> 11) while
+:: And "rev" tracks scene MUTATIONS, not operations - a failed
+:: -selectModel leaves rev unchanged while
 :: setting lastError 0x80070057 through the process trigger. So "rev
 :: advanced" cannot be the only failure signal either. The gate below:
 ::   lastError changed to non-zero  -> OUR failure (rev irrelevant)
@@ -328,7 +325,7 @@ call :readstat
 :: Silence is not success: an empty status from a VANISHED instance means
 :: it died or was closed mid-operation - especially poisonous on the final
 :: -save, which would otherwise report "completed successfully" over a
-:: crash (clean-sweep 2026-08-07). Distinguish "no status text" (benign,
+:: crash. Distinguish "no status text" (benign,
 :: instance idle-and-quiet) from "instance gone" via the getStatus
 :: errorlevel that :readstat just recorded.
 if not defined RS_STATUS (

@@ -1,6 +1,6 @@
 @echo off
 :: Plain setlocal - delayed expansion corrupts any path containing '!' and
-:: nothing here uses !var! (final review).
+:: nothing here uses !var!.
 setlocal
 :: Export deliverables from a finished, modelled assembly project - one
 :: RealityScan session for everything (the project load is the expensive
@@ -53,7 +53,7 @@ if not exist "%name_list%" ( echo ERROR: name list not found: %name_list% & exit
 :: An EMPTY (or whitespace-only) list makes the per-component `for /f`
 :: below run ZERO iterations: it falls through to -quit and exits 0 -
 :: a no-op that reports success and produces no deliverables at all
-:: (audit 2026-08-07). Count the names FIRST, before an instance boots.
+:: Count the names FIRST, before an instance boots.
 set /a name_count=0
 for /f "usebackq delims=" %%N in ("%name_list%") do set /a name_count+=1
 if %name_count% EQU 0 goto :emptyList
@@ -121,9 +121,9 @@ exit /b 1
 
 :: :try_delete_model <name> - tolerant delete with the full double-wait
 :: shape (a single short wait can race the instance and leave the previous
-:: selection live for the delete - GenerateModel audit #4). Evidence files
+:: selection live for the delete). Evidence files
 :: are named per MODEL (spaces flattened) so nine sweep iterations cannot
-:: overwrite each other's records (final review).
+:: overwrite each other's records.
 :try_delete_model
 set "evname=%~1"
 set "evname=%evname: =_%"

@@ -3,8 +3,7 @@ setlocal enabledelayedexpansion
 :: Import every .rsalign component from a folder into a fresh scene, merge
 :: them, and export the merged component.
 ::
-:: Merge mechanisms (RealityScan 2.2, empirically verified - see
-:: NA167 #23-#26, #30):
+:: Merge mechanisms (RealityScan 2.2, empirically verified):
 ::   - "merge": the -mergeComponents command. Fuses ONLY through cameras
 ::     shared by identity (same image path in both components). With no
 ::     shared cameras it exits SUCCESS and silently leaves components
@@ -19,7 +18,7 @@ setlocal enabledelayedexpansion
 ::      naming one .rsalign path per line. Prefer the .complist form with
 ::      components at their ORIGINAL export locations: -importComponent of
 ::      a component file that was copied elsewhere has been observed to
-::      hang indefinitely in a #timeout state (2026-07-23). A file (not a
+::      hang indefinitely in a #timeout state. A file (not a
 ::      delimited argument) because cmd splits unquoted ; , = into
 ::      separate arguments and subprocess does not quote them.
 ::   %2 output directory
@@ -43,7 +42,7 @@ setlocal enabledelayedexpansion
 ::   result: a merged component is a NEW component, and without
 ::   constraints in the scene RealityScan has nothing to georegister it
 ::   against - the zone components' own georeferencing does NOT carry
-::   over (observed NA156 H2023, 2026-07-23). After the merge, -update
+::   over. After the merge, -update
 ::   fits all components to the imported constraints by a rigid
 ::   transformation, which is what georeferences the merged component.
 
@@ -81,9 +80,8 @@ if defined list_mode (
 )
 :: Assemble mode has nothing to merge, so ONE component is a perfectly valid
 :: deliverable: import it, georeference it, save it. Applying the >= 2 guard to
-:: every mode meant a fully-converged single-feature dive could not produce its
-:: assembly project - a completely successful ladder that fused 3 -> 1 then
-:: aborted with "need at least 2 components" (H2024 2026-07-28).
+:: every mode would stop a fully-converged single-feature dataset from
+:: producing its assembly project.
 if /i "%merge_mode%" == "assemble" (
     if %component_count% LSS 1 (
         echo ERROR: assemble needs at least 1 component, found %component_count%
@@ -143,7 +141,7 @@ echo Setting %kv%
 :: sfmForceComponentRematch, sfmImagesOverlap) used to leave the rung
 :: running on instance DEFAULTS while the log still printed
 :: "Setting <key>=<value>" - silently changing the mechanism under
-:: test (audit 2026-08-07). exit /b via a label, never inside a
+:: test. exit /b via a label, never inside a
 :: parenthesized block (Windows trap registry).
 if errorlevel 1 goto :applySetFailed
 exit /b 0
@@ -159,7 +157,7 @@ exit /b 1
 :: merge so the solve/update has priors to fit. Rows referencing images
 :: absent from the scene (never-registered) make the import report a
 :: warning-class failure (err:18002, 0x820000FF) even though the
-:: trajectory imports fine for every present image (session notes) -
+:: trajectory imports fine for every present image -
 :: handled by the tolerant :run_geoimport below.
 if defined RS_MERGE_FLIGHT_LOG if not "%RS_MERGE_FLIGHT_LOG%" == "" (
     echo Importing union flight log for georeferencing
@@ -168,10 +166,10 @@ if defined RS_MERGE_FLIGHT_LOG if not "%RS_MERGE_FLIGHT_LOG%" == "" (
 
 :: No pre-selection: -selectAllComponents does not exist in RealityScan
 :: 2.2, and -mergeComponents/-align operate on the scene's components.
-:: Mode "assemble" (2026-07-24): NO merge operation at all - the final
+:: Mode "assemble": NO merge operation at all - the final
 :: all-components project just collects every surviving component,
 :: georeferences via -update below, and saves. Multi-component terminal
-:: states are CORRECT (bow/hull governing intent).
+:: states are CORRECT.
 if /i "%merge_mode%" == "assemble" goto :after_merge_op
 echo Merging components (mode: %merge_mode%)
 if /i "%merge_mode%" == "align" (
@@ -207,7 +205,7 @@ call :run -deselectAllImages || goto :fail
 call :run -save "%output_dir%\%merged_name%.rsproj" || goto :fail
 
 :: Daily project-save schema: dated copy after the merge milestone,
-:: named {expedition_dive}_merged_YYYYMMDD (see AlignZone.bat).
+:: named {label}_merged_YYYYMMDD (see AlignZone.bat).
 if defined RS_PROJECTS_DIR if defined RS_PROJECT_LABEL (
     if not exist "%RS_PROJECTS_DIR%" mkdir "%RS_PROJECTS_DIR%"
     echo Saving daily project copy
@@ -220,7 +218,7 @@ if defined RS_MERGE_HARVEST goto :harvest
 echo Exporting merged component
 :: The flight-log import leaves the matched images ACTIVELY SELECTED and
 :: exports are selection-driven - under -silent the "Export Selection"
-:: dialog auto-answer then exports NOTHING (census read 0; FINDINGS).
+:: dialog auto-answer then exports NOTHING.
 call :run -deselectAllImages || goto :fail
 :: setMinComponentSize is deprecated in 2.2 ("removed in the next
 :: release") but still required here - without it small components are
@@ -235,7 +233,7 @@ goto :after_export
 
 :: ------------------------------------------------------------ harvest
 :: Count-based peel (RS_MERGE_HARVEST=1; driver merge_zones.py):
-:: merged-scene XMP exports are ORDINAL (finding B10) so stems carry no
+:: merged-scene XMP exports are ORDINAL so stems carry no
 :: identity - but each lap exports the SELECTED (maximal) component's
 :: sidecars, so the per-lap FILE COUNT is that component's exact camera
 :: count. Every component is exported as %merged_name%_c<K>.rsalign
@@ -257,7 +255,7 @@ if not exist "%output_dir%\%merged_name%_c%peel_index%.rsalign" goto :after_expo
 call :run -exportXMPForSelectedComponent || goto :fail
 :: The errorlevel check below was ineffective on its own: Move-Item
 :: failures are NON-TERMINATING, so powershell.exe exited 0 on a
-:: partial harvest (audit 2026-08-07). $ErrorActionPreference=Stop
+:: partial harvest. $ErrorActionPreference=Stop
 :: plus try/catch makes the failure real.
 powershell -NoProfile -Command "$ErrorActionPreference='Stop'; try { Get-ChildItem -LiteralPath '%RS_MERGE_IMAGES_ROOT%' -Recurse -Filter *.xmp | Where-Object { Select-String -LiteralPath $_.FullName -Pattern 'xcr:Position' -Quiet } | Move-Item -Destination '%output_dir%\identity_r%peel_index%' -Force } catch { Write-Output $_.Exception.Message; exit 1 }"
 if errorlevel 1 ( echo ERROR: harvest move failed & goto :fail )
@@ -278,7 +276,7 @@ exit /b 1
 :: :run_peelrename - like :run, but an empty scene is EXPECTED at the end
 :: of the harvest loop: -selectMaximalComponent silently no-ops and the
 :: rename then reports E_INVALIDARG 0x80070057 (2147942487, "in 0
-:: seconds") - observed on the smoke E2E 2026-07-24. That exact error
+:: seconds"). That exact error
 :: exits 2 (peel-terminal); anything else stays a hard failure (exit 1).
 :run_peelrename
 %RealityScan% -delegateTo %RS_INSTANCE% %*

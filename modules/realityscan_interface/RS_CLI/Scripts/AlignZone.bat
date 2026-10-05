@@ -55,7 +55,7 @@ set "calibration_rscmd=%~7"
 
 if not exist "%input_dir%" ( echo ERROR: input directory not found: %input_dir% & exit /b 1 )
 
-:: POOL layout (project decision 2026-08-08/09, FLIGHTLOG_ARCHITECTURE):
+:: POOL layout (FLIGHTLOG_ARCHITECTURE):
 :: RS_ALIGN_POOL_DIR set = the zone holds NO images, only a .imagelist
 :: of canonical pool paths + a full-path flight log. Images are added
 :: from the list, and the identity harvest sweeps the POOL (exportXMP
@@ -89,7 +89,7 @@ echo Adding images to project
 :: Subfolder recursion is NOT the default in this 2.2 build: without
 :: appIncSubdirs a zone tree whose images live in per-camera or
 :: preprocessed_images subfolders adds 0 layer images and the flight-log
-:: import then fails err:18002 (observed live on NA156 H2023). Instant
+:: import then fails err:18002. Instant
 :: -set, FIFO-ordered before the queued addFolder, no wait needed.
 %RealityScan% -delegateTo %RS_INSTANCE% -set "appIncSubdirs=true"
 call :run -addFolder "%input_dir%" || goto :fail
@@ -122,7 +122,7 @@ echo Applying alignment settings from AlignmentParams.xml
 :: RS_ALIGN_PARAMS variant yields no matching tokens, this loop applied
 :: ZERO settings and -align then succeeded on whatever the instance last
 :: held - contradicting this file own header, silently, with exit code 0
-:: (audit 2026-08-07). set /a inside the block is safe under plain
+:: set /a inside the block is safe under plain
 :: expansion because the total is only READ after the loop.
 set /a applied_settings=0
 for /f usebackq^ tokens^=2^,4^ delims^=^" %%A in ("%AlignmentParams%") do (
@@ -140,8 +140,8 @@ call :run -align || goto :fail
 
 :: Flight-log import leaves its matched images ACTIVELY SELECTED, and
 :: selection-driven exports under -silent then silently export NOTHING
-:: (the "Export Selection" dialog is auto-answered; see FINDINGS,
-:: 2026-07-23). Clear the selection before every export step.
+:: (the "Export Selection" dialog is auto-answered). Clear the selection
+:: before every export step.
 call :run -deselectAllImages || goto :fail
 
 call :run -setMinComponentSize %min_component_size% || goto :fail
@@ -149,9 +149,9 @@ call :run -setMinComponentSize %min_component_size% || goto :fail
 echo Saving project BEFORE the destructive identity loop
 call :run -save "%output_dir%\%scene_name%.rsproj" || goto :fail
 
-:: Daily project-save schema (project requirement 2026-07-23): a dated copy
+:: Daily project-save schema: a dated copy
 :: in RC_projects (one level up from the zone image directory) after the
-:: components milestone, named {expedition_dive}_{zone}_YYYYMMDD.
+:: components milestone, named {label}_{zone}_YYYYMMDD.
 :: RS_PROJECT_LABEL/RS_PROJECT_DATE are computed by the Python
 :: orchestrator.
 if defined RS_PROJECTS_DIR if defined RS_PROJECT_LABEL (
@@ -164,9 +164,9 @@ if defined RS_PROJECTS_DIR if defined RS_PROJECT_LABEL (
 :: In-session identity capture. The scene (with all components) is
 :: already saved above, so this loop is destructive IN MEMORY ONLY and
 :: the workflow quits WITHOUT saving.
-:: Membership by SUCCESSIVE DIFFERENCE (2026-07-23 rework): only
+:: Membership by SUCCESSIVE DIFFERENCE: only
 :: -exportXMP writes stem-named sidecars; -exportXMPForSelectedComponent
-:: is ALWAYS ordinal (FINDINGS). So each lap exports the stems of ALL
+:: is ALWAYS ordinal. So each lap exports the stems of ALL
 :: remaining components (>= min size, still gated by the earlier
 :: setMinComponentSize), harvests them to identity_r<K>, then exports +
 :: deletes the maximal component. members(c<K>) = stems(r<K>) minus
@@ -186,7 +186,7 @@ call :run -exportXMP || goto :fail
 :: this step had no errorlevel check at all. Membership is
 :: stems(identity_r<K>) minus stems(r<K+1>), so an under-harvest shifts
 :: members BETWEEN components - and the merge camera-count attribution
-:: is built on those numbers (audit 2026-08-07).
+:: is built on those numbers.
 powershell -NoProfile -Command "$ErrorActionPreference='Stop'; try { Get-ChildItem -LiteralPath '%harvest_dir%' -Recurse -Filter *.xmp | Where-Object { Select-String -LiteralPath $_.FullName -Pattern 'xcr:Position' -Quiet } | Move-Item -Destination '%output_dir%\identity_r%comp_index%' -Force } catch { Write-Output $_.Exception.Message; exit 1 }"
 if errorlevel 1 ( echo ERROR: identity harvest move failed & goto :fail )
 set "have_poses="
