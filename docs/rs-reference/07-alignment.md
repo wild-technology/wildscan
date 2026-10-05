@@ -1106,7 +1106,7 @@ calibration according to the setting stored in these .xmp files and application 
 — but for a pipeline that re-aligns the same tree repeatedly it is cross-run contamination.
 
 [VERIFIED: NA167 B7, 2026-07-22] The pipeline sanitizes the image tree back to
-calibration-only content after every census (`camera_registry.sanitize_and_census`).
+calibration-only content after every census (`calibration_sidecars.sanitize_and_census`).
 
 **A related defect, now fixed, invalidated two cells:** the identity harvest *moves* every
 pose-bearing `.xmp` out of the image tree, and the last-peeled component's sidecars are
@@ -1114,7 +1114,7 @@ never re-exported. Measured on fresh zone_1: **796 of 4,540 images (17.5 %) had 
 sidecar** — the entire bow component (665/665), 123 of c0, 8 unregistered. Any re-align of
 an already-harvested zone then silently ran with a partially ungrouped camera set. **PD-4
 and PD-4a both re-aligned zone_1 in that state, so their "collapse" results (669 and 782 of
-4,540) are confounded.** Fixed by `camera_registry.ensure_calibration_sidecars()`, which
+4,540) are confounded.** Fixed by `calibration_sidecars.ensure_calibration_sidecars()`, which
 every A/B driver now calls before each align. [VERIFIED: FINDINGS 2026-07-25]
 
 ---
@@ -1694,7 +1694,7 @@ map stem → image basename. Parse both forms of the position — `xcr:Position`
 form in older ones [VERIFIED: FINDINGS 2026-07-28].
 
 Ordinal sidecars (`00000.xmp`) are inert as priors (no image has an ordinal stem) and are
-deleted quietly by `camera_registry.sanitize_and_census` [VERIFIED: B10].
+deleted quietly by `calibration_sidecars.sanitize_and_census` [VERIFIED: B10].
 
 ### 10.5 Camera counts do not detect a broken solve
 

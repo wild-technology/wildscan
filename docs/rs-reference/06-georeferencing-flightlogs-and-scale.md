@@ -141,24 +141,15 @@ A trajectory file is a plain text / CSV table, one row per image.
 | Encoding | UTF-8 without BOM is safe. A UTF-8 BOM on line 1 is a known hazard for RealityScan list inputs generally (a BOM silently invalidated the first `.complist` entry). Not separately tested on flight logs. | [VERIFIED for `.complist`: FINDINGS 2026-07-27] [INFERRED for logs] |
 
 This repository's canonical log is **13 columns, `;`-separated, one header line**, written by
-`georeference_survey.py::generate_flight_log` and `modules/georeference/georeference_images.py::__generate_flight_log`:
+`modules/flight_logs.py::write_flight_log` (called by the Wild Sync Intake):
 
 ```
-Name;X (East);Y (North);Alt;X Accuracy;Y Accuracy;Alt Accuracy;Yaw;Pitch;Roll;Yaw Accuracy;Pitch Accuracy;Roll Accuracy
-C231C1034_20231104202628_edt.jpg;594701.482174;2345128.905112;-1523.117000;10.000000;10.000000;1.000000;71.418000;135.220000;-1.930000;15.000000;15.000000;15.000000
+filename;X (East);Y (North);Alt;X Accuracy;Y Accuracy;Alt Accuracy;Yaw;Pitch;Roll;Yaw Accuracy;Pitch Accuracy;Roll Accuracy
 ```
 
-[VERIFIED-by-inspection: `georeference_survey.py::generate_flight_log`, lines 715–770, 2026-08-04]
-
-Two in-repo producers write **different header text** for the identical column layout —
-`georeference_survey.py` writes `Name;…`, the georeference module writes `filename;…`. Functionally
-irrelevant (the header is skipped via `csvFLIgn=true`), but downstream readers must accept
-both: `modules/image_batcher/batch_directory.py` renames `Name` → `filename` on read.
-[VERIFIED-by-inspection, 2026-08-04]
-
-`georeference_survey.py` additionally prefixes the image name with its camera subfolder
-(`Zeuss/HERC/<file>.jpg`); the module writes the bare basename. Both import correctly —
-see §2.5. [VERIFIED-by-inspection]
+Numbers are written with six decimals; a missing value is an empty cell, never 0; the image
+name is the bare file name; line endings are LF. The header is skipped on import
+(`csvFLIgn=true`). [VERIFIED-by-inspection: `modules/flight_logs.py`]
 
 ### 2.3 `flightlogs.xml` — the shipped reader definitions
 
@@ -629,8 +620,8 @@ Two consequences worth acting on:
    [INFERRED for the key↔variable pairing; the report variables themselves are [OFFICIAL].]
 
    This pipeline instead bakes the lever arm and mount angles into the flight log upstream
-   (`georeference_survey.py::apply_camera_position_offset` and `convert_to_rc_orientation`, driven by the
-   `MOUNTS` table in `modules/georeference/georeference_images.py`). Both approaches are
+   (`modules/wildsync_intake/intake.py::flight_log_prior`, driven by the mounts in
+   `modules/cameras.json`). Both approaches are
    valid; they must not be applied twice. Since `ifOfsifuUseOffset` is not written by this
    repo's params file, whatever the instance last held governs — another reason to pin every
    key you depend on. **And this is now cheaply checkable:** `-exportReport` a template
@@ -669,7 +660,7 @@ order and mount the instance last held.** Three specific consequences, all recor
    different order, the composition is wrong **even though every individual angle is right**
    — and nothing reports it. [VERIFIED-as-risk: FINDINGS 2026-07-26]
 2. **Double-applied mount.** The mount is already baked into the exported angles here
-   (`camera_offset` added in `convert_to_rc_orientation`). A non-identity default in the
+   (the mount down tilt in `modules/flight_logs.py::realityscan_orientation`). A non-identity default in the
    *Camera mount* dropdown would apply it a **second** time. [VERIFIED-as-risk:
    FINDINGS 2026-07-26]
 3. **Near-singular Port geometry.** The Port camera's pitch sits at **~88°**, within 2° of
@@ -797,18 +788,16 @@ timestamp matching + nav interpolation + lever arm + dive-long drift — **not t
 instantaneous sensor spec**. A DVL good to ~1 m and a Paro depth sensor good to ~0.1 m do
 not justify writing `1 / 1 / 0.1`.
 
-Values in force in this repo (`georeference_survey.py` lines 723–729,
-`georeference_images.py` lines 540–549):
+Values in force in this repo (`modules/cameras.json` defaults and mounts, Wild Sync Intake
+parameters):
 
 ```python
-pos_x_acc = 10.0   # metres
-pos_y_acc = 10.0   # metres
-alt_acc   = 1.0    # metres
-yaw_acc   = 15.0   # degrees
-roll_acc  = 15.0   # degrees
-pitch_acc = MOUNTS[family]['p_acc']   # 30.0 zeuss, 15.0 wca_port/wca_cinema,
-                                      # 10.0 legacy_camupper/cammid, 5.0 legacy_camlower,
-                                      # 10.0 fallback for an unknown mount
+pos_x_acc = 10.0     # metres; 1000.0 when a run carries one static fix
+pos_y_acc = 10.0     # metres; 1000.0 when a run carries one static fix
+alt_acc   = 1.0      # metres
+yaw_acc   = 15.0     # degrees
+roll_acc  = 15.0     # degrees
+pitch_acc = 15.0     # degrees, per camera mount (families[].mount.pitch_accuracy_deg)
 ```
 
 - [OPEN] The intermediate accuracy ladder (3 / 3 / 0.5 and 5 / 5 / 1) was queued and never
