@@ -2,7 +2,8 @@
 
 Wild Scan targets native Windows, RealityScan 2.2 and one rig: the two-camera
 Sony ILX-LR1 stereo pair recorded with Wild Sync. Use 64-bit Python 3.12 or
-newer, from a Git checkout with an editable installation.
+newer, from a Git checkout with an editable installation (`pip install -e .`).
+A built wheel is not a supported way to run the pipeline.
 
 ## Set up and test
 

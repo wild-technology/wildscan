@@ -54,6 +54,9 @@ cameras captured with Wild Sync. This release is breaking.
   (`--w_surface_alt_accuracy`) with its surface-altitude fallback, instead of
   the normal altitude accuracy that pinned it to the surface; the manifest
   counts these images.
+- `wildscan` refuses to start, with one message, when the repository-root
+  driver scripts are missing (for example from a built wheel); only an
+  editable install from a source checkout is supported.
 - `packaging` is declared as a test dependency.
 - The test suite moved from `testing/` to `tests/`.
 
