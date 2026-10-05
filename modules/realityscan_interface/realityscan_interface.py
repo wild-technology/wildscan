@@ -401,6 +401,21 @@ class RealityScanAlignment(RSModule):
             self.logger.info(f'Flight log CRS: UTM zone {zone}{band} '
                              f'(params: {generated})')
 
+        # A camera switched to off must not inherit the calibration sidecars
+        # an earlier prior/groups run left beside its images.
+        removed, foreign = calibration_sidecars.remove_calibration_sidecars(
+            hygiene_root, calibration_modes)
+        if removed:
+            self.logger.info(
+                'Removed %d calibration sidecar(s) left by an earlier run for '
+                'camera(s) now decided off in %s', removed, hygiene_root)
+        if foreign:
+            self.logger.warning(
+                '%d sidecar(s) beside images of camera(s) with calibration '
+                'off in %s were not written by this pipeline and are left in '
+                'place; RealityScan will still read them', foreign,
+                hygiene_root)
+
         args = [input_folder, output_folder, flight_log_path,
                 flight_log_params_path, scene_name, str(min_component_size)]
         if sidecar_modes:

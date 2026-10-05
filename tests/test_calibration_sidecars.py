@@ -356,6 +356,44 @@ def test_sanitize_never_touches_a_sidecar_without_a_pose(tmp_path):
     assert (tmp_path / 'Cam2_a.xmp').read_text(encoding='utf-8') == '<x:xmpmeta/>'
 
 
+def test_off_removes_only_this_pipelines_calibration_sidecars(tmp_path):
+    """Switching a camera to off after prior/groups must not leave the
+    earlier calibration sidecars for -addFolder to pick up; anything the
+    pipeline did not write stays. Sidecars are written byte for byte as the
+    pipeline writes them (LF line endings)."""
+    _images(tmp_path, ['Cam1_a.jpg', 'Cam1_b.jpg', 'Cam1_c.jpg',
+                       'Cam1_d.jpg', 'Cam2_a.jpg', 'other.jpg'])
+    (tmp_path / 'Cam1_a.xmp').write_bytes(LEFT_PRIOR.encode())
+    (tmp_path / 'Cam1_b.xmp').write_bytes(LEFT_GROUPS.encode())
+    (tmp_path / 'Cam1_c.xmp').write_bytes(POSE.encode())
+    (tmp_path / 'Cam1_d.xmp').write_text(LEFT_GROUPS.replace('"7"', '"9"'),
+                                         encoding='utf-8')
+    (tmp_path / 'Cam2_a.xmp').write_bytes(RIGHT_GROUPS.encode())
+    (tmp_path / 'other.xmp').write_bytes(LEFT_PRIOR.encode())
+    removed, kept = cs.remove_calibration_sidecars(
+        str(tmp_path), {'ilx_left': 'off', 'ilx_right': 'groups'})
+    assert (removed, kept) == (2, 2)
+    assert not (tmp_path / 'Cam1_a.xmp').exists()
+    assert not (tmp_path / 'Cam1_b.xmp').exists()
+    assert (tmp_path / 'Cam1_c.xmp').read_text(encoding='utf-8') == POSE
+    assert (tmp_path / 'Cam1_d.xmp').exists()
+    assert (tmp_path / 'Cam2_a.xmp').read_text(encoding='utf-8') == RIGHT_GROUPS
+    assert (tmp_path / 'other.xmp').read_text(encoding='utf-8') == LEFT_PRIOR
+    assert cs.remove_calibration_sidecars(
+        str(tmp_path), {'ilx_left': 'off', 'ilx_right': 'groups'}) == (0, 2)
+
+
+def test_remove_without_an_off_decision_touches_nothing(tmp_path):
+    _images(tmp_path, ['Cam1_a.jpg', 'Cam2_a.jpg'])
+    (tmp_path / 'Cam1_a.xmp').write_bytes(LEFT_PRIOR.encode())
+    (tmp_path / 'Cam2_a.xmp').write_bytes(RIGHT_GROUPS.encode())
+    assert cs.remove_calibration_sidecars(str(tmp_path)) == (0, 0)
+    assert cs.remove_calibration_sidecars(
+        str(tmp_path), {'ilx_left': 'prior', 'ilx_right': 'groups'}) == (0, 0)
+    assert sorted(os.listdir(tmp_path)) == ['Cam1_a.jpg', 'Cam1_a.xmp',
+                                            'Cam2_a.jpg', 'Cam2_a.xmp']
+
+
 # ------------------------------------------------------------ EXIF reader
 
 def test_read_image_geometry_reads_size_and_exif_focal(tmp_path):
