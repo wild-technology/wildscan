@@ -1956,8 +1956,9 @@ Rules:
 
 1. **Back up the original file first**, outside `Program Files`, and record its byte size and hash
    in the run's environment snapshot.
-2. **Keep a copy in the repository.** This repo keeps `flightlogs.xml` and `sensorsdb.xml` at its
-   root for exactly this reason. Diff repo copy vs installed copy at session start.
+2. **Keep a copy in the repository.** This repo keeps the one format it adds in `flightlogs.xml`
+   at its root for exactly this reason. Compare that entry with the installed copy at session
+   start.
 3. **Never renumber or reuse an existing `id` GUID.** A profile that names it will bind to the
    wrong parser. Generate a fresh GUID for a new format.
 4. **Copy an adjacent `<format>` block wholesale and edit it.** Reusing an existing `reader` is
@@ -2223,7 +2224,7 @@ placeholder.
 | 23 | What is the root element of a standalone `.rsbox`, and is its `<Header>` required? | `-exportReconstructionRegion` on the smoke fixture, then read the file | seconds |
 | 24 | What are the key names in a `-exportLod` / `-export3dTiles` profile? | GUI: save the Export LoD dialog once, both variants | ~2 min, needs the GUI |
 | 25 | Does `-exportRegistration` still block forever when given a valid params XML? (The blocking is only established for the no-params case, and it gates hardening cell U7.) | GUI-save an Export Registration profile once, then delegate with a watchdog on the smoke fixture | ~5 min, needs the GUI once |
-| 26 | Does the hand-merged `{B438A617…}` flight-log format survive a RealityScan update? | after any update, diff the installed `flightlogs.xml` against the repo copy | seconds, but must be remembered |
+| 26 | Does the hand-merged `{B438A617…}` flight-log format survive a RealityScan update? | after any update, compare the installed `{B438A617…}` entry with the repo's `flightlogs.xml` | seconds, but must be remembered |
 | 27 | Is `<XAccuracy index="4"/>` + `<YAccuracy index="4"/>` in shipped `measurementsimport.xml` intentional or a typo for index 5? The format's own `desc` says "…, X, Y, **Accuracy**" (singular, five columns), which argues intentional. | import a 5-column CPM file with a distinctive accuracy value and read both accuracies back | minutes |
 | 28 | Can a flight log carry per-image `FocalLength` / `PrincipalU/V` / `RadialDistortion1-4` priors as an alternative to XMP sidecars? | add those `<Variable>` elements to a custom format, import, and read the solved intrinsics out of the pose XMPs | ~10 min incl. the format edit |
 | 29 | Are all `.rcconfig`-transportable settings also profile keys, i.e. can a global-settings dump seed a per-tool profile? | export globals, grep for `unwrap*` / `mvsFlt*` keys | seconds |

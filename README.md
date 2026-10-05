@@ -181,7 +181,7 @@ working copies or the pipeline's prepared zone tree.
 | `tests/` | Offline pytest regression tests and fixtures |
 | `scripts/validation/` | Explicit manual checks: the preprocessing check |
 | `docs/validation/`, `docs/validation/results/` | Dated experiment plans and preserved result evidence |
-| `flightlogs.xml`, `sensorsdb.xml` | RealityScan reference data |
+| `flightlogs.xml` | The pipeline's 13-column flight-log import format, to merge into RealityScan's flight-log dictionary ([setup](docs/SETUP-AND-RUN.md#54-flight-log-import-format)) |
 | `docs/code-review-2026-07.md` | What the first-machine validation changed and why (read before trusting older assumptions about the CLI layer) |
 
 Manual validation is separate from pytest. For a small preprocessing check

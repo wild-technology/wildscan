@@ -1634,11 +1634,11 @@ RealityScan will group it separately **regardless of its XMP calibration group**
 |---|---|
 | `C:\ProgramData\Epic\RealityScan\sensorsdb.xml` | **the file the application reads** [OFFICIAL: appbasics/cameradb] |
 | `C:\Program Files\Epic Games\RealityScan_2.2\sensorsdb.xml` | install-tree copy |
-| `<repo>\sensorsdb.xml` | this project's modified copy |
+| `<repo>\sensorsdb.xml` | this project's former modified copy, no longer in the repository |
 
 Measured 2026-08-04: the ProgramData file and the install-tree file are **byte-identical**
-(SHA-256 `FA3D6EED…BAC01A37`, 47,925 bytes, 785 `<camera>` entries). The repo's copy is
-48,580 bytes and prepends four hand-authored ROV entries that are **not present on this
+(SHA-256 `FA3D6EED…BAC01A37`, 47,925 bytes, 785 `<camera>` entries). The former repo copy
+was 48,580 bytes and prepended four hand-authored ROV entries that are **not present on this
 machine**:
 
 ```xml

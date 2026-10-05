@@ -242,7 +242,8 @@ with ID `{B438A617-2434-5A24-C1B7-58980F28345A}`, inside the installed
 `<FlightLogs>` element. If that exact ID is already present, compare its parser
 with the repository's 13-column format rather than adding a duplicate. Preserve
 the other installed formats; do not replace the installation dictionary with the
-repository's older copy. Editing Program Files may require administrator access.
+repository file, which holds only this one format. Editing Program Files may
+require administrator access.
 
 The full ID must match `gpsLogFileFormat` in the parameter template
 `FlightLogParams.xml`. This read-only check verifies the template and the
