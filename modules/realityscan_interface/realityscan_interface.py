@@ -68,7 +68,7 @@ class RealityScanAlignment(RSModule):
             cli_long='r_project_label',
             type=str,
             default_value='',
-            description='expedition_dive label for the RC_projects daily save schema (e.g. NA156_H2023); empty disables daily saves',
+            description='dataset label for the RC_projects daily save schema (e.g. site_run1); empty disables daily saves',
             prompt_user=True
         )
 
@@ -145,7 +145,7 @@ class RealityScanAlignment(RSModule):
         one re-aligned zone, and the merge saw two manifests for one
         .rsalign (the export names repeat, so the stale manifest's path
         resolves to the NEW file). rmtree could not do that; the
-        rename-aside introduced it (audit-verification 2026-08-07).
+        rename-aside introduced it.
         """
         normalized = os.path.normpath(output_folder)
         components_root = os.path.dirname(normalized)
@@ -290,7 +290,7 @@ class RealityScanAlignment(RSModule):
         # exported .rsalign - GPU-hours of work - and the only backup, the
         # dated RC_projects copy, is off by default (rs_project_label
         # defaults to ''). Deleting that on a logger.warning was the one
-        # unguarded destructive step in the align path (audit 2026-08-07),
+        # unguarded destructive step in the align path,
         # so a tree carrying deliverables is RENAMED aside instead: same
         # clean-slate premise, no data loss, one os.rename and no copy cost.
         # Input fingerprint for THIS run: whatever AlignZone.bat will
@@ -347,7 +347,7 @@ class RealityScanAlignment(RSModule):
         # correct for a pipeline-made zone tree and a surprise for a
         # user-supplied folder of their own priors, which the goal
         # explicitly supports ("run against user-given folders"). Say so
-        # once, loudly, before anything moves (audit 2026-08-07).
+        # once, loudly, before anything moves.
         # Pool layout (RS_ALIGN_POOL_DIR): the zone folder holds only an
         # .imagelist + flight log; exportXMP drops sidecars beside the
         # POOL images, so every sidecar sweep (pre-align warning, the
@@ -430,8 +430,8 @@ class RealityScanAlignment(RSModule):
         # Sidecar hygiene even on failure: the in-session identity loop
         # normally harvests every pose sidecar into identity_c<K> folders,
         # but a partial run may leave pose sidecars beside the images,
-        # which would poison the next attempt as auto-imported priors
-        # (B7). The registration census now comes from the manifests
+        # which would poison the next attempt as auto-imported priors.
+        # The registration census now comes from the manifests
         # (harvested sidecars), not from this sweep.
         # With calibration delivery both hygiene calls get the decided
         # modes, so they rewrite or restore exactly the sidecars written
@@ -450,11 +450,8 @@ class RealityScanAlignment(RSModule):
         # all; sanitize_and_census above only touches sidecars that are
         # STILL PRESENT, so it cannot repair that. This call used to sit
         # after the failure and no-component returns below, i.e. it was
-        # skipped precisely when the operator re-runs - re-opening the
-        # FINDINGS 2026-07-25 defect (796 of 4,540 zone_1 images left
-        # ungrouped, which CONFOUNDED PD-4/PD-4a) that the same entry
-        # records as fixed (audit 2026-08-07). Idempotent: (0, 0) on a
-        # complete tree.
+        # skipped precisely when the operator re-runs, leaving images
+        # ungrouped. Idempotent: (0, 0) on a complete tree.
         created, _no_camera = calibration_sidecars.ensure_calibration_sidecars(
             hygiene_root, sidecar_modes)
         if created:
@@ -492,7 +489,7 @@ class RealityScanAlignment(RSModule):
 
         # Per-component identity: manifests built from the identity_c<K>
         # harvest folders written by AlignZone.bat's in-session loop (the
-        # only place stem-named sidecars exist - FINDINGS 2026-07-23).
+        # only place stem-named sidecars exist).
         # The registration census = sum of manifest camera counts. A
         # manifest failure does not fail the zone: alignment succeeded and
         # manifests are bookkeeping, but errors are logged loudly because
@@ -550,7 +547,7 @@ class RealityScanAlignment(RSModule):
         tests/ PD cells) must reuse THIS implementation - a component
         without a manifest is refused by the feature-aware merge.
 
-        Naming rule (FINDINGS 2026-07-23, four consistent datapoints):
+        Naming rule:
         -exportXMP writes STEM-named sidecars, while
         -exportXMPForSelectedComponent is always ORDINAL - so
         per-component membership comes from SUCCESSIVE DIFFERENCE: lap K
@@ -643,8 +640,7 @@ class RealityScanAlignment(RSModule):
         exact state default_enabled() produces once batching is done -
         passed the batched root as rs_input_image_dir and -addFolder's
         recursion fused EVERY zone into ONE alignment scene, silently
-        nullifying the zoning with identical logs and exit status
-        (audit 2026-08-07).
+        nullifying the zoning with identical logs and exit status.
         """
         if not os.path.isdir(root):
             return []
@@ -768,12 +764,10 @@ class RealityScanAlignment(RSModule):
         def queue_folder_to_process(local_input_folder, local_output_dir, local_flight_log_path, local_flight_log_params_path, local_display_output):
             """Queue the folder TREE as one alignment scene.
 
-            RealityScan's -addFolder imports subfolders recursively
-            (verified on NA167 zone_13: wca/ + zeuss/ subfolders imported
-            into one scene, 93.4% registered), so a zone's per-camera
-            subfolders must NOT be queued as separate alignments - doing
-            so was splitting every mixed-camera zone into per-camera
-            scenes that could never co-register.
+            RealityScan's -addFolder imports subfolders recursively, so a
+            zone's per-camera subfolders must NOT be queued as separate
+            alignments - doing so splits every mixed-camera zone into
+            per-camera scenes that can never co-register.
             """
             if not os.path.isdir(local_input_folder):
                 raise ValueError(f"Input folder {local_input_folder} is not a directory")
@@ -791,7 +785,7 @@ class RealityScanAlignment(RSModule):
             if not self.__collect_images(local_input_folder) and not pool_zone_ok:
                 # A skipped zone must still land in the tally: it used to
                 # appear in neither 'Components' nor 'Zones Failed', so
-                # 'Component Count' silently excluded it (audit 2026-08-07).
+                # 'Component Count' silently excluded it.
                 self.logger.error(
                     'No images found under %s - the zone is SKIPPED and '
                     'counted as a failure', local_input_folder)
@@ -814,7 +808,7 @@ class RealityScanAlignment(RSModule):
             UTM zone (or mix tagged and untagged names). That ValueError
             escaped run() as an unhandled traceback out of main.py on two
             of the three call sites here: the batcher grew the matching
-            catch, the aligner did not (audit-verification 2026-08-07).
+            catch, the aligner did not.
             A frame disagreement must fail the ZONE rather than align it
             with no trajectory, so it lands in skipped_zones and therefore
             in 'Zones Failed'.
@@ -843,7 +837,7 @@ class RealityScanAlignment(RSModule):
             # A supplied BATCHED ROOT is expanded per zone, exactly as the
             # chained branch below does. Handing the whole root to
             # -addFolder recurses into every zone and produces ONE fused
-            # scene - the zoning silently gone (audit 2026-08-07).
+            # scene - the zoning silently gone.
             zone_dirs = self.zone_subfolders(input_folder)
             if zone_dirs:
                 self.logger.info(
@@ -913,7 +907,7 @@ class RealityScanAlignment(RSModule):
 
             # Each zone exports into its own subfolder: components stay
             # importable from their ORIGINAL export location (relocated
-            # .rsalign imports hang forever - bug B1) and zones cannot
+            # .rsalign imports hang forever) and zones cannot
             # clobber each other's exports.
             zone_name = os.path.basename(os.path.normpath(input_folder))
             zone_output_dir = os.path.join(output_dir, zone_name)
@@ -937,7 +931,7 @@ class RealityScanAlignment(RSModule):
                 # instance, sidecar OSError after a successful align) was
                 # counted neither as succeeded nor failed - nine raising
                 # zones out of ten still reported 'Zones Failed: 0' and
-                # exit 0 (audit #7, 2026-07-28).
+                # exit 0.
                 output_data['Components'][zone_output_dir] = {
                     'Success': False, 'Error': str(e)}
 
@@ -947,7 +941,7 @@ class RealityScanAlignment(RSModule):
         # previously reported Success=True with every zone failed, which
         # made a fully failed alignment run look complete (and exit 0).
         # Zones skipped for holding no images are recorded here too - they
-        # used to appear in no tally at all (audit 2026-08-07).
+        # used to appear in no tally at all.
         for skipped, reason in skipped_zones:
             output_data['Components'].setdefault(
                 os.path.join(output_dir,
@@ -960,7 +954,7 @@ class RealityScanAlignment(RSModule):
         output_data['Component Count'] = len(process_data)
         # ANY failed zone fails the run. 'Zones Failed: 9' with one success
         # used to return Success=True and exit 0 - a merged deliverable
-        # missing nine tenths of the dive, reported as a completed stage.
+        # missing nine tenths of the dataset, reported as a completed stage.
         if not component_results or output_data['Zones Failed'] > 0:
             output_data['Success'] = False
             if succeeded:

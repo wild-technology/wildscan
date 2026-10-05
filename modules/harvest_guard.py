@@ -4,12 +4,10 @@ The peel harvest is a PowerShell `Get-ChildItem -Recurse`, which does NOT
 descend into junction children, and RealityScan writes no XMP sidecars when
 a scene's images resolve through a reparse point. An image root containing
 directory junctions therefore yields an empty peel on every attempt -
-indistinguishable from a legitimately empty scene. See FINDINGS "The
-peel harvest cannot cross a directory junction (2026-07-27)".
+indistinguishable from a legitimately empty scene.
 
-`assert_harvestable` was born in archive/campaign_drivers/run_h2024_v2.py (which retains its
-own historical copy) and is promoted here so every live driver shares ONE
-implementation. Tests: tests/test_harvest_guard.py.
+Every live driver shares this ONE implementation of `assert_harvestable`.
+Tests: tests/test_harvest_guard.py.
 """
 from __future__ import annotations
 
@@ -21,11 +19,10 @@ def assert_harvestable(images_root: str, logger: logging.Logger) -> None:
     """The peel harvest is a PowerShell `Get-ChildItem -Recurse`, which does
     NOT descend into junction CHILDREN at ANY depth. Handing merge_zones.py a
     directory containing reparse points yields an empty peel on every attempt,
-    which the driver cannot distinguish from a legitimately empty scene - it
-    silently discarded a real 3-way fusion on 2026-07-27 (FINDINGS). The scan
-    is recursive: a junction one level down (zone_1/cinema as a link)
-    reproduces the blindness just as completely as a top-level one
-    (final review).
+    which the driver cannot distinguish from a legitimately empty scene, so
+    a real fusion would be silently discarded. The scan is recursive: a
+    junction one level down (a zone subfolder that is a link) reproduces the
+    blindness just as completely as a top-level one.
     """
     def is_reparse(path: str) -> bool:
         if os.path.islink(path):

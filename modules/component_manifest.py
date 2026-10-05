@@ -3,8 +3,8 @@
 RealityScan's CLI cannot enumerate a component's images, so membership is
 captured at zone-align time - the only moment per-camera XMP identity
 still exists (exports from imported-component scenes write ORDINAL
-sidecars, finding B10). The identity-capture loop
-(AlignZone.bat's in-session successive-difference identity loop (the retired reload-based ExportComponentIdentity.bat lives in archive/legacy_scripts; loaded-scene exports are ordinal - B10)) exports
+sidecars). The identity-capture loop
+(AlignZone.bat's in-session successive-difference identity loop) exports
 one component's pose sidecars per RealityScan boot; the pose-bearing
 sidecars between two sanitize passes ARE that component's images.
 
@@ -26,8 +26,7 @@ next to the exported ``.rsalign``:
 
 ``bbox_utm`` comes from the ZONE FLIGHT LOG rows of the member images
 (``flight_log_*_UTM.txt``: ``name;X;Y;Alt;...``), NOT from the exported
-XMP positions - those are grid-anchored local-frame values, not UTM
-(finding B10 context, 2026-07-23).
+XMP positions - those are grid-anchored local-frame values, not UTM.
 
 The manifest history list is the audit trail for every later
 accept/rollback/twin-drop decision.
@@ -40,13 +39,6 @@ import os
 
 SCHEMA_VERSION = 1
 MANIFEST_SUFFIX = '.manifest.json'
-
-# The Python-side membership-capture helpers (scan_pose_sidecars,
-# members_from_sidecars, _resolve_image_basename, _POSE_TAG,
-# _IMAGE_EXTENSIONS) were removed 2026-08-07 (approved):
-# superseded by AlignZone.bat's in-session identity loop, verified
-# caller-free since the 2026-07-28 deprecation sweep (FINDINGS).
-# They live in git history before this commit.
 
 
 def _now_iso() -> str:
@@ -128,7 +120,7 @@ def bbox_from_flight_log(flight_log_path: str | None,
     empty the bbox.
 
     XMP sidecar positions are deliberately NOT used: exports carry
-    grid-anchored local-frame coordinates, not UTM (B10 context).
+    grid-anchored local-frame coordinates, not UTM.
     """
     if not flight_log_path or not os.path.isfile(flight_log_path):
         return None

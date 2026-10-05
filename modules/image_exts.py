@@ -5,7 +5,7 @@ workspace_census, wildscan/session, georeference, batch_directory,
 camera_registry, realityscan_interface, merge_zones and grow_zone - so a
 .tif or .heif dataset was "present" to some stages and invisible to
 others: the census reported two images extracted while the georeferencer
-silently produced priors for one (audit 2026-08-07).
+silently produced priors for one.
 
 Two names, both explicit about what they mean:
 

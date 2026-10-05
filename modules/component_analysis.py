@@ -11,7 +11,7 @@ written next to each exported .rsalign at zone-align time
      "quality": {"mean_reproj_px": float or null},
      "created": iso8601, "history": [{"event": str, "at": iso8601}]}
 
-Policy (FINDINGS "Twin components across zones"):
+Policy (twin components across zones):
 - A component with NO unique images (its image set fully covered by the
   union of the other components in its twin group) is discardable.
 - A component with ANY unique images must NEVER be dropped.

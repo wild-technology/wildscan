@@ -17,7 +17,7 @@ shutdown. The wildscan portal previously ran the .bat via a raw
 space-containing checkout paths (cmd strips the outer quotes -
 run_batch_script's own comment), and - because the portal runner captures
 stdout in a PIPE - let the ``start ""``-launched RealityScan GUI child
-inherit that pipe (WINDOWS TRAP recorded 2026-08-07). run_batch_script
+inherit that pipe. run_batch_script
 hands the .bat a log FILE instead, so the boot path stays detached.
 
 Layering note: this module is imported by wildscan (and importable by any
@@ -26,10 +26,10 @@ wildscan. The stage passes the workspace-derived paths as arguments.
 
 Example (PowerShell, from the Git checkout):
     & "./.venv/Scripts/python.exe" modules/export_deliverables.py `
-        --project "D:/dive/final_assembly/assembly/Assembly.rsproj" `
-        --exports "D:/dive/exports" `
-        --names "D:/dive/exports/components.names" `
-        --log_dir "D:/dive/logs"
+        --project "<run>/final_assembly/assembly/Assembly.rsproj" `
+        --exports "<run>/exports" `
+        --names "<run>/exports/components.names" `
+        --log_dir "<run>/logs"
 """
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def missing_exports(exports_dir: str, names: list[str]) -> list[str]:
     export under -silent can auto-answer the "Export Selection" dialog and
     export NOTHING while still succeeding (MergeZoneComponents.bat records
     the census reading 0). Exit code plus an empty errors marker is
-    therefore not evidence a deliverable exists (audit 2026-08-07).
+    therefore not evidence a deliverable exists.
     """
     missing = []
     for name in names:
@@ -138,7 +138,7 @@ def main() -> int:
         return 1
     # An EMPTY (or whitespace-only) list makes the .bat's `for /f` loop run
     # ZERO iterations, -quit, and exit 0: a no-op that reports success and
-    # produces no deliverables at all (audit 2026-08-07).
+    # produces no deliverables at all.
     try:
         names = read_component_names(args.names)
     except OSError as exc:

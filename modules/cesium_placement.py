@@ -21,8 +21,8 @@ Two further traps, both found the expensive way and both guarded here:
    No exception, no warning - a textbook silent success. Every transformer
    built here passes ``allow_ballpark=False``, which raises instead.
 
-2. **Exported vertices are not necessarily in the global CRS.** The NA168
-   H2080 OBJ sits in a scrambled local frame ~350 km from the site; its
+2. **Exported vertices are not necessarily in the global CRS.** An OBJ can
+   sit in a scrambled local frame hundreds of km from the site; its
    ``.rsInfo`` sidecar carries the ``transformToModel`` matrix that puts it
    back. The 16 stored numbers do not have one obvious reading, so this module
    does not guess: it applies every candidate interpretation and accepts only
@@ -240,9 +240,9 @@ def preserves_orientation(transform: tuple[float, ...],
     """True when a reading is a proper (non-mirroring) transform.
 
     This is what separates the two readings that the CRS area of use cannot
-    tell apart. On NA168 H2080 both ``perm(1,2,0)`` and ``perm(2,1,0)`` put
-    every vertex inside UTM zone 53N - the site's easting (~348 355) and
-    northing (~396 320) are each plausible as the other - but ``perm(2,1,0)``
+    tell apart. Both ``perm(1,2,0)`` and ``perm(2,1,0)`` can put every
+    vertex inside the UTM zone when the site's easting and northing are
+    each plausible as the other - but ``perm(2,1,0)``
     swaps East and North, and a single axis swap is a REFLECTION with
     determinant -1. A reflected mesh is mirror-imaged, which no coordinate
     transform between two right-handed frames can produce, so the negative
@@ -318,7 +318,7 @@ def resolve_to_global(vertices, info: RSInfo,
     silently relocates the asset by hundreds of kilometres.
 
     ``nav_envelope`` is ``{'east': (lo, hi), 'north': (lo, hi),
-    'alt': (lo, hi)}`` - typically the min/max of a dive's flight log.
+    'alt': (lo, hi)}`` - typically the min/max of a run's flight log.
     """
     import numpy as np
 
