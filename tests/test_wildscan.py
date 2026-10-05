@@ -173,58 +173,42 @@ def _session(tmp_path, enabled, data=None) -> Session:
 
 
 def test_questions_follow_module_order_and_use_descriptions(tmp_path):
-    s = _session(tmp_path, ["extract", "georeference"],
+    s = _session(tmp_path, ["preprocess", "batch", "align"],
                  make_raw_data(tmp_path))
     qs = [q for q in build_questions(s, scan_raw_data(s.cruise_folder))
           if q.stage != "cameras"]
     stages = [q.stage for q in qs]
-    assert stages == sorted(stages, key=["extract", "georeference"].index), (
+    assert stages == sorted(stages, key=["preprocess", "batch", "align"].index), (
         "questions must arrive in module order (RC_Main)")
-    video = next(q for q in qs if q.arg == "i_input")
-    assert video.required and video.kind == "video"
-    assert "video" in video.prompt.lower(), (
+    images = next(q for q in qs if q.arg == "p_input")
+    assert images.required and images.kind == "path"
+    assert "images to preprocess" in images.prompt.lower(), (
         "the prompt is the parameter's own description")
 
 
 def test_detection_prefills_the_answers(tmp_path):
     raw = make_raw_data(tmp_path)
-    s = _session(tmp_path, ["extract", "georeference"], raw)
+    (raw / "stills").mkdir()
+    (raw / "stills" / "Cam1_20260820_192542.42.jpg").write_bytes(b"j")
+    s = _session(tmp_path, ["preprocess"], raw)
     qs = build_questions(s, scan_raw_data(raw))
-    video = next(q for q in qs if q.arg == "i_input")
-    assert video.default == str(raw / "video" / "dive_A.mov")
-    nav = next(q for q in qs if q.arg == "g_flight_log")
-    assert nav.default == str(raw / "nav" / "H2024_final_datatable.csv")
+    images = next(q for q in qs if q.arg == "p_input")
+    assert images.default == str(raw / "stills")
 
 
 def test_explicit_lines_beat_the_cruise_scan(tmp_path):
-    """The separate Raw Images / Video / Processed Data lines take priority
-    over anything found by scanning the cruise folder."""
+    """The separate Raw Images line takes priority over anything found by
+    scanning the cruise folder."""
     raw = make_raw_data(tmp_path)
+    (raw / "scanned").mkdir()
+    (raw / "scanned" / "Cam1_20260820_192542.42.jpg").write_bytes(b"j")
     stills = tmp_path / "stills"
     stills.mkdir()
-    (stills / "Z231_0001.jpg").write_bytes(b"j")
-    other_video = tmp_path / "special.mov"
-    other_video.write_bytes(b"v")
-    processed = tmp_path / "processed"
-    processed.mkdir()
-    (processed / "H2024_final_datatable.csv").write_text("t,x,y\n",
-                                                         encoding="utf-8")
-    s = _session(tmp_path, ["extract"], raw)
-    s.video_path = str(other_video)
+    (stills / "Cam2_20260820_192542.42.jpg").write_bytes(b"j")
+    s = _session(tmp_path, ["preprocess"], raw)
+    s.raw_images_dir = str(stills)
     qs = build_questions(s, scan_raw_data(raw))
-    assert next(q for q in qs if q.arg == "i_input").default == str(other_video)
-
-    # georeference WITHOUT extract enabled: its input question is asked (an
-    # enabled extract would answer it in-process - RC_Main semantics) and the
-    # explicit lines win the prefills.
-    s2 = _session(tmp_path, ["georeference"], raw)
-    s2.raw_images_dir = str(stills)
-    s2.processed_data = str(processed)
-    qs2 = build_questions(s2, scan_raw_data(raw))
-    assert next(q for q in qs2 if q.arg == "g_input").default == str(stills)
-    assert next(q for q in qs2 if q.arg == "g_flight_log").default == \
-        str(processed / "H2024_final_datatable.csv"), (
-        "Processed Data's ROVDataConcat output must win the nav prefill")
+    assert next(q for q in qs if q.arg == "p_input").default == str(stills)
 
 
 def test_camera_parsing_recognises_registry_families(tmp_path):
@@ -267,12 +251,12 @@ def test_known_cameras_ask_nothing(tmp_path):
 
 
 def test_camera_answers_never_reach_main_py(tmp_path):
-    s = _session(tmp_path, ["georeference"])
-    s.answers = {"g_input": "D:/x", "cam_u_name": "Upper (fisheye; 16mm)",
+    s = _session(tmp_path, ["preprocess"])
+    s.answers = {"p_input": "D:/x", "cam_u_name": "Upper (fisheye; 16mm)",
                  "cam_u_lever": "1.0/0.0/1.0", "cam_u_tilt": "45"}
     chain = build_commands(s)[0]
     argv = " ".join(chain.argv)
-    assert "--g_input" in argv
+    assert "--p_input" in argv
     assert "cam_u" not in argv, (
         "camera records are portal data, not pipeline arguments")
 
@@ -290,21 +274,21 @@ def test_disable_when_module_active_suppresses_redundant_questions(tmp_path):
 
 
 def test_last_run_answers_are_the_new_defaults(tmp_path, store):
-    s = _session(tmp_path, ["extract"])
-    s.answers["i_output_fpm"] = "2.5"
+    s = _session(tmp_path, ["batch"])
+    s.answers["b_target_images"] = "2500"
     session_mod.save_last_run(s)
     reloaded = session_mod.default_session()
     assert reloaded.expedition == "NA156"
     assert reloaded.dive == "H2024"
-    assert reloaded.answers.get("i_output_fpm") == "2.5"
+    assert reloaded.answers.get("b_target_images") == "2500"
     qs = build_questions(_session_with_answers(tmp_path, reloaded.answers),
                          scan_raw_data(""))
-    fpm = next(q for q in qs if q.arg == "i_output_fpm")
-    assert fpm.default == "2.5", "the last run must prefill the next"
+    target = next(q for q in qs if q.arg == "b_target_images")
+    assert target.default == "2500", "the last run must prefill the next"
 
 
 def _session_with_answers(tmp_path, answers) -> Session:
-    s = _session(tmp_path, ["extract"])
+    s = _session(tmp_path, ["batch"])
     s.answers = dict(answers)
     return s
 
@@ -312,16 +296,16 @@ def _session_with_answers(tmp_path, answers) -> Session:
 # --------------------------------------------------------------- commands
 
 def test_chain_runs_as_one_invocation_preserving_handoff(tmp_path):
-    s = _session(tmp_path, ["georeference", "batch", "align"])
-    s.answers = {"g_input": "D:/x", "g_flight_log": "D:/nav.csv"}
+    s = _session(tmp_path, ["preprocess", "batch", "align"])
+    s.answers = {"p_input": "D:/x", "b_flight_log_path": "D:/nav.txt"}
     commands = build_commands(s)
     chain = commands[0]
     assert chain.env["RS_MODULES"] == (
-        "Georeference Images,Batch Directory,RealityScan Alignment"), (
+        "Preprocess Images,Batch Directory,RealityScan Alignment"), (
         "chained modules MUST share one main.py process - the in-process "
         "hand-off is the pipeline's current data handling")
     argv = " ".join(chain.argv)
-    assert chain.argv[chain.argv.index('--g_input') + 1] == os.path.abspath('D:/x')
+    assert chain.argv[chain.argv.index('--p_input') + 1] == os.path.abspath('D:/x')
     assert "--r_display_output false" in argv, "console display forced off"
     assert chain.needs_realityscan
 
@@ -489,15 +473,15 @@ def test_run_persists_anchored_source_paths_before_launch(tmp_path, store, monke
             app.session.results_root = 'results'
             app.session.raw_images_dir = 'raw'
             app.session.video_path = 'raw/clip.mov'
-            app.session.enabled = ['extract']
-            app.session.answers = {'i_input': 'raw/clip.mov',
+            app.session.enabled = ['preprocess']
+            app.session.answers = {'p_input': 'raw',
                                    'r_input': 'zones', 'r_flight_log': 'nav.csv'}
             app.push_screen(app_mod.RunScreen())
             await pilot.pause()
             assert len(launches) == 1
             assert store.data['wildscan']['raw_images_dir'] == str(tmp_path / 'raw')
             assert store.data['wildscan']['video_path'] == str(tmp_path / 'raw' / 'clip.mov')
-            assert store.data['wildscan']['answers']['i_input'] == str(tmp_path / 'raw' / 'clip.mov')
+            assert store.data['wildscan']['answers']['p_input'] == str(tmp_path / 'raw')
             assert store.data['wildscan']['answers']['r_input'] == str(tmp_path / 'zones')
             assert store.data['wildscan']['answers']['r_flight_log'] == str(tmp_path / 'nav.csv')
             assert store.data['wildscan']['results_base'] == str(tmp_path)

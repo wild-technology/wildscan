@@ -120,11 +120,12 @@ def bbox_from_flight_log(flight_log_path: str | None,
     """[minx, miny, maxx, maxy] (UTM) of the member images' flight-log
     positions, or None when no log / no members matched.
 
-    The log format is the georeference module's semicolon table
-    (``filename;X (East);Y (North);Alt;...`` header, then
-    ``name;x;y;alt;...`` rows). Rows are matched by basename and by stem
-    (case-insensitive) so extension mismatches between the log and the
-    aligned images never silently empty the bbox.
+    The log format is the pipeline's semicolon table
+    (``modules.flight_logs.FLIGHT_LOG_HEADER``: ``filename;X (East);Y
+    (North);Alt;...`` header, then ``name;x;y;alt;...`` rows). Rows are
+    matched by basename and by stem (case-insensitive) so extension
+    mismatches between the log and the aligned images never silently
+    empty the bbox.
 
     XMP sidecar positions are deliberately NOT used: exports carry
     grid-anchored local-frame coordinates, not UTM (B10 context).

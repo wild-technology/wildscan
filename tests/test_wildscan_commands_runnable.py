@@ -44,8 +44,7 @@ sys.path.insert(0, REPO_ROOT)
 import main as main_mod  # noqa: E402
 import wildscan.session as session_mod  # noqa: E402
 from wildscan.session import (CHAIN_STAGES, MODULE_DISPLAY, Question,  # noqa: E402
-                              Session, build_commands, build_questions,
-                              chain_arg_names, scan_raw_data,
+                              Session, build_commands, chain_arg_names,
                               workspace_input_crs, write_camera_records)
 from wildscan.workspace import Workspace  # noqa: E402
 
@@ -143,7 +142,7 @@ def test_the_real_process_accepts_the_generated_argv(tmp_path):
     argparse's 'unrecognized arguments'."""
     session = Session(expedition='NA167', dive='H2075',
                       results_root=str(tmp_path / 'ws'),
-                      enabled=['georeference', 'preprocess', 'batch'],
+                      enabled=['preprocess', 'batch'],
                       answers=dict(FULL_ANSWERS))
     cmd = _chain_command(session)
     env = dict(os.environ)
@@ -185,8 +184,8 @@ def test_plan_anchors_filesystem_values_and_preserves_tokens(tmp_path, monkeypat
                   'processed_data', 'results_root'):
         assert Path(getattr(session, field)).is_absolute()
         assert tmp_path in Path(getattr(session, field)).parents
-    for arg in ('i_input', 'g_input', 'g_flight_log', 'p_input', 'b_input',
-                'b_flight_log_path', 'r_input', 'r_flight_log', 'r_flight_log_params'):
+    for arg in ('p_input', 'b_input', 'b_flight_log_path', 'r_input',
+                'r_flight_log', 'r_flight_log_params'):
         assert Path(session.answers[arg]).is_absolute()
         assert tmp_path in Path(session.answers[arg]).parents
     assert session.answers['r_project_label'] == 'MY_LABEL'
@@ -207,7 +206,7 @@ def test_disabled_paths_keep_their_identity_when_a_later_run_changes_cwd(
     other.mkdir()
     monkeypatch.chdir(caller)
     original = Session(results_root='results', enabled=['model'], answers={
-        'i_input': 'raw/clip.mov', 'r_input': 'zones', 'r_flight_log': 'nav.csv',
+        'p_input': 'raw', 'r_input': 'zones', 'r_flight_log': 'nav.csv',
         'r_flight_log_params': 'params.xml', 'r_project_label': 'UNCHANGED_LABEL',
         'g_type': 'All', 'cam_custom_name': 'My Camera', 'unknown_answer': 'leave/me'})
     build_commands(original)
@@ -219,7 +218,7 @@ def test_disabled_paths_keep_their_identity_when_a_later_run_changes_cwd(
     for flag, name in [('--r_input', 'zones'), ('--r_flight_log', 'nav.csv'),
                        ('--r_flight_log_params', 'params.xml')]:
         assert plan.argv[plan.argv.index(flag) + 1] == str(caller / name)
-    assert restored.answers['i_input'] == str(caller / 'raw' / 'clip.mov')
+    assert restored.answers['p_input'] == str(caller / 'raw')
     assert restored.answers['r_project_label'] == 'UNCHANGED_LABEL'
     assert restored.answers['g_type'] == 'All'
     assert restored.answers['cam_custom_name'] == 'My Camera'
@@ -230,8 +229,7 @@ def test_forced_model_flags_only_ride_with_align(tmp_path):
     """The forced --r_display_output flag belongs to RealityScan
     Alignment; appending it unconditionally alone rejected every
     align-less selection."""
-    for enabled in (['georeference'], ['georeference', 'preprocess', 'batch'],
-                    ['extract']):
+    for enabled in (['preprocess'], ['preprocess', 'batch'], ['batch']):
         session = Session(results_root=str(tmp_path / 'ws'),
                           enabled=list(enabled), answers=dict(FULL_ANSWERS))
         argv = _chain_command(session).argv
@@ -248,8 +246,8 @@ def test_answers_from_other_stages_are_kept_but_not_forwarded(tmp_path):
     session = Session(results_root=str(tmp_path / 'ws'),
                       enabled=['batch', 'align'], answers=dict(FULL_ANSWERS))
     argv = _chain_command(session).argv
-    assert '--g_input' not in argv and '--p_input' not in argv
-    assert session.answers['g_input'] == os.path.abspath(FULL_ANSWERS['g_input'])
+    assert '--p_input' not in argv
+    assert session.answers['p_input'] == os.path.abspath(FULL_ANSWERS['p_input'])
 
 
 def test_disable_when_module_active_is_honoured_by_the_filter(tmp_path):
@@ -273,21 +271,6 @@ def test_chain_arg_names_matches_main_pys_own_parameter_build(chain):
     expected = {p.cli_long
                 for p in main_mod.initialize_parameters(modules).values()}
     assert chain_arg_names(chain) == expected, chain
-
-
-# ------------------------------------------------------ required data type
-
-def test_geo_input_type_is_required_and_constrained(tmp_path):
-    session = Session(results_root=str(tmp_path / 'ws'),
-                      enabled=['georeference'])
-    questions = {q.arg: q for q in build_questions(session,
-                                                   scan_raw_data(tmp_path))}
-    q = questions['g_type']
-    assert q.required, 'a blank answer used to reach validate_parameters'
-    assert q.validate('') == 'this one is required'
-    assert q.validate('nonsense') is not None
-    for good in ('All', 'wca', 'Zeuss', 'WCA2025'):
-        assert q.validate(good) is None, good
 
 
 def test_question_choices_do_not_affect_unconstrained_questions():

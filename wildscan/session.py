@@ -44,13 +44,11 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 
 # Pipeline module chain, in RC_Main's order, plus the post-align stages the
 # portal drives as separate commands.
-CHAIN_STAGES = ["extract", "georeference", "preprocess", "batch", "align"]
+CHAIN_STAGES = ["preprocess", "batch", "align"]
 POST_STAGES = ["merge", "model", "export", "publish"]
 ALL_STAGES = CHAIN_STAGES + POST_STAGES
 
 MODULE_DISPLAY = {
-    "extract": "Extract Images",
-    "georeference": "Georeference Images",
     "preprocess": "Preprocess Images",
     "batch": "Batch Directory",
     "align": "RealityScan Alignment",
@@ -404,9 +402,6 @@ class Question:
 
 
 _KIND_BY_NAME = {
-    "image_input_video": "video",
-    "geo_input_image_dir": "path",
-    "geo_input_flight_log": "file",
     "pre_input_image_dir": "path",
     "batch_input_image_dir": "path",
     "batch_flight_log_path": "file",
@@ -414,17 +409,12 @@ _KIND_BY_NAME = {
     "rs_flight_log_path": "file",
     "rs_flight_log_params": "file",
 }
-# geo_input_type is REQUIRED (audit 2026-08-07): it has default_value None,
-# so a blank answer used to be accepted, dropped from argv, and only
-# rejected by GeoreferenceImages.validate_parameters ("No data type
-# specified") after the operator had already pressed Run.
-_REQUIRED = {"image_input_video", "geo_input_image_dir",
-             "geo_input_flight_log", "geo_input_type"}
+# Parameters that must be answered even though the module gives them a
+# default (a parameter whose default is None is always required).
+_REQUIRED: set[str] = set()
 # Answers constrained to a fixed set - validated at the question, not four
 # screens later.
-_CHOICES_BY_NAME = {
-    "geo_input_type": ("Zeuss", "WCA", "WCA2025", "All"),
-}
+_CHOICES_BY_NAME: dict[str, tuple[str, ...]] = {}
 # Alignment answers the portal fixes instead of asking: RealityScan's own
 # console display stays off.
 _FORCED_ANSWERS = {"r_display_output": "false"}
@@ -435,15 +425,11 @@ _MODULES = None
 def _module_registry() -> dict:
     global _MODULES
     if _MODULES is None:
-        from modules.extract_images.extract_images import ExtractImages
-        from modules.georeference.georeference_images import GeoreferenceImages
         from modules.image_batcher.batch_directory import BatchDirectory
         from modules.preprocess_images.preprocess_images import PreprocessImages
         from modules.realityscan_interface.realityscan_interface import (
             RealityScanAlignment)
         _MODULES = {
-            "extract": ExtractImages(_quiet),
-            "georeference": GeoreferenceImages(_quiet),
             "preprocess": PreprocessImages(_quiet),
             "batch": BatchDirectory(_quiet),
             "align": RealityScanAlignment(_quiet),

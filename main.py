@@ -10,8 +10,6 @@ import inquirer
 from module_base.parameter import Parameter
 from module_base.rs_module import RSModule
 from module_base.settings_store import SettingsStore
-from modules.extract_images.extract_images import ExtractImages
-from modules.georeference.georeference_images import GeoreferenceImages
 from modules.preprocess_images.preprocess_images import PreprocessImages
 from modules.image_batcher.batch_directory import BatchDirectory
 from modules.realityscan_interface.realityscan_interface import RealityScanAlignment
@@ -33,8 +31,6 @@ def initialize_modules(logger) -> dict[str, RSModule]:
       RS_MODULES selection) without prompting
     """
     available_modules: dict[str, RSModule] = {
-        'Extract Images': ExtractImages(logger),
-        'Georeference Images': GeoreferenceImages(logger),
         'Preprocess Images': PreprocessImages(logger),
         'Batch Directory': BatchDirectory(logger),
         'RealityScan Alignment': RealityScanAlignment(logger)

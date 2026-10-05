@@ -200,26 +200,6 @@ def test_invalid_intake_path_has_visible_feedback_without_creating_results(
     asyncio.run(drive())
 
 
-def test_stills_intake_does_not_require_video_extraction(tmp_path, settings):
-    source = tmp_path / 'images'
-    source.mkdir()
-    (source / 'sample.jpg').write_bytes(b'fixture')
-
-    async def drive():
-        app = ui.WildScanApp(str(tmp_path / 'results'))
-        async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.pause()
-            app.screen.query_one('#s-rawimages').value = str(source)
-            await pilot.click('#s-continue')
-            await pilot.pause()
-            assert isinstance(app.screen, ui.StagePickScreen)
-            assert 'extract' not in app.screen.query_one('#stage-pick').selected
-            assert 'georeference' in app.screen.query_one('#stage-pick').selected
-            assert 'Existing images supplied' in str(app.screen.query_one('#pick-note').content)
-
-    asyncio.run(drive())
-
-
 def test_automatic_results_name_tracks_typing_but_preserves_manual_folder(
         tmp_path, settings):
     async def drive():
@@ -251,11 +231,11 @@ def test_detected_question_defaults_and_summary_back_preserve_current_answers(
         app = ui.WildScanApp(str(tmp_path / 'results'))
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
-            app.session.enabled = ['georeference']
+            app.session.enabled = ['preprocess']
             app.session.raw_images_dir = str(source)
-            app.session.answers = {'g_input': 'old/dataset'}
+            app.session.answers = {'p_input': 'old/dataset'}
             app.questions = [q for q in session_mod.build_questions(app.session, RawDataScan())
-                             if q.arg == 'g_input']
+                             if q.arg == 'p_input']
             wizard = ui.WizardScreen()
             app.push_screen(wizard)
             await pilot.pause()
@@ -266,38 +246,24 @@ def test_detected_question_defaults_and_summary_back_preserve_current_answers(
             app.screen.action_back()
             await pilot.pause()
             assert app.screen is wizard and wizard.index == 0
-            assert wizard._question().arg == 'g_input'
+            assert wizard._question().arg == 'p_input'
             wizard._commit_and(1)
             await pilot.pause()
             assert isinstance(app.screen, ui.SummaryScreen)
-            assert app.session.answers['g_input'] == str(source)
+            assert app.session.answers['p_input'] == str(source)
 
     asyncio.run(drive())
 
 
 @pytest.mark.parametrize('value', ['1.5', 'inf', 'nan'])
 def test_integer_question_rejects_values_the_driver_cannot_parse(tmp_path, value):
-    session = session_mod.Session(results_root=str(tmp_path), enabled=['extract'])
+    session = session_mod.Session(results_root=str(tmp_path), enabled=['batch'])
     question = next(q for q in session_mod.build_questions(session, RawDataScan())
-                    if q.arg == 'i_mpx')
+                    if q.arg == 'b_target_images')
     assert question.value_type is int
     assert question.validate(value) is not None
     assert question.validate('3') is None
     assert Question('test', 'number', '', 'number', value_type=float).validate('nan')
-
-
-def test_video_question_and_detection_match_the_extractors_supported_inputs(tmp_path):
-    from modules.extract_images.extract_images import VIDEO_EXTENSIONS
-
-    for name in ('survey.mov', 'survey.mp4', 'unsupported.avi', 'unsupported.mkv'):
-        (tmp_path / name).write_bytes(b'fixture')
-    question = Question('extract', 'i_input', '', 'video', required=True)
-    assert question.validate(str(tmp_path)) is None
-    assert question.validate(str(tmp_path / 'survey.mov')) is None
-    assert question.validate(str(tmp_path / 'unsupported.avi'))
-    detected = session_mod.scan_raw_data(tmp_path)
-    assert {path.suffix for path in detected.videos} == VIDEO_EXTENSIONS
-    assert {path.name for path in detected.videos} == {'survey.mov', 'survey.mp4'}
 
 
 def test_run_planning_failure_stays_visible_and_can_return_to_edit(

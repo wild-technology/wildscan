@@ -3,8 +3,8 @@
 
 Cesium ion renders every height as metres above the WGS84 ELLIPSOID
 (CesiumJS ``Cartographic.height`` is defined that way). This pipeline's
-vertical is nothing of the kind: the georeference stage writes ``-abs(depth)``
-into the flight log's ``Alt`` column, so the Z that reaches an exported model
+vertical is nothing of the kind: the flight log carries ``-abs(depth)`` in
+its ``Alt`` column, so the Z that reaches an exported model
 is depth below the instantaneous SEA SURFACE - an orthometric height, referred
 to the geoid. Handing that number to ion unchanged sinks or floats the whole
 asset by the local geoid undulation N: +4.5 m at Papahanaumokuakea, +15.9 m at
@@ -465,8 +465,7 @@ def msl_to_ellipsoidal(depth_msl: float, lon: float, lat: float,
     """(ellipsoidal height, N) for a sea-surface-referenced height.
 
     ``depth_msl`` is the pipeline's own convention: negative metres DOWN from
-    the sea surface, exactly as the georeference stage writes the flight
-    log's ``Alt`` column.
+    the sea surface, exactly as the flight log's ``Alt`` column carries it.
     """
     separation = geoid_separation(lon, lat, model)
     return depth_msl + separation, separation
