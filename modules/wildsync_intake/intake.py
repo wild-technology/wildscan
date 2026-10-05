@@ -106,6 +106,10 @@ DEFAULT_STATIC_POSITION_ACCURACY_M = 1000.0
 DEFAULT_MIN_MATCH_PCT = 80.0
 DEFAULT_TIME_ERR_WARN_MS = 50.0
 DEFAULT_SURFACE_ALTITUDE_M = 0.0
+# Altitude accuracy written for a row whose altitude is the surface-altitude
+# fallback (no depth): wide, like the static-fix position accuracy, so the
+# fallback cannot pin a submerged camera to the surface.
+DEFAULT_SURFACE_ALTITUDE_ACCURACY_M = 1000.0
 
 _FRAME_SUFFIX = re.compile(r'(\.card)?\.(jpe?g|arw|xmp)$', re.IGNORECASE)
 _ZONE_TAG = re.compile(r'^(\d{1,2})([A-Za-z])$')
@@ -159,6 +163,7 @@ class IntakeOptions:
     heading_source: str = 'auto'
     declination_deg: float = 0.0
     surface_altitude_m: float = DEFAULT_SURFACE_ALTITUDE_M
+    surface_altitude_accuracy_m: float = DEFAULT_SURFACE_ALTITUDE_ACCURACY_M
     static_position_accuracy_m: float = DEFAULT_STATIC_POSITION_ACCURACY_M
     min_match_pct: float = DEFAULT_MIN_MATCH_PCT
     time_err_warn_ms: float = DEFAULT_TIME_ERR_WARN_MS
@@ -193,6 +198,8 @@ class IntakeOptions:
                  0.0, True),
                 ('static-fix position accuracy (m)',
                  self.static_position_accuracy_m, 0.0, True),
+                ('surface altitude accuracy (m)',
+                 self.surface_altitude_accuracy_m, 0.0, True),
                 ('time error warning threshold (ms)', self.time_err_warn_ms,
                  0.0, False),
                 ('minimum match rate (%)', self.min_match_pct, 0.0, False),
@@ -643,8 +650,9 @@ def flight_log_prior(frame: Frame, options: IntakeOptions,
                      static_fix: bool) -> RowPrior:
     """The 13-column row for one image (see :func:`orientation_prior` and
     :func:`altitude_prior`). A static-fix run gets the static position
-    accuracy; an image without heading, pitch or roll gets no orientation
-    cells; one without a UTM position gets no position cells."""
+    accuracy; an image without depth gets the surface-altitude accuracy for
+    its fallback altitude; an image without heading, pitch or roll gets no
+    orientation cells; one without a UTM position gets no position cells."""
     row = frame.row
     mount = frame.mount
     heading, column = select_heading(row, options.heading_source)
@@ -670,10 +678,12 @@ def flight_log_prior(frame: Frame, options: IntakeOptions,
                          else options.position_accuracy_m)
     depth = row.number('depth_from_xplore9')
     alt = altitude_prior(depth, options.surface_altitude_m, lever[2])
+    alt_acc = (options.altitude_accuracy_m if depth is not None
+               else options.surface_altitude_accuracy_m)
 
     accuracy = options.orientation_accuracy_deg
     log_row = FlightLogRow(
-        frame.name, x, y, alt, x_acc, y_acc, options.altitude_accuracy_m,
+        frame.name, x, y, alt, x_acc, y_acc, alt_acc,
         yaw, pitch, roll,
         accuracy if has_orientation else None,
         mount.pitch_accuracy_deg if has_orientation else None,
@@ -947,7 +957,10 @@ def run_intake(run_paths: Sequence[str], workspace: str,
     if no_depth:
         warn(f'{no_depth} of {total} images have no depth: altitude written '
              f'as the surface altitude {options.surface_altitude_m:g} m '
-             '(camera at the sea surface)')
+             '(camera at the sea surface); altitude accuracy '
+             f'{options.surface_altitude_accuracy_m:g} m is written for them '
+             f'instead of {options.altitude_accuracy_m:g} m, so the fallback '
+             'cannot pin the cameras to the surface')
     no_orientation = sum(1 for p in priors if not p.has_orientation)
     if no_orientation:
         warn(f'{no_orientation} of {total} images lack heading, pitch or '
@@ -1061,6 +1074,8 @@ def run_intake(run_paths: Sequence[str], workspace: str,
             'surface_altitude_m': options.surface_altitude_m,
             'images_from_depth': total - no_depth,
             'images_at_surface_altitude': no_depth,
+            'surface_altitude_accuracy_m': options.surface_altitude_accuracy_m,
+            'images_with_surface_altitude_accuracy': no_depth,
         },
         'orientation': {
             'heading_source': options.heading_source,

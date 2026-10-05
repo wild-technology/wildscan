@@ -15,6 +15,7 @@ from ..calibration_sidecars import MODES as CALIBRATION_MODES
 from .intake import (
     DEFAULT_MIN_MATCH_PCT,
     DEFAULT_STATIC_POSITION_ACCURACY_M,
+    DEFAULT_SURFACE_ALTITUDE_ACCURACY_M,
     DEFAULT_SURFACE_ALTITUDE_M,
     DEFAULT_TIME_ERR_WARN_MS,
     HEADING_SOURCES,
@@ -161,6 +162,19 @@ class WildSyncIntake(RSModule):
             prompt_user=False
         )
 
+        additional_params['ws_surface_alt_accuracy_m'] = Parameter(
+            name='Surface Altitude Accuracy (m)',
+            cli_short='w_saa',
+            cli_long='w_surface_alt_accuracy',
+            type=float,
+            default_value=DEFAULT_SURFACE_ALTITUDE_ACCURACY_M,
+            description=('Altitude accuracy written instead of the altitude '
+                         'accuracy for images whose depth cell is empty (their '
+                         'altitude is the surface altitude), so the fallback '
+                         'cannot pin a submerged camera to the surface'),
+            prompt_user=False
+        )
+
         additional_params['ws_orientation_accuracy_deg'] = Parameter(
             name='Orientation Accuracy (deg)',
             cli_short='w_oa',
@@ -232,6 +246,9 @@ class WildSyncIntake(RSModule):
                                    defaults.declination_deg),
             surface_altitude_m=number('ws_surface_alt_m',
                                       defaults.surface_altitude_m),
+            surface_altitude_accuracy_m=number(
+                'ws_surface_alt_accuracy_m',
+                defaults.surface_altitude_accuracy_m),
             static_position_accuracy_m=number(
                 'ws_static_pos_accuracy_m',
                 defaults.static_position_accuracy_m),

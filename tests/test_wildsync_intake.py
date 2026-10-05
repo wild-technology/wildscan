@@ -242,23 +242,25 @@ def test_auto_heading_takes_heading_imu_then_yaw():
 
 # ------------------------------------------------------ the golden intake
 
+# Rows without depth carry the surface altitude with the wide surface-altitude
+# accuracy (1000 m); only the row with a depth gets the normal 1 m.
 GOLDEN_ROWS = (
     ('Cam1_20260820_192542.42.card.JPG;294952.550000;4588707.830000;0.000000;'
-     '1000.000000;1000.000000;1.000000;95.000000;2.000000;-1.000000;'
+     '1000.000000;1000.000000;1000.000000;95.000000;2.000000;-1.000000;'
      '15.000000;15.000000;15.000000'),
     ('Cam1_20260820_192542.92.card.JPG;294952.550000;4588707.830000;0.000000;'
-     '1000.000000;1000.000000;1.000000;100.000000;2.000000;-1.000000;'
+     '1000.000000;1000.000000;1000.000000;100.000000;2.000000;-1.000000;'
      '15.000000;15.000000;15.000000'),
     ('Cam1_20260820_192543.42.card.JPG;294952.550000;4588707.830000;0.000000;'
-     '1000.000000;1000.000000;1.000000;;;;;;'),
+     '1000.000000;1000.000000;1000.000000;;;;;;'),
     ('Cam2_20260820_192542.42.card.JPG;294952.550000;4588707.830000;0.000000;'
-     '1000.000000;1000.000000;1.000000;95.000000;2.000000;-1.000000;'
+     '1000.000000;1000.000000;1000.000000;95.000000;2.000000;-1.000000;'
      '15.000000;15.000000;15.000000'),
     ('Cam2_20260820_192542.92.card.JPG;294952.550000;4588707.830000;-12.500000;'
      '1000.000000;1000.000000;1.000000;95.000000;2.000000;-1.000000;'
      '15.000000;15.000000;15.000000'),
     ('Cam2_20260820_192543.42.card.JPG;294952.550000;4588707.830000;0.000000;'
-     '1000.000000;1000.000000;1.000000;95.000000;2.000000;-1.000000;'
+     '1000.000000;1000.000000;1000.000000;95.000000;2.000000;-1.000000;'
      '15.000000;15.000000;15.000000'),
 )
 GOLDEN_LOG = ''.join(line + '\n' for line in (FLIGHT_LOG_HEADER, *GOLDEN_ROWS))
@@ -312,6 +314,9 @@ def test_golden_intake_of_the_card_variant(run_dir, workspace):
     assert manifest['position']['images_without_position'] == 0
     assert manifest['altitude']['images_from_depth'] == 1
     assert manifest['altitude']['images_at_surface_altitude'] == 5
+    assert manifest['altitude']['accuracy_m'] == 1.0
+    assert manifest['altitude']['surface_altitude_accuracy_m'] == 1000.0
+    assert manifest['altitude']['images_with_surface_altitude_accuracy'] == 5
     assert manifest['orientation']['heading_source'] == 'auto'
     assert manifest['orientation']['heading_columns_used'] == {
         'heading_imu': 4, 'none': 1, 'yaw': 1}
@@ -350,6 +355,29 @@ def test_every_warn_only_case_is_warned_and_recorded(run_dir, workspace):
     for text in expected:
         assert sum(text in w for w in warnings) == 1, (text, warnings)
     assert len(warnings) == len(expected), warnings
+    depth_warning, = (w for w in warnings if 'have no depth' in w)
+    assert ('altitude accuracy 1000 m is written for them instead of 1 m'
+            in depth_warning), depth_warning
+
+
+def test_the_surface_altitude_accuracy_applies_only_without_depth(run_dir,
+                                                                 workspace):
+    result = run_intake([str(run_dir)], str(workspace),
+                        IntakeOptions(surface_altitude_accuracy_m=250.0,
+                                      altitude_accuracy_m=2.0), log=QUIET)
+    rows = {line.split(';')[0]: line.split(';')
+            for line in Path(result.flight_log_path).read_text(
+                'utf-8').splitlines()[1:]}
+    assert rows['Cam2_20260820_192542.92.card.JPG'][6] == '2.000000'
+    assert {r[6] for name, r in rows.items()
+            if name != 'Cam2_20260820_192542.92.card.JPG'} == {'250.000000'}
+    assert result.manifest['altitude']['surface_altitude_accuracy_m'] == 250.0
+
+
+@pytest.mark.parametrize('value', [0.0, -1.0, float('nan'), 'wide'])
+def test_the_surface_altitude_accuracy_must_be_positive(value):
+    problems = IntakeOptions(surface_altitude_accuracy_m=value).problems()
+    assert any('surface altitude accuracy (m)' in p for p in problems), problems
 
 
 def test_a_moving_track_is_not_a_static_fix(tmp_path, workspace):
@@ -719,6 +747,7 @@ def test_module_parameters_follow_the_conventions():
         'ws_static_pos_accuracy_m': ('w_spa', 1000.0),
         'ws_alt_accuracy_m': ('w_aa', 1.0),
         'ws_surface_alt_m': ('w_sa', 0.0),
+        'ws_surface_alt_accuracy_m': ('w_saa', 1000.0),
         'ws_orientation_accuracy_deg': ('w_oa', 15.0),
         'ws_min_match_pct': ('w_mr', 80.0),
         'ws_time_err_warn_ms': ('w_te', 50.0),
