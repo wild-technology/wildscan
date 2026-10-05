@@ -309,6 +309,9 @@ def test_registry_modules_import_with_the_standard_library_only():
     code = ('import sys; sys.path.insert(0, sys.argv[1]); '
             'import modules.camera_registry, modules.calibration_sidecars, '
             'modules.flight_logs')
-    result = subprocess.run([sys.executable, '-I', '-S', '-c', code, REPO_ROOT],
+    # -B: -I ignores PYTHONDONTWRITEBYTECODE, and the import must not write
+    # __pycache__ into the source tree.
+    result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', code,
+                             REPO_ROOT],
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr

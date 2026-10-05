@@ -60,6 +60,15 @@ class FakeStore:
         self.data.setdefault(section, {})[key] = value
 
 
+@pytest.fixture(autouse=True)
+def private_errors_dir(tmp_path, monkeypatch):
+    """Instance locks and markers in this test's own folder: a test that
+    gets past the guards takes the RS1 lock, which in the package's
+    RS_CLI/Errors would write into the source tree and collide with a
+    concurrent pytest run."""
+    monkeypatch.setattr(cli_mod, 'ERRORS_DIR', str(tmp_path / 'errors'))
+
+
 def _cli(tmp_path, instance='RS1'):
     exe = tmp_path / 'RealityScan.exe'
     exe.write_text('stub', encoding='utf-8')
