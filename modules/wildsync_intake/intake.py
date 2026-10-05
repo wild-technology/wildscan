@@ -90,6 +90,8 @@ NUMERIC_COLUMNS = tuple(c for c in FLIGHT_LOG_CSV_HEADER
 RAW_IMAGES = 'raw_images'
 MANIFEST_NAME = 'wildsync_intake.json'
 MANIFEST_SCHEMA = 1
+# Manifest status while an intake is copying; only 'complete' is usable.
+STATUS_IN_PROGRESS = 'in_progress'
 
 VARIANTS = ('card', 'review')
 HEADING_SOURCES = ('auto', 'heading_imu', 'yaw', 'heading_mag_xplore')
@@ -980,8 +982,15 @@ def run_intake(run_paths: Sequence[str], workspace: str,
             pending.append(frame)
 
     os.makedirs(raw_dir, exist_ok=True)
-    if os.path.lexists(manifest_path):
-        os.remove(manifest_path)   # never leave a manifest for other images
+    # Never leave a manifest for other images, and never leave none: until
+    # the final manifest replaces it, this marker tells every later stage
+    # (load_manifest) that raw_images holds an unfinished intake.
+    _write_json(manifest_path, {
+        'schema': MANIFEST_SCHEMA,
+        'status': STATUS_IN_PROGRESS,
+        'started_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        'sources': [plan.run_dir for plan in plans],
+    })
     for frame in pending:
         _copy_image(frame.source, destinations[frame.name])
     copied, reused = len(pending), len(frames) - len(pending)
@@ -1070,7 +1079,9 @@ def load_manifest(raw_images_dir: str) -> dict | None:
     """The intake manifest in ``raw_images_dir``, or None when there is none.
 
     ValueError when it exists but is not a complete manifest of this
-    schema: a later stage must never act on a partial intake.
+    schema: a later stage must never act on a partial intake. That includes
+    the in-progress marker :func:`run_intake` writes before copying, which
+    stays when the intake is interrupted.
     """
     path = os.path.join(raw_images_dir, MANIFEST_NAME)
     if not os.path.isfile(path):
@@ -1080,6 +1091,13 @@ def load_manifest(raw_images_dir: str) -> dict | None:
             data = json.load(stream)
     except (OSError, ValueError) as exc:
         raise ValueError(f'{path}: unreadable intake manifest: {exc}') from exc
+    if isinstance(data, dict) and data.get('status') == STATUS_IN_PROGRESS:
+        raise ValueError(
+            f'{path}: not a complete schema-{MANIFEST_SCHEMA} Wild Sync intake '
+            'manifest - the intake into this workspace did not finish '
+            f'(started {data.get("started_utc", "at an unknown time")}); '
+            'raw_images may hold only part of the images and no final flight '
+            'log. Re-run Wild Sync Intake on the same workspace')
     if not isinstance(data, dict) or data.get('schema') != MANIFEST_SCHEMA \
             or data.get('status') != 'complete':
         raise ValueError(f'{path}: not a complete schema-{MANIFEST_SCHEMA} '

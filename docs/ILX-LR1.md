@@ -381,6 +381,13 @@ cannot apply; and files in `raw_images/` that it did not plan or that differ
 from their source (use a fresh workspace). Re-running the same intake into the
 same workspace reuses identical copies.
 
+Before it copies anything, the intake writes `wildsync_intake.json` with
+status `in_progress`; the complete manifest replaces it only when the copies
+and the flight log are written. An intake that is interrupted therefore leaves
+the in-progress manifest: the status screen shows the intake as partial, and
+the alignment stage refuses the workspace (with or without Wild Sync Intake in
+the same run) until the intake is re-run to completion.
+
 It warns, and records the warning in the manifest, on: a static fix; empty
 depth; images without an orientation prior or without a position; `time_err_ms`
 above `--w_time_err_warn` (default 50 ms; nothing is dropped); rows without an

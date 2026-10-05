@@ -837,3 +837,103 @@ def test_batching_matches_and_keeps_the_card_names(run_dir, workspace):
     assert (copied, missing) == (6, 0)
     assert sorted(os.listdir(zone / 'ilx_left')) == sorted(_names(FRAMES, 'cam1'))
     assert sorted(os.listdir(zone / 'ilx_right')) == sorted(_names(FRAMES, 'cam2'))
+
+
+# ------------------------------------------------- interrupted intake
+
+def _interrupt_copy(monkeypatch, after: int) -> None:
+    real_copy = intake._copy_image
+    calls = []
+
+    def copy(source, destination):
+        if len(calls) == after:
+            raise OSError(28, 'No space left on device', destination)
+        calls.append(source)
+        real_copy(source, destination)
+
+    monkeypatch.setattr(intake, '_copy_image', copy)
+
+
+def test_an_interrupted_copy_leaves_an_incomplete_marker(run_dir, workspace,
+                                                         monkeypatch):
+    _interrupt_copy(monkeypatch, after=2)
+    with pytest.raises(OSError, match='No space left'):
+        run_intake([str(run_dir)], str(workspace), log=QUIET)
+    raw = workspace / 'raw_images'
+    marker = json.loads((raw / 'wildsync_intake.json').read_text('utf-8'))
+    assert marker['schema'] == 1 and marker['status'] == 'in_progress'
+    assert len(list(raw.rglob('*.card.JPG'))) == 2
+    with pytest.raises(ValueError, match='did not finish'):
+        intake.load_manifest(str(raw))
+
+
+def test_a_rerun_into_an_existing_workspace_marks_it_incomplete_first(
+        run_dir, workspace, monkeypatch):
+    """A re-run that fails mid-copy must not leave the earlier complete
+    manifest describing images that are no longer all there."""
+    run_intake([str(run_dir)], str(workspace), log=QUIET)
+    for path in (workspace / 'raw_images' / 'ilx_right').iterdir():
+        path.unlink()
+    _interrupt_copy(monkeypatch, after=1)
+    with pytest.raises(OSError):
+        run_intake([str(run_dir)], str(workspace), log=QUIET)
+    with pytest.raises(ValueError, match='did not finish'):
+        intake.load_manifest(str(workspace / 'raw_images'))
+
+
+def _alignment(workspace: Path, extra=None):
+    from modules.realityscan_interface.realityscan_interface import (
+        RealityScanAlignment,
+    )
+
+    def param(key, value):
+        p = Parameter(key, None, key, type(value), None, prompt_user=False)
+        p.set_value(value)
+        return p
+
+    module = RealityScanAlignment(QUIET)
+    module.params = {'output_dir': param('output_dir', str(workspace)),
+                     'rs_display_output': param('rs_display_output', False),
+                     **{k: param(k, v) for k, v in (extra or {}).items()}}
+    return module
+
+
+@pytest.mark.parametrize('extra', [None, {'ws_run_dirs': 'runs'}])
+def test_alignment_refuses_an_incomplete_intake(run_dir, workspace,
+                                                monkeypatch, caplog, extra):
+    _interrupt_copy(monkeypatch, after=2)
+    with pytest.raises(OSError):
+        run_intake([str(run_dir)], str(workspace), log=QUIET)
+    module = _alignment(workspace, extra)
+    module.logger = logging.getLogger('wildsync-intake-align-test')
+    with caplog.at_level(logging.ERROR, logger='wildsync-intake-align-test'):
+        assert module.run() == {'Success': False}
+    assert any('did not finish' in r.getMessage()
+               and 'nothing was aligned' in r.getMessage()
+               for r in caplog.records), caplog.text
+    assert not (workspace / 'aligned_components').exists() or not any(
+        (workspace / 'aligned_components').iterdir())
+
+
+def test_a_successful_rerun_clears_the_incomplete_marker(run_dir, workspace,
+                                                         monkeypatch):
+    _interrupt_copy(monkeypatch, after=2)
+    with pytest.raises(OSError):
+        run_intake([str(run_dir)], str(workspace), log=QUIET)
+    monkeypatch.undo()
+    result = run_intake([str(run_dir)], str(workspace), log=QUIET)
+    assert result.manifest['status'] == 'complete'
+    assert result.manifest['images']['reused'] == 2
+    manifest = intake.load_manifest(str(workspace / 'raw_images'))
+    assert manifest['status'] == 'complete'
+
+
+def test_the_census_reports_an_incomplete_intake_as_partial(run_dir, workspace,
+                                                            monkeypatch):
+    from modules.workspace_census import Workspace
+    _interrupt_copy(monkeypatch, after=2)
+    with pytest.raises(OSError):
+        run_intake([str(run_dir)], str(workspace), log=QUIET)
+    status = Workspace(workspace).detect()['intake']
+    assert status.status == 'partial'
+    assert any('did not finish' in d for d in status.details), status.details
