@@ -361,24 +361,22 @@ class _Capture(logging.Handler):
         self.messages.append(record.getMessage())
 
 
-def _module_with_input(image_dir):
-    """The module wired the way the orchestrator wires it: its own declared
-    parameters, plus the georeference stage's input dir (the chained case
-    __get_flight_log_path branches on)."""
+def _module_with_input(output_dir):
+    """The module wired the way the orchestrator wires it after Wild Sync
+    Intake: its own declared parameters, with the flight-log path dropped so
+    __get_flight_log_path searches <output_dir>/raw_images."""
     module = BatchDirectory(QUIET)
     module.settings = FakeStore()
     params = module.get_parameters()
     # main.py drops the parameters a co-enabled module disables; this one
-    # is disabled by Georeference Images, and its presence short-circuits
+    # is disabled by Wild Sync Intake, and its presence short-circuits
     # __get_flight_log_path before the discovery branch under test.
-    assert 'Georeference Images' in str(
+    assert 'Wild Sync Intake' in str(
         params['batch_flight_log_path'].disable_when_module_active)
     params.pop('batch_flight_log_path')
     params['output_dir'] = Parameter('Out', 'o', 'output_dir', str,
-                                     str(image_dir), prompt_user=False)
-    params['geo_input_image_dir'] = Parameter('In', 'g_i', 'g_input', str,
-                                              str(image_dir),
-                                              prompt_user=False)
+                                     str(output_dir), prompt_user=False)
+    image_dir = output_dir / 'raw_images'
     for p in params.values():
         if p.get_value() is None:
             p.set_value(p.get_default_value())
@@ -394,8 +392,10 @@ def test_disagreeing_zone_logs_are_an_error_line_not_a_traceback(tmp_path):
     unhandled traceback out of main.py - the shape the KeyError fix in this
     same file exists to remove (audit-verification 2026-08-07: the catch
     shipped with no test)."""
-    _log(tmp_path / 'flight_log_53N_UTM.txt', ['a.jpg'])
-    _log(tmp_path / 'flight_log_57L_UTM.txt', ['b.jpg'])
+    raw = tmp_path / 'raw_images'
+    raw.mkdir()
+    _log(raw / 'flight_log_53N_UTM.txt', ['a.jpg'])
+    _log(raw / 'flight_log_57L_UTM.txt', ['b.jpg'])
     capture = _Capture()
     logger = logging.getLogger('batch-mixed-zone-test')
     logger.propagate = False
@@ -408,7 +408,7 @@ def test_disagreeing_zone_logs_are_an_error_line_not_a_traceback(tmp_path):
     finally:
         logger.removeHandler(capture)
     assert got is None, got
-    assert any('DISAGREEING coordinate frames' in m
+    assert any('DISAGREEING UTM zones' in m
                for m in capture.messages), capture.messages
     # ... and validate_parameters turns that into a refusal, not a crash.
     ok, msg = module.validate_parameters()
@@ -416,7 +416,9 @@ def test_disagreeing_zone_logs_are_an_error_line_not_a_traceback(tmp_path):
 
 
 def test_a_single_zone_directory_is_still_found(tmp_path):
-    _log(tmp_path / 'flight_log_53N_UTM.txt', ['a.jpg'])
+    raw = tmp_path / 'raw_images'
+    raw.mkdir()
+    _log(raw / 'flight_log_53N_UTM.txt', ['a.jpg'])
     module = _module_with_input(tmp_path)
     got = module._BatchDirectory__get_flight_log_path()
     assert got and os.path.basename(got) == 'flight_log_53N_UTM.txt'
