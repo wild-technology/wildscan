@@ -1553,8 +1553,7 @@ for zone in ZONES:
                            "--output_dir", V2_ROOT,
                            "--r_input", os.path.join(IMAGES_ROOT, zone),
                            "--r_flight_log", os.path.join(IMAGES_ROOT, zone, "flight_log_4Q_UTM.txt"),
-                           "--r_project_label", "NA156_H2024_V2",
-                           "--r_model_generate", "false"],
+                           "--r_project_label", "NA156_H2024_V2"],
                           cwd=REPO, env=env, capture_output=True, text=True,
                           stdin=subprocess.DEVNULL)      # never inherit a console's stdin
     report["zones"][zone] = {...}; flush()               # flush after EVERY zone

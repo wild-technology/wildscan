@@ -425,10 +425,9 @@ _REQUIRED = {"image_input_video", "geo_input_image_dir",
 _CHOICES_BY_NAME = {
     "geo_input_type": ("Zeuss", "WCA", "WCA2025", "All"),
 }
-# Alignment's per-zone model flags are a separate, gated stage here.
-_FORCED_ANSWERS = {"r_model_generate": "false", "r_model_cull_poly": "false",
-                   "r_model_texture": "false", "r_model_simplify": "false",
-                   "r_display_output": "false"}
+# Alignment answers the portal fixes instead of asking: RealityScan's own
+# console display stays off.
+_FORCED_ANSWERS = {"r_display_output": "false"}
 
 _MODULES = None
 
@@ -673,10 +672,9 @@ def build_commands(session: Session) -> list[StageCommand]:
                 continue
             if value.strip() or arg in ('r_flight_log', 'r_project_label'):
                 argv += [f"--{arg}", value.strip()]
-        # The forced model flags belong to RealityScan Alignment, so they
-        # are only legal when 'align' is in the chain; they used to be
-        # appended unconditionally, which alone rejected every
-        # align-less selection.
+        # The forced answers belong to RealityScan Alignment, so they are
+        # only legal when 'align' is in the chain; they used to be appended
+        # unconditionally, which alone rejected every align-less selection.
         if "align" in chain:
             for arg, value in _FORCED_ANSWERS.items():
                 argv += [f"--{arg}", value]
