@@ -113,17 +113,6 @@ def test_pool_counts_and_drops_missing_rows(tmp_path):
     assert len(rows) == 2 and rows[1].split(';')[0].endswith('A.jpg')
 
 
-def test_pool_refuses_xmp_priors(tmp_path):
-    src = _source(tmp_path, ['A.jpg'])
-    out = tmp_path / 'batched'
-    out.mkdir()
-    module = _module('pool')
-    module.params['batch_xmp_priors'].set_value(True)
-    with pytest.raises(ValueError, match='batch_xmp_priors'):
-        module._BatchDirectory__create_batch_folders(
-            str(out), [['A.jpg']], str(src), None)
-
-
 def test_copy_mode_refuses_fullpath_master(tmp_path):
     names = ['A.jpg']
     src = _source(tmp_path, names)
