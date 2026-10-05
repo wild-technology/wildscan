@@ -73,11 +73,7 @@ def make_workspace(tmp_path, *, stage: str) -> Workspace:
         for i in range(4):
             (raw / f"img_{i:03d}.jpg").write_bytes(b"j")
     if upto >= 2:
-        # Cover ALL four images: the census's coverage rule
-        # (workspace_census._detect_georeference) reports 'partial' when the
-        # log covers under half of raw_images - a 1-row log here made the
-        # 'intake is done' premise of the resume tests false. The rule is
-        # deliberate (silence-is-not-success).
+        # The intake writes a flight log covering every copied image.
         (ws / "raw_images" / "flight_log_4Q_UTM.txt").write_text(
             "filename;X (East);Y (North);Alt\n"
             + "".join(f"img_{i:03d}.jpg;1;2;3\n" for i in range(4)),
