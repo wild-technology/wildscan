@@ -1,1 +1,1 @@
-"""Checkout tools for campaign execution, validation, and image analysis."""
+"""Checkout tools for manual validation."""

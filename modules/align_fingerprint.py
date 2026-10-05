@@ -1,4 +1,4 @@
-"""Per-zone alignment-input fingerprint (PRODUCT_READINESS must-fix 2).
+"""Per-zone alignment-input fingerprint.
 
 Records the alignment inputs needed for retries and downstream verification:
 - a RETRY after a settings/nav change was messaged identically to a

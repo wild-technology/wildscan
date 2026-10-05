@@ -1,6 +1,5 @@
-"""align_inputs.json - per-zone alignment-input fingerprint
-(PRODUCT_READINESS must-fix 2). Content identity, material-change diffs,
-nav-aware resume."""
+"""align_inputs.json - per-zone alignment-input fingerprint. Content
+identity, material-change diffs, nav-aware resume."""
 import json
 import os
 import sys

@@ -31,9 +31,9 @@ read their help before using them.
   keys, and legacy compatibility aliases.
 - Keep `.bat` and `.vbs` files in CRLF format; `.gitattributes` supplies the
   checkout rules. Route native execution through `RealityScanCLI`.
-- Keep tests in `tests/`, manual checks in `scripts/validation/`, and
-  dataset-specific drivers in `scripts/campaigns/`. Keep source data,
-  credentials, local settings, generated models, and runtime logs out of Git.
+- Keep tests in `tests/` and manual checks in `scripts/validation/`. Keep
+  source data, credentials, local settings, generated models, and runtime logs
+  out of Git.
 - Update `pyproject.toml` and `requirements.txt` together when changing
   dependencies. The dependency regression checks their semantic equivalence.
 - Add a focused regression for changed behavior. Run relevant tests first,

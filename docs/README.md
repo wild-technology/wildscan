@@ -14,7 +14,7 @@ decisions and observations.
 | [Project overview](../README.md) | Supported workflow and repository layout |
 | [Architecture](../ARCHITECTURE.md) | Code structure, shared execution layer, settings, and operating practices |
 | [RealityScan CLI reference](rs-reference/README.md) | Commands, settings, parameter files, observed failure modes, and empirical evidence |
-| [Product scope and delivery history](PRODUCT_READINESS.md) | Current validation boundaries and the historical ON2026 delivery backlog |
+| [Product scope](PRODUCT_READINESS.md) | Current validation boundaries and implemented reliability behavior |
 
 The processing target is native Windows 11 with RealityScan 2.2. A successful
 offline test run establishes the tested software behavior; it does not
