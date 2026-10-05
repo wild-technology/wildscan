@@ -9,8 +9,7 @@ from module_base.parameter import Parameter
 from .. import align_fingerprint
 from .. import camera_registry
 from .. import component_manifest
-from ..flight_logs import (ensure_frame_match, find_flight_log,
-                           utm_zone_from_flight_log_name,
+from ..flight_logs import (find_flight_log, require_utm_zone,
                            write_flight_log_params)
 from .realityscan_cli import RealityScanCLI, METADATA_DIR, set_project_save_env
 
@@ -19,22 +18,15 @@ from .realityscan_cli import RealityScanCLI, METADATA_DIR, set_project_save_env
 COMPONENT_EXTENSIONS = ('.rsalign', '.rcalign')
 
 
-def flight_log_params_template(metadata_dir: str, log_path: str | None,
+def flight_log_params_template(metadata_dir: str,
                                explicit: str | None = None) -> str:
-    """FlightLogParams template for a flight log, by the SAME rule the
-    downstream frame guard (ensure_frame_match) enforces: an explicit
-    choice wins; otherwise a zone-tagged filename selects the UTM
-    template and an untagged one the local:1 Euclidean template.
+    """FlightLogParams template for an alignment: the explicit choice when
+    given, else the repository's UTM template. Either way its
+    coordinate-system entries are rewritten for the flight log's own UTM
+    zone before import (write_flight_log_params)."""
+    return explicit or os.path.join(metadata_dir, "FlightLogParams.xml")
 
-    Extracted from run() so the rule is unit-testable (2026-08-08: the
-    previous hardcoded UTM template made every local-frame campaign fail
-    the frame guard - the standard align path could not run local:1
-    priors at all)."""
-    if explicit:
-        return explicit
-    if log_path and not utm_zone_from_flight_log_name(log_path):
-        return os.path.join(metadata_dir, "FlightLogParamsLocal.xml")
-    return os.path.join(metadata_dir, "FlightLogParams.xml")
+
 SCENE_EXTENSIONS = ('.rsproj', '.rcproj')
 
 
@@ -115,15 +107,12 @@ class RealityScanAlignment(RSModule):
             cli_long='r_flight_log_params',
             type=str,
             default_value=None,
-            description=('Explicit FlightLogParams XML declaring the '
-                         "trajectory's coordinate frame. Default: chosen "
-                         'per zone from the flight-log filename (zone tag '
-                         '-> Metadata/FlightLogParams.xml [UTM], untagged '
-                         '-> Metadata/FlightLogParamsLocal.xml [local:1 '
-                         'Euclidean]). The downstream frame guard '
-                         '(ensure_frame_match) enforces the same rule, so '
-                         'a wrong explicit choice fails loudly, never '
-                         'imports silently.'),
+            description=('Explicit FlightLogParams XML template. Default: '
+                         'Metadata/FlightLogParams.xml. Its coordinate-system '
+                         'entries are rewritten for the UTM zone in the '
+                         "flight log's filename tag (e.g. "
+                         'flight_log_19T_UTM.txt) before every import; a log '
+                         'without that tag is refused.'),
             prompt_user=False
         )
 
@@ -262,6 +251,11 @@ class RealityScanAlignment(RSModule):
         if not os.path.isdir(input_folder):
             raise ValueError(f"Input folder {input_folder} is not a directory")
 
+        # Every trajectory is imported in the UTM zone its own filename
+        # names; refuse an untagged log before anything on disk is moved.
+        if flight_log_path and os.path.isfile(flight_log_path):
+            require_utm_zone(flight_log_path)
+
         hygiene_root = os.path.abspath(os.environ.get('RS_ALIGN_POOL_DIR') or input_folder)
         target_root = os.path.normcase(os.path.realpath(output_folder))
         for source in (input_folder, hygiene_root):
@@ -381,31 +375,16 @@ class RealityScanAlignment(RSModule):
         log_dir = os.path.join(os.path.dirname(os.path.dirname(output_folder)), "logs")
 
         # The params XML declares the trajectory's coordinate system. The
-        # template's zone belongs to whatever cruise last edited it, so
-        # regenerate it from the zone tag in the flight log's own filename
-        # (flight_log_53N_UTM.txt -> EPSG:32653) whenever possible.
+        # template's zone is only a placeholder, so regenerate it from the
+        # zone tag in the flight log's own filename
+        # (flight_log_53N_UTM.txt -> EPSG:32653).
         if flight_log_path and flight_log_params_path:
-            # Frame guard first - never import silently in the wrong frame
-            # (2026-08-07 incident: the shared template carried ON2026's
-            # local frame and poisoned a UTM 57L import; 3/32 registered,
-            # exit code 0). Raises ValueError when the filename's implied
-            # frame contradicts the template's declared frame; the write
-            # below re-checks the same invariant as defense in depth.
-            ensure_frame_match(flight_log_path, flight_log_params_path)
-            zone_band = utm_zone_from_flight_log_name(flight_log_path)
-            if zone_band is not None:
-                zone, band = zone_band
-                generated = os.path.join(log_dir, f'FlightLogParams_{zone}{band}.xml')
-                flight_log_params_path = write_flight_log_params(
-                    flight_log_params_path, generated, zone, band, frame='utm')
-                self.logger.info(f'Flight log CRS: UTM zone {zone}{band} '
-                                 f'(params: {generated})')
-            else:
-                self.logger.warning(
-                    f'Flight log "{os.path.basename(flight_log_path)}" carries no '
-                    'UTM zone tag - LOCAL-frame campaign; using the params '
-                    'template as-is (frame checked: it does not declare UTM). '
-                    'Verify this cruise really uses local:1 priors!')
+            zone, band = require_utm_zone(flight_log_path)
+            generated = os.path.join(log_dir, f'FlightLogParams_{zone}{band}.xml')
+            flight_log_params_path = write_flight_log_params(
+                flight_log_params_path, generated, zone, band)
+            self.logger.info(f'Flight log CRS: UTM zone {zone}{band} '
+                             f'(params: {generated})')
 
         files_before = set(os.listdir(output_folder))
 
@@ -673,25 +652,18 @@ class RealityScanAlignment(RSModule):
         texture_model = self.params['rs_model_texture'].get_value()
         simplify_model = self.params['rs_model_simplify'].get_value()
 
-        # Frame-aware template selection (2026-08-08, fixes the run2
-        # blocker): pinning the UTM template here made every LOCAL-frame
-        # campaign fail ensure_frame_match in __align_zone - the standard
-        # align path could not process local:1 priors at all. An explicit
-        # rs_flight_log_params wins; otherwise each zone's own flight-log
-        # name picks the template (zone tag -> UTM, untagged -> local),
-        # mirroring exactly the frame the downstream guard will enforce.
+        # An explicit rs_flight_log_params wins; otherwise the repository's
+        # UTM template. Either way __align_zone rewrites its zone from each
+        # flight log's own filename tag.
         explicit_flp = None
         if 'rs_flight_log_params' in self.params:
             explicit_flp = self.params['rs_flight_log_params'].get_value() or None
         if explicit_flp and not os.path.isfile(explicit_flp):
             self.logger.error(
                 'rs_flight_log_params does not exist: %s - falling back to '
-                'frame-derived template selection', explicit_flp)
+                'Metadata/FlightLogParams.xml', explicit_flp)
             explicit_flp = None
-
-        def params_template_for(log_path):
-            return flight_log_params_template(METADATA_DIR, log_path,
-                                              explicit_flp)
+        params_template = flight_log_params_template(METADATA_DIR, explicit_flp)
 
         process_data = []
         skipped_zones = []
@@ -765,7 +737,7 @@ class RealityScanAlignment(RSModule):
             try:
                 queue_folder_to_process(
                     local_input_folder, output_dir, local_flight_log_path,
-                    params_template_for(local_flight_log_path), display_output)
+                    params_template, display_output)
             except Exception as e:
                 self.logger.error(f"Error queueing folder to process: {e}")
                 skipped_zones.append((local_input_folder, str(e)))

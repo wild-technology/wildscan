@@ -2,11 +2,10 @@
 """Merge union log and merge exit codes.
 
 merge_zones.build_union_flight_log (audit 2026-08-07):
-  - the coordinate FRAME for the whole merge came from zone_logs[0] in
-    os.walk order, while the ROWS were read in sorted() order. One
-    untagged *_UTM.txt anywhere under images_root flipped the merge to
-    FlightLogParamsLocal.xml on a logger.warning - the 2026-08-07 silent
-    mis-frame class flight_logs._FRAME_INCIDENT exists to prevent.
+  - the coordinate system for the whole merge came from zone_logs[0] in
+    os.walk order, while the ROWS were read in sorted() order. One stray
+    untagged or foreign-zone *_UTM.txt anywhere under images_root decided
+    the frame of the whole merge on a logger.warning.
   - when only_basenames matched nothing, a HEADER-ONLY union log was
     written and logged at INFO as '0 rows'; the workflow then imported it,
     ran -update against zero constraints, and shipped an UNGEOREFERENCED
@@ -58,8 +57,8 @@ def _merge_zones():
 # ------------------------------------------------------------- union frame
 
 def test_a_stray_untagged_log_cannot_flip_the_whole_merge(tmp_path):
-    """One untagged log under images_root flipped the entire merge to the
-    LOCAL template - the silent mis-frame class, on a warning."""
+    """One untagged log under images_root used to decide the frame of the
+    entire merge, on a warning."""
     merge_zones = _merge_zones()
     images = tmp_path / 'batched'
     _zone_log(images / 'zone_1', 'flight_log_53N_UTM.txt', ['a.jpg'])
@@ -97,19 +96,18 @@ def test_a_consistent_utm_merge_still_builds(tmp_path):
     assert len(open(union, encoding='utf-8').read().splitlines()) == 3
 
 
-def test_a_consistent_local_merge_still_builds(tmp_path):
-    """The genuine local-frame campaign (ON2026 COLMAP priors) must still
-    work - the guard is about DISAGREEMENT, not about local frames."""
+def test_a_merge_of_untagged_logs_is_refused(tmp_path):
+    """Logs that agree but carry no zone tag give the union log no
+    coordinate system to be imported in."""
     merge_zones = _merge_zones()
     images = tmp_path / 'batched'
     _zone_log(images / 'zone_1', 'flight_log_UTM.txt', ['a.jpg'])
     _zone_log(images / 'zone_2', 'flight_log_UTM.txt', ['b.jpg'])
     out = tmp_path / 'merged'
     out.mkdir()
-    union, params = merge_zones.build_union_flight_log(
-        str(images), str(out), QUIET)
-    assert '_local_UTM.txt' in os.path.basename(union)
-    assert '+proj=geocent' in open(params, encoding='utf-8').read()
+    with pytest.raises(ValueError, match='carries a UTM zone tag'):
+        merge_zones.build_union_flight_log(str(images), str(out), QUIET)
+    assert not list(out.iterdir()), 'nothing may be written for a refused merge'
 
 
 def test_a_zero_row_union_log_is_refused(tmp_path):

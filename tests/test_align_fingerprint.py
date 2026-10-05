@@ -18,8 +18,8 @@ def _mk(tmp_path, name, content):
 
 
 def _inputs(tmp_path, nav="a;b;c\n1;2;3\n", settings="<x/>"):
-    nav_p = _mk(tmp_path, "flight_log_run2.txt", nav)
-    flp = _mk(tmp_path, "FlightLogParamsLocal.xml", "<local/>")
+    nav_p = _mk(tmp_path, "flight_log_19T_UTM.txt", nav)
+    flp = _mk(tmp_path, "FlightLogParams.xml", "<utm/>")
     ap = _mk(tmp_path, "AlignmentParams.xml", settings)
     return nav_p, flp, ap
 
@@ -65,7 +65,7 @@ def test_settings_change_is_material(tmp_path):
 def test_renamed_identical_nav_is_not_material(tmp_path):
     nav, flp, ap = _inputs(tmp_path)
     old = build_fingerprint(nav, flp, ap, 50)
-    nav2 = _mk(tmp_path, "renamed_copy.txt", "a;b;c\n1;2;3\n")
+    nav2 = _mk(tmp_path, "flight_log_copy_19T_UTM.txt", "a;b;c\n1;2;3\n")
     new = build_fingerprint(nav2, flp, ap, 50)
     assert diff_fingerprints(old, new) == []
 
@@ -73,11 +73,10 @@ def test_renamed_identical_nav_is_not_material(tmp_path):
 def test_frame_change_is_called_out(tmp_path):
     flp = _mk(tmp_path, "flp.xml", "<t/>")
     ap = _mk(tmp_path, "ap.xml", "<x/>")
-    untagged = _mk(tmp_path, "flight_log_UTM.txt", "n;x;y;a\n")
     tagged = _mk(tmp_path, "flight_log_53N_UTM.txt", "n;x;y;a\n")
-    old = build_fingerprint(untagged, flp, ap, 50)
+    old = build_fingerprint(None, flp, ap, 50)
     new = build_fingerprint(tagged, flp, ap, 50)
-    assert old["frame"] == "local_euclidean" and new["frame"] == "utm"
+    assert old["frame"] is None and new["frame"] == "utm"
     assert any("FRAME changed" in c for c in diff_fingerprints(old, new))
 
 

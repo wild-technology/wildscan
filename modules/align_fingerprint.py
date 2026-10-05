@@ -128,10 +128,11 @@ def build_fingerprint(flight_log: str | None,
 
     align_settings_xml is the RS_ALIGN_PARAMS override when set, else the
     canonical Metadata/AlignmentParams.xml - i.e. whatever AlignZone.bat
-    will actually apply.
+    will actually apply. ``frame`` is ``"utm"`` for a zone-tagged flight
+    log and None when the zone aligned without one.
     """
     frame = ("utm" if (flight_log and utm_zone_from_flight_log_name(flight_log))
-             else "local_euclidean")
+             else None)
     fp = {
         "schema": SCHEMA,
         "created": time.strftime("%Y-%m-%d %H:%M:%S"),

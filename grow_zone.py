@@ -61,8 +61,9 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 from module_base.settings_store import SettingsStore, realityscan_env
 from modules import camera_registry
+from modules.flight_logs import require_utm_zone, write_flight_log_params
 from modules.realityscan_interface.realityscan_cli import (
-    RealityScanCLI, set_project_save_env)
+    METADATA_DIR, RealityScanCLI, set_project_save_env)
 
 # Parallel-developed bookkeeping modules (manifest contract schema 1;
 # twin/orphan analysis). Import-guarded so this driver runs - degraded
@@ -346,8 +347,10 @@ def main() -> int:
                              're-place aligned components onto current priors '
                              'via -update without a re-align)')
     parser.add_argument('--flight_log_params', default=None,
-                        help='flight-log params XML for --flight_log '
-                             '(default: the local-frame template)')
+                        help='FlightLogParams XML template for --flight_log '
+                             '(default: Metadata/FlightLogParams.xml); its '
+                             'coordinate system is rewritten for the UTM '
+                             "zone in the flight log's filename tag")
     parser.add_argument('--lock_anchor', action='store_true',
                         help='lock the grown component poses (inpPose=3) during its '
                              'align - EXPERIMENTAL, off until U18 verifies it')
@@ -402,17 +405,26 @@ def main() -> int:
     # Selection-command strategy + experimental lock anchor, consumed by
     # GrowZone.bat via the environment.
     os.environ['RS_GROW_SELECT_CMDS'] = args.selection_cmds or 'editsel'
-    # Per-step flight-log reload (FLIGHTLOG_ARCHITECTURE 1b). Env-gated
-    # in GrowZone.bat: unset = legacy behavior, byte-identical.
+    # Per-step flight-log reload. Env-gated in GrowZone.bat: unset =
+    # legacy behavior, byte-identical. The params file is generated for
+    # the UTM zone the flight log's own filename names, as the align
+    # stage does.
     if args.flight_log:
         if not os.path.isfile(args.flight_log):
             logger.error('--flight_log not found: %s', args.flight_log)
             return 1
+        try:
+            log_zone, log_band = require_utm_zone(args.flight_log)
+        except ValueError as exc:
+            logger.error('%s', exc)
+            return 1
         os.environ['RS_GROW_FLIGHT_LOG'] = os.path.abspath(args.flight_log)
-        params = args.flight_log_params or os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), 'modules',
-            'realityscan_interface', 'RS_CLI', 'Metadata',
-            'FlightLogParamsLocal.xml')
+        template = args.flight_log_params or os.path.join(
+            METADATA_DIR, 'FlightLogParams.xml')
+        params = write_flight_log_params(
+            template,
+            os.path.join(logs_dir, f'FlightLogParams_{log_zone}{log_band}.xml'),
+            log_zone, log_band)
         os.environ['RS_GROW_FLIGHT_LOG_PARAMS'] = os.path.abspath(params)
         logger.info('per-step flight-log reload: %s', args.flight_log)
     if args.lock_anchor:

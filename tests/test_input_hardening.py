@@ -50,8 +50,8 @@ from module_base.settings_store import (DEFAULT_INSTANCE_NAME,  # noqa: E402
                                         SettingsStore, realityscan_env)
 from modules.flight_logs import (assert_one_zone, crs_for_flight_log,  # noqa: E402
                                  epsg_for_utm_zone, find_flight_log,
-                                 params_template_frame, validate_utm_zone,
-                                 write_flight_log_params)
+                                 params_template_frame, require_utm_zone,
+                                 validate_utm_zone, write_flight_log_params)
 
 METADATA = os.path.join(REPO_ROOT, 'modules', 'realityscan_interface',
                         'RS_CLI', 'Metadata')
@@ -81,9 +81,9 @@ def test_two_logs_of_different_zones_refuse_to_resolve(tmp_path):
     assert '57L' in message and '53N' in message
 
 
-def test_tagged_and_untagged_logs_are_a_frame_disagreement(tmp_path):
-    """An untagged name means LOCAL frame downstream, so mixing it with a
-    zone-tagged log is a frame conflict, not merely a zone one."""
+def test_tagged_and_untagged_logs_refuse_to_resolve(tmp_path):
+    """An untagged name cannot be imported, so mixing it with a zone-tagged
+    log is refused rather than resolved to either one."""
     _log(tmp_path, 'flight_log_53N_UTM.txt')
     _log(tmp_path, 'flight_log_UTM.txt')
     with pytest.raises(ValueError, match='no zone tag'):
@@ -99,10 +99,13 @@ def test_several_logs_of_the_SAME_zone_still_resolve(tmp_path):
     assert assert_one_zone([picked], str(tmp_path)) == (53, 'N')
 
 
-def test_all_untagged_logs_resolve_as_local_frame(tmp_path):
+def test_an_untagged_log_is_found_but_never_importable(tmp_path):
     _log(tmp_path, 'flight_log_UTM.txt')
-    assert find_flight_log(str(tmp_path)) is not None
-    assert assert_one_zone([str(tmp_path / 'flight_log_UTM.txt')], 'x') is None
+    found = find_flight_log(str(tmp_path))
+    assert found is not None
+    assert assert_one_zone([found], 'x') is None
+    with pytest.raises(ValueError, match='no UTM zone tag'):
+        require_utm_zone(found)
 
 
 # ------------------------------------------------------ CRS zone validation
