@@ -408,6 +408,47 @@ def test_a_change_of_calibration_mode_is_reported_on_a_rerun(tmp_path,
                'changed' in m for m in logs.messages), logs.messages
 
 
+@pytest.mark.parametrize('before, after', [
+    ({'ilx_left': 'groups', 'ilx_right': 'groups'},
+     {'ilx_left': 'off', 'ilx_right': 'off'}),
+    ({'ilx_left': 'prior', 'ilx_right': 'groups'},
+     {'ilx_left': 'off', 'ilx_right': 'groups'}),
+])
+def test_switching_calibration_off_removes_its_earlier_sidecars(
+        tmp_path, monkeypatch, logs, before, after):
+    ws = _workspace(tmp_path, before)
+    module, _calls = _module(tmp_path, monkeypatch, ws,
+                             logging.getLogger('align-calibration-test'),
+                             min_size=2)
+    assert module.run()['Success'] is True
+    left_images = [p for p in _images(ws)
+                   if camera_registry.identify(p.name).key == 'ilx_left']
+    own = left_images[0].with_name(left_images[0].name[:-len('.JPG')] + '.xmp')
+    own.write_text('<x:xmpmeta/>\n', encoding='utf-8')
+    manifest = ws / 'raw_images' / 'wildsync_intake.json'
+    data = json.loads(manifest.read_text(encoding='utf-8'))
+    for key, entry in data['calibration'].items():
+        entry['mode'] = after[key]
+    manifest.write_text(json.dumps(data), encoding='utf-8')
+
+    seen = {}
+    module, _calls = _module(
+        tmp_path, monkeypatch, ws, logging.getLogger('align-calibration-test'),
+        on_run=lambda args: seen.update(_sidecars(ws)), min_size=2)
+    assert module.run()['Success'] is True
+    expected = {}
+    for image in _images(ws):
+        camera = camera_registry.identify(image.name)
+        if after[camera.key] in ('prior', 'groups'):
+            expected[image.name[:-len('.JPG')] + '.xmp'] = sidecar_xmp(
+                camera, after[camera.key])
+    expected[own.name] = '<x:xmpmeta/>\n'
+    assert seen == expected
+    assert _sidecars(ws) == expected
+    assert any('not written by this pipeline' in m for m in logs.messages), \
+        logs.messages
+
+
 def test_fingerprint_records_calibration_only_when_given(tmp_path):
     params = METADATA / 'AlignmentParams.xml'
     plain = align_fingerprint.build_fingerprint(None, None, str(params), 50)

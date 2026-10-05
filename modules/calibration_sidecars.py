@@ -23,7 +23,8 @@ For each camera one of three modes applies (:func:`decide_calibration`):
     model: RealityScan solves each physical camera's intrinsics separately.
     The fallback whenever ``prior`` is not applicable.
 ``off``
-    No sidecars.
+    No sidecars; calibration sidecars this pipeline wrote for the camera in
+    an earlier run are removed before alignment.
 
 The registry values follow the conversion in
 :func:`intrinsics_to_xmp_values`. Two parts of it are not verified against
@@ -34,8 +35,9 @@ section 5.3), and the normalisation of the principal point for an image that
 is not square (docs/rs-reference/05 section 4.4).
 
 The hygiene functions (:func:`sanitize_and_census`,
-:func:`ensure_calibration_sidecars`) take the decided modes and never write
-any other sidecar form; without modes they create nothing.
+:func:`ensure_calibration_sidecars`, :func:`remove_calibration_sidecars`)
+take the decided modes and never write any other sidecar form; without modes
+they create and remove nothing.
 """
 from __future__ import annotations
 
@@ -456,6 +458,51 @@ def ensure_calibration_sidecars(image_root: str,
         logger.warning('%d image(s) of no known camera left without a '
                        'calibration sidecar', unknown)
     return created, unknown
+
+
+def remove_calibration_sidecars(image_root: str,
+                                modes: Mapping[str, str] | None = None
+                                ) -> tuple[int, int]:
+    """Remove this pipeline's calibration sidecars of cameras decided ``off``.
+
+    A sidecar left by an earlier ``prior`` or ``groups`` run would still be
+    imported beside its image once calibration is off. Only a sidecar whose
+    text is exactly what :func:`sidecar_xmp` writes for that image's camera
+    is removed; any other sidecar of an ``off`` camera (a pose, an edited or
+    foreign file) is left in place and counted. Cameras of any other mode,
+    and images of no known camera, are never touched.
+
+    Returns (removed, left in place).
+    """
+    if not modes:
+        return 0, 0
+    _check_modes(modes)
+    off = {key for key, mode in modes.items() if mode == 'off'}
+    if not off:
+        return 0, 0
+    removed = kept = 0
+    for root, _dirs, files in os.walk(image_root):
+        by_lower = {name.lower(): name for name in files}
+        for filename in sorted(files):
+            if os.path.splitext(filename)[1].lower() not in PROCESSABLE_IMAGE_EXTS:
+                continue
+            camera = camera_registry.identify(filename)
+            if camera is None or camera.key not in off:
+                continue
+            sidecar = by_lower.get(sidecar_path(filename).lower())
+            if sidecar is None:
+                continue
+            path = os.path.join(root, sidecar)
+            with open(path, encoding='utf-8', errors='replace',
+                      newline='') as f:
+                content = f.read()
+            if content in (sidecar_xmp(camera, mode) for mode in SIDECAR_MODES):
+                os.remove(path)
+                del by_lower[sidecar.lower()]
+                removed += 1
+                continue
+            kept += 1
+    return removed, kept
 
 
 def sanitize_and_census(image_root: str,
