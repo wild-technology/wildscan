@@ -10,7 +10,7 @@ Run:  wildscan [workspace]   (or: python -m wildscan [workspace])
 """
 from __future__ import annotations
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 APP_NAME = "WildScan"
 ORG = "Wild Technology"
 TAGLINE = "Subsea Photogrammetry Pipeline"
