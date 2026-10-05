@@ -440,7 +440,8 @@ def test_relative_alignment_paths_survive_the_native_script_cwd(tmp_path, monkey
                                 str(nav),
                                 str(caller / 'logs' / 'FlightLogParams_53N.xml')]
         assert all(Path(value).is_absolute() for value in command[1:5])
-        # One image: the minimum component size of 50 drops to 2.
+        # One image: the minimum component size of 50 drops to the floor
+        # of 2 (half the scene, rounded up, is 1).
         assert command[5:] == ['ordinary_zone_name', '2']
         assert kwargs['env']['RS_ALIGN_PARAMS'] == str(alignment_params)
         assert kwargs['env']['RS_ALIGN_POOL_DIR'] == str(images)
