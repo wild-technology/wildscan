@@ -1,0 +1,493 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "wildscan-2.0.0",
+  "documentNamespace": "https://github.com/wild-technology/wildscan/spdx/wildscan-2.0.0-18a4a1b7-97a8-4868-9133-aafe6cf5c02b",
+  "creationInfo": {
+    "created": "2026-10-05T21:10:54Z",
+    "creators": [
+      "Organization: Wild Technologies"
+    ],
+    "comment": "Versions are those resolved in a clean virtual environment created by installing the project with its dev extra."
+  },
+  "documentDescribes": [
+    "SPDXRef-Package-wildscan"
+  ],
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-wildscan",
+      "name": "wildscan",
+      "versionInfo": "2.0.0",
+      "downloadLocation": "git+https://github.com/wild-technology/wildscan.git",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "Copyright (c) 2024 oetproduction; Copyright (c) 2025-2026 Wild Technologies",
+      "supplier": "Organization: Wild Technologies",
+      "homepage": "https://github.com/wild-technology/wildscan",
+      "comment": "Direct dependencies only; transitive dependencies are not listed. RealityScan-derived data files carried in the repository are described in THIRD_PARTY_NOTICES.md."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-boto3",
+      "name": "boto3",
+      "versionInfo": "1.43.108",
+      "downloadLocation": "https://pypi.org/project/boto3/1.43.108/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/boto3@1.43.108"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License field."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-geopandas",
+      "name": "geopandas",
+      "versionInfo": "1.2.0",
+      "downloadLocation": "https://pypi.org/project/geopandas/1.2.0/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/geopandas@1.2.0"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License-Expression."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-inquirer",
+      "name": "inquirer",
+      "versionInfo": "3.4.1",
+      "downloadLocation": "https://pypi.org/project/inquirer/3.4.1/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/inquirer@3.4.1"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License field and classifier."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-matplotlib",
+      "name": "matplotlib",
+      "versionInfo": "3.11.2",
+      "downloadLocation": "https://pypi.org/project/matplotlib/3.11.2/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/matplotlib@3.11.2"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License field is custom agreement text; classifier names the Python Software Foundation License; no SPDX expression."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-numpy",
+      "name": "numpy",
+      "versionInfo": "2.5.3",
+      "downloadLocation": "https://pypi.org/project/numpy/2.5.3/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/numpy@2.5.3"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License-Expression."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-opencv-python",
+      "name": "opencv-python",
+      "versionInfo": "5.0.0.93",
+      "downloadLocation": "https://pypi.org/project/opencv-python/5.0.0.93/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/opencv-python@5.0.0.93"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License field and classifier."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pandas",
+      "name": "pandas",
+      "versionInfo": "3.0.6",
+      "downloadLocation": "https://pypi.org/project/pandas/3.0.6/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/pandas@3.0.6"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License field text and classifier."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pillow",
+      "name": "pillow",
+      "versionInfo": "12.3.0",
+      "downloadLocation": "https://pypi.org/project/pillow/12.3.0/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT-CMU",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/pillow@12.3.0"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License-Expression."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pyproj",
+      "name": "pyproj",
+      "versionInfo": "3.8.0",
+      "downloadLocation": "https://pypi.org/project/pyproj/3.8.0/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/pyproj@3.8.0"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License-Expression."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-requests",
+      "name": "requests",
+      "versionInfo": "2.34.2",
+      "downloadLocation": "https://pypi.org/project/requests/2.34.2/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/requests@2.34.2"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License field and classifier."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-rich",
+      "name": "rich",
+      "versionInfo": "15.0.0",
+      "downloadLocation": "https://pypi.org/project/rich/15.0.0/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/rich@15.0.0"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License field and classifier."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-scikit-learn",
+      "name": "scikit-learn",
+      "versionInfo": "1.9.1",
+      "downloadLocation": "https://pypi.org/project/scikit-learn/1.9.1/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/scikit-learn@1.9.1"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License-Expression."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-scipy",
+      "name": "scipy",
+      "versionInfo": "1.18.1",
+      "downloadLocation": "https://pypi.org/project/scipy/1.18.1/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/scipy@1.18.1"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License field text and classifier."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-seaborn",
+      "name": "seaborn",
+      "versionInfo": "0.13.2",
+      "downloadLocation": "https://pypi.org/project/seaborn/0.13.2/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/seaborn@0.13.2"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: only the classifier 'BSD License' is present; the clause count is not stated in metadata."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-shapely",
+      "name": "shapely",
+      "versionInfo": "2.1.2",
+      "downloadLocation": "https://pypi.org/project/shapely/2.1.2/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/shapely@2.1.2"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License field."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-textual",
+      "name": "textual",
+      "versionInfo": "8.2.8",
+      "downloadLocation": "https://pypi.org/project/textual/8.2.8/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/textual@8.2.8"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License field and classifier."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tqdm",
+      "name": "tqdm",
+      "versionInfo": "4.70.1",
+      "downloadLocation": "https://pypi.org/project/tqdm/4.70.1/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MPL-2.0 AND MIT",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/tqdm@4.70.1"
+        }
+      ],
+      "comment": "Runtime dependency. Declared licence taken from installed distribution metadata: License field."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pytest",
+      "name": "pytest",
+      "versionInfo": "9.1.1",
+      "downloadLocation": "https://pypi.org/project/pytest/9.1.1/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/pytest@9.1.1"
+        }
+      ],
+      "comment": "Development and test dependency. Declared licence taken from installed distribution metadata: License-Expression."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-packaging",
+      "name": "packaging",
+      "versionInfo": "26.3",
+      "downloadLocation": "https://pypi.org/project/packaging/26.3/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0 OR BSD-2-Clause",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/packaging@26.3"
+        }
+      ],
+      "comment": "Development and test dependency. Declared licence taken from installed distribution metadata: License-Expression."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-RealityScan",
+      "name": "RealityScan",
+      "versionInfo": "2.2",
+      "supplier": "Organization: Epic Games, Inc.",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "comment": "Commercial photogrammetry application, installed separately by the user under Epic Games' licence. External tool requirement; not packaged, bundled or redistributed by wildscan."
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-wildscan"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-boto3"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-geopandas"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-inquirer"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-matplotlib"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-numpy"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-opencv-python"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-pandas"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-pillow"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-pyproj"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-requests"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-rich"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-scikit-learn"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-scipy"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-seaborn"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-shapely"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-textual"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-tqdm"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-pytest",
+      "relationshipType": "DEV_DEPENDENCY_OF",
+      "relatedSpdxElement": "SPDXRef-Package-wildscan"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-packaging",
+      "relationshipType": "DEV_DEPENDENCY_OF",
+      "relatedSpdxElement": "SPDXRef-Package-wildscan"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "HAS_PREREQUISITE",
+      "relatedSpdxElement": "SPDXRef-Package-RealityScan"
+    }
+  ]
+}

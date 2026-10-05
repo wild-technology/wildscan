@@ -737,7 +737,7 @@ export that is simply the largest input.
 | Method | How | Yields | Limits |
 |---|---|---|---|
 | **Stem-named XMP census** (`-exportXMP`) | `-deselectAllImages` → `-setMinComponentSize 1` → `-exportXMP`; count `.xmp` files containing `xcr:Position` | Camera count **and identity** (basenames) | Covers only "the last alignment" and silently skips components below `setMinComponentSize` [OFFICIAL: appbasics/allcommands]; only registered cameras get pose entries, which is what makes the count a registration census [VERIFIED: NA167 notes §1] |
-| **Ordinal XMP census** (`-exportXMPForSelectedComponent`) | select a component, export, count files | Camera count of **that one component** | Sidecars are `00000.xmp`, `00001.xmp`, … — **identity is lost**. Valid as a count only. Ordinal sidecars are inert as priors (no image has an ordinal stem) and are deleted by `camera_registry.sanitize_and_census` [VERIFIED: NA167 B10] |
+| **Ordinal XMP census** (`-exportXMPForSelectedComponent`) | select a component, export, count files | Camera count of **that one component** | Sidecars are `00000.xmp`, `00001.xmp`, … — **identity is lost**. Valid as a count only. Ordinal sidecars are inert as priors (no image has an ordinal stem) and are deleted by `calibration_sidecars.sanitize_and_census` [VERIFIED: NA167 B10] |
 | **Successive difference** | Per lap: `-exportXMP` (all remaining components) → harvest stems → export + delete the maximal component → repeat. `members(c_K) = stems(r_K) − stems(r_{K+1})` | Per-component **membership** | Only works in the ORIGINAL aligning scene. Destructive in memory; requires a prior `-save` and a `-quit` without saving [VERIFIED: AlignZone.bat identity loop] |
 | **Count-based peel** | Per lap: select maximal → rename → export `.rsalign` → `-exportXMPForSelectedComponent` → harvest → delete | Per-component **camera counts**, maximal-first | Identity lost (ordinal); membership must come from attribution against input manifests [VERIFIED: MergeZoneComponents.bat `:harvest`] |
 | **Manifest sum** | Sum `camera_count` over the manifests of the components in the assembly | The assembly's camera total | It is the **inputs'** total, not an observation of the assembled project. Assemble mode exports no XMPs, so nothing observes the assembly itself — in particular its metric scale is unmeasured. Tag it as a manifest sum, always [VERIFIED-as-caveat: merge_zones.py EVALUATION_READY text] |
@@ -789,7 +789,7 @@ the last-peeled component's sidecars are never re-exported: measured on a fresh 
 4,540 images (17.5 %) were left with no sidecar** — the entire bow component (665/665), 123 of c0,
 8 unregistered. Any re-align of an already-harvested zone then silently runs with a partially
 ungrouped camera set (which confounded cells PD-4 and PD-4a). Fixed by
-`camera_registry.ensure_calibration_sidecars()` [VERIFIED: FINDINGS 2026-07-25]. See
+`calibration_sidecars.ensure_calibration_sidecars()` [VERIFIED: FINDINGS 2026-07-25]. See
 `05-metadata-xmp-and-sidecars.md`.
 
 ### 6.3 The peel loop (merge scenes) — counts only
