@@ -2,8 +2,9 @@
 
 RC_Main's flow, kept faithfully, as screens:
 
-    SessionScreen    expedition / dive / data location / results root,
-                     with live raw-data detection and the results layout
+    SessionScreen    Wild Sync run directory (or folder of runs) and
+                     workspace, with live run detection, the camera scan
+                     and the results layout
     StagePickScreen  the RC_Main checkbox - stages in order, resume-aware
                      pre-selection (done stages start unticked)
     WizardScreen     ONE question at a time, in module order, each
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import ClassVar
 
 from rich.text import Text
 from textual.app import App, ComposeResult
@@ -30,19 +32,49 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.timer import Timer
-from textual.widgets import (Button, DataTable, Footer, Input, Label,
-                             ProgressBar, RichLog, SelectionList, Static)
+from textual.widgets import (
+    Button,
+    DataTable,
+    Footer,
+    Input,
+    Label,
+    ProgressBar,
+    RichLog,
+    SelectionList,
+    Static,
+)
 from textual.widgets.selection_list import Selection
 
 from . import APP_NAME, ORG, TAGLINE, __version__
-from .branding import (CSS, MIST, OK, SAND, STATUS_COLOR, STATUS_GLYPH, TEAL,
-                       WARN, WORDMARK)
+from .branding import (
+    CSS,
+    MIST,
+    OK,
+    SAND,
+    STATUS_COLOR,
+    STATUS_GLYPH,
+    TEAL,
+    WARN,
+    WORDMARK,
+)
 from .runner import CommandRunner, LogLine, ProgressUpdate, RunFinished
-from .session import (ALL_STAGES, Question, RawDataScan, Session, build_commands, build_questions,
-                      default_enabled, default_session, export_names_file,
-                      prepare_results_root, save_last_run, scan_raw_data,
-                      write_camera_records)
-from .workspace import STAGE_TITLES, StageStatus, Workspace
+from .session import (
+    ALL_STAGES,
+    STAGE_TITLES,
+    Question,
+    RunDataScan,
+    Session,
+    build_commands,
+    build_questions,
+    default_enabled,
+    default_session,
+    export_names_file,
+    prepare_results_root,
+    save_last_run,
+    scan_run_data,
+    stage_statuses,
+)
+from .workspace import StageStatus, Workspace
 
 
 def status_text(status: str, text: str) -> Text:
@@ -51,36 +83,26 @@ def status_text(status: str, text: str) -> Text:
 
 
 class SessionScreen(Screen):
-    """Question order exactly as the pipeline has always asked: who and
-    where, before anything else."""
+    """Where the data is and where the results go, before anything else."""
 
-    BINDINGS = [Binding("q", "quit", "Quit")]
+    BINDINGS: ClassVar[list[Binding]] = [Binding("q", "quit", "Quit")]
 
     def __init__(self) -> None:
         super().__init__()
-        self._detection_cache: dict[str, tuple[str, object]] = {}
+        self._detection_cache: tuple[str, RunDataScan] | None = None
         self._detection_timer: Timer | None = None
-        self._suggested_results: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(WORDMARK, id="wordmark")
         yield Static(f"{ORG} · {TAGLINE} · v{__version__}", id="tagline")
         with VerticalScroll(classes="panel", id="s-fields"):
             yield Label("Choose your dataset", classes="panel-title")
-            yield Static("Fill in the sources you have. Other source fields can stay blank.")
-            yield Label("Expedition (e.g. NA156)")
-            yield Input(id="s-expedition")
-            yield Label("Dive (e.g. H2024)")
-            yield Input(id="s-dive")
-            yield Label("Dive folder (recordings and navigation)")
-            yield Input(id="s-cruise")
-            yield Label("Images folder (existing stills)")
-            yield Input(id="s-rawimages")
-            yield Label("Survey video (one recording)")
-            yield Input(id="s-video")
-            yield Label("Processed navigation folder (optional datatables or flight logs)")
-            yield Input(id="s-processed")
-            yield Label("Results root (created if missing; the pipeline "
+            yield Static("Point at a Wild Sync run directory, or a folder holding "
+                         "several runs. It is only read, never modified.")
+            yield Label("Wild Sync run directory or folder of runs "
+                        "(separate several with ;)")
+            yield Input(id="s-runs")
+            yield Label("Workspace (created if missing; the pipeline "
                         "builds its structure inside)")
             yield Input(id="s-results")
             yield Static("", id="s-detect")
@@ -93,85 +115,43 @@ class SessionScreen(Screen):
     def on_mount(self) -> None:
         app: WildScanApp = self.app  # type: ignore[assignment]
         s = app.session
-        self.query_one("#s-expedition", Input).value = s.expedition
-        self.query_one("#s-dive", Input).value = s.dive
-        self.query_one("#s-cruise", Input).value = s.cruise_folder
-        self.query_one("#s-rawimages", Input).value = s.raw_images_dir
-        self.query_one("#s-video", Input).value = s.video_path
-        self.query_one("#s-processed", Input).value = s.processed_data
+        self.query_one("#s-runs", Input).value = s.run_dirs
         self.query_one("#s-results", Input).value = s.results_root
         self._refresh_detection()
 
     def _pull(self) -> None:
         app: WildScanApp = self.app  # type: ignore[assignment]
         s = app.session
-        s.expedition = self.query_one("#s-expedition", Input).value.strip()
-        s.dive = self.query_one("#s-dive", Input).value.strip()
-        s.cruise_folder = self.query_one("#s-cruise", Input).value.strip()
-        s.raw_images_dir = self.query_one("#s-rawimages", Input).value.strip()
-        s.video_path = self.query_one("#s-video", Input).value.strip()
-        s.processed_data = self.query_one("#s-processed", Input).value.strip()
+        s.run_dirs = self.query_one("#s-runs", Input).value.strip()
         s.results_root = self.query_one("#s-results", Input).value.strip()
 
     def _refresh_detection(self, *, force: bool = False) -> None:
-        from .session import scan_cameras, scan_processed_data
         app: WildScanApp = self.app  # type: ignore[assignment]
         self._detection_timer = None
         self._pull()
         s = app.session
-
-        def scanned(key, path, scanner):
-            previous = self._detection_cache.get(key)
-            if force or previous is None or previous[0] != path:
-                previous = (path, scanner(path))
-                self._detection_cache[key] = previous
-            return previous[1]
-
-        if s.cruise_folder:
-            app.scan = scanned('cruise', s.cruise_folder, scan_raw_data)
+        if s.run_dirs:
+            previous = self._detection_cache
+            if force or previous is None or previous[0] != s.run_dirs:
+                previous = (s.run_dirs, scan_run_data(s.run_dirs))
+                self._detection_cache = previous
+            app.scan = previous[1]
         else:
-            self._detection_cache.pop('cruise', None)
-            app.scan = RawDataScan()
-        for key, path in (('raw_images', s.raw_images_dir),
-                          ('processed', s.processed_data)):
-            if not path:
-                self._detection_cache.pop(key, None)
+            self._detection_cache = None
+            app.scan = RunDataScan()
         text = Text()
-        if s.cruise_folder:
-            text.append("Cruise folder:\n", style=SAND)
+        if s.run_dirs:
+            text.append("Wild Sync runs:\n", style=SAND)
             for line in app.scan.summary_lines():
-                text.append("  · ", style=TEAL)
+                warn = (not app.scan.runs or line in app.scan.problems
+                        or "matches no camera" in line or "(no run.json)" in line)
+                text.append("  · ", style=WARN if warn else TEAL)
                 text.append(line + "\n")
-        if s.raw_images_dir:
-            cams = scanned('raw_images', s.raw_images_dir, scan_cameras)
-            text.append("Images — sampled camera names:\n", style=SAND)
-            for line in cams.summary_lines() or ["no imagery found there"]:
-                style = WARN if line.startswith("UNRECOGNISED") else TEAL
-                text.append("  · ", style=style)
-                text.append(line + "\n")
-        if s.processed_data:
-            processed = scanned('processed', s.processed_data, scan_processed_data)
-            text.append("Processed data:\n", style=SAND)
-            if processed["datatables"]:
-                text.append("  · ", style=TEAL)
-                text.append(f"ROVDataConcat output: "
-                            f"{processed['datatables'][0].name}\n")
-            if processed["utm_logs"]:
-                text.append("  · ", style=TEAL)
-                text.append(f"georeferenced log: "
-                            f"{processed['utm_logs'][0].name}\n")
-            if not (processed["datatables"] or processed["utm_logs"]):
-                text.append("  · ", style=WARN)
-                text.append("no datatables found there\n")
-        if s.video_path:
-            text.append("Survey video: ", style=SAND)
-            text.append((Path(s.video_path).name + "\n") if Path(s.video_path).is_file()
-                        else "file not found — check the path\n", style=TEAL if Path(s.video_path).is_file() else WARN)
         if s.results_root:
             text.append("\nResults structure (pipeline-created):\n",
                         style=SAND)
             for name, desc in (
-                    ("raw_images/", "imagery"),
+                    ("raw_images/", "images and flight log"),
                     ("batched_images_by_zone/", "zones"),
                     ("aligned_components/", "components"),
                     ("merged/ · exports/ · RC_projects/", "deliverables")):
@@ -181,17 +161,10 @@ class SessionScreen(Screen):
 
     def on_input_changed(self, event: Input.Changed) -> None:
         self.query_one("#s-problem", Static).update("")
-        if event.input.id in ("s-cruise", "s-rawimages", "s-processed", "s-video", "s-results"):
+        if event.input.id in ("s-runs", "s-results"):
             if self._detection_timer is not None:
                 self._detection_timer.stop()
             self._detection_timer = self.set_timer(0.3, self._refresh_detection)
-        elif event.input.id in ("s-expedition", "s-dive"):
-            app: WildScanApp = self.app  # type: ignore[assignment]
-            self._pull()
-            results = self.query_one("#s-results", Input)
-            if app.session.label and (not results.value.strip() or results.value == self._suggested_results):
-                self._suggested_results = app.session.suggested_results_root(None)
-                results.value = self._suggested_results
 
     def on_unmount(self) -> None:
         if self._detection_timer is not None:
@@ -205,29 +178,24 @@ class SessionScreen(Screen):
         s = app.session
         if not s.results_root:
             self.query_one("#s-problem", Static).update(
-                Text("Enter a results folder to continue or view existing results.", style=WARN))
+                Text("Enter a workspace folder to continue or view existing results.", style=WARN))
             return
         if event.button.id == "s-status":
             if not Path(s.results_root).is_dir():
                 self.query_one("#s-problem", Static).update(
-                    Text("No results folder exists here yet. Continue to plan a run, "
-                         "or choose an existing results folder.", style=WARN))
+                    Text("No workspace exists here yet. Continue to plan a run, "
+                         "or choose an existing workspace.", style=WARN))
                 return
             app.push_screen(StatusScreen())
             return
-        for name, label, kind in (('cruise_folder', 'Dive folder', 'path'),
-                                  ('raw_images_dir', 'Images folder', 'path'),
-                                  ('video_path', 'Survey video', 'file'),
-                                  ('processed_data', 'Processed navigation folder', 'path')):
-            value = getattr(s, name)
-            if value:
-                problem = Question('session', name, label, kind).validate(value)
-                if not problem and name == 'video_path':
-                    problem = Question('session', name, label, 'video').validate(value)
-                if problem:
-                    self.query_one("#s-problem", Static).update(
-                        Text(f"{label}: {problem}. Check the path or clear this optional field.", style=WARN))
-                    return
+        if s.run_dirs:
+            problem = Question('session', 'run_dirs', 'Run directory',
+                               'rundirs').validate(s.run_dirs)
+            if problem:
+                self.query_one("#s-problem", Static).update(
+                    Text(f"Run directory: {problem}. Check the path, or clear this field "
+                         "when only resuming later stages.", style=WARN))
+                return
         if self._detection_timer is not None:
             self._detection_timer.stop()
         # Preview caches never supply the plan's source identity.
@@ -235,15 +203,12 @@ class SessionScreen(Screen):
         try:
             prepare_results_root(s)
             ws = s.workspace()
-            statuses = ws.detect()
+            statuses = stage_statuses(ws)
         except (OSError, ValueError) as exc:
             self.query_one("#s-problem", Static).update(
-                Text(f"Unable to open the results folder: {exc}. Choose a writable folder.", style=WARN))
+                Text(f"Unable to open the workspace: {exc}. Choose a writable folder.", style=WARN))
             return
         s.enabled = default_enabled(ws, statuses)
-        if (s.raw_images_dir and not s.video_path and not app.scan.videos
-                and statuses['extract'].summary != 'interrupted run - retry required'):
-            s.enabled = [key for key in s.enabled if key != 'extract']
         app.push_screen(StagePickScreen(statuses))
 
 
@@ -251,7 +216,7 @@ class StagePickScreen(Screen):
     """RC_Main's checkbox, verbatim in spirit: arrow keys to move, space to
     select, enter to confirm."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape", "back", "Back"),
         Binding("enter", "confirm", "Confirm", priority=True),
     ]
@@ -271,7 +236,7 @@ class StagePickScreen(Screen):
     def on_mount(self) -> None:
         app: WildScanApp = self.app  # type: ignore[assignment]
         ws = app.session.workspace()
-        statuses = (ws.detect() if self._initial_statuses is None
+        statuses = (stage_statuses(ws) if self._initial_statuses is None
                     else self._initial_statuses)
         self._initial_statuses = None
         picker = self.query_one("#stage-pick", SelectionList)
@@ -286,8 +251,6 @@ class StagePickScreen(Screen):
         note = Text("Stages run from top to bottom. Untick stages you do not need.\n", style=MIST)
         if done:
             note.append("Already complete and unselected: " + ", ".join(done) + "\n")
-        if app.session.raw_images_dir and 'extract' not in app.session.enabled:
-            note.append("Existing images supplied: video extraction starts unselected.\n")
         note.append("Preparation and alignment share one command; pauses occur before merge, models, exports and publishing.")
         self.query_one("#pick-note", Static).update(note)
 
@@ -303,9 +266,7 @@ class StagePickScreen(Screen):
             self.query_one("#pick-note", Static).update(
                 Text("select at least one stage", style=WARN))
             return
-        app.scan = (scan_raw_data(app.session.cruise_folder)
-                    if app.session.cruise_folder else RawDataScan())
-        app.questions = build_questions(app.session, app.scan)
+        app.questions = build_questions(app.session)
         if app.questions:
             app.push_screen(WizardScreen())
         else:
@@ -316,7 +277,7 @@ class WizardScreen(Screen):
     """One question at a time - the parameter's own description, prefilled
     from detection, then the last run, then the module default."""
 
-    BINDINGS = [Binding("escape", "back", "Back")]
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
 
     def __init__(self) -> None:
         super().__init__()
@@ -349,14 +310,7 @@ class WizardScreen(Screen):
         self.query_one("#w-progress", Label).update(
             f"Question {self.index + 1} of {total}")
         self.query_one("#w-stage", Static).update(
-            Text(STAGE_TITLES.get(q.stage,
-                                  "Camera identification"
-                                  if q.stage == "cameras" else q.stage),
-                 style=TEAL))
-        if q.stage == 'cameras':
-            self.query_one("#w-stage", Static).update(Text(
-                "Optional camera notes — these record what you know. They do not add "
-                "calibration or position priors; unknown cameras still need a registry entry.", style=WARN))
+            Text(STAGE_TITLES.get(q.stage, q.stage), style=TEAL))
         self.query_one("#w-prompt", Label).update(
             q.prompt + ("  *" if q.required else ""))
         answer = self.query_one("#w-answer", Input)
@@ -404,7 +358,7 @@ class SummaryScreen(Screen):
     """RC_Main printed 'Parameters:' before running - same, plus the gate
     style choice, then Run."""
 
-    BINDINGS = [Binding("escape", "back", "Back")]
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(classes="panel"):
@@ -421,12 +375,8 @@ class SummaryScreen(Screen):
         app: WildScanApp = self.app  # type: ignore[assignment]
         s = app.session
         text = Text()
-        text.append(f"  expedition_dive: {s.label or '(unset)'}\n")
-        text.append(f"  cruise folder:   {s.cruise_folder or '(unset)'}\n")
-        text.append(f"  raw images:      {s.raw_images_dir or '(unset)'}\n")
-        text.append(f"  video:           {s.video_path or '(unset)'}\n")
-        text.append(f"  processed data:  {s.processed_data or '(unset)'}\n")
-        text.append(f"  results root:    {s.results_root}\n")
+        text.append(f"  run directories: {s.run_dirs or '(unset)'}\n")
+        text.append(f"  workspace:       {s.results_root}\n")
         text.append(f"  stages:          "
                     f"{', '.join(STAGE_TITLES.get(k, k) for k in s.enabled)}\n\n")
         for q in app.questions:
@@ -463,7 +413,7 @@ class RunScreen(Screen):
     """Stages in sequence; between stages, a gate - RC_Main's 'Press enter
     to continue...' - unless Continue Automatically."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[Binding]] = [
         Binding("enter", "gate", "Continue", priority=True),
         Binding("x", "stop", "Stop stage"),
         Binding("escape", "leave", "Status"),
@@ -497,7 +447,6 @@ class RunScreen(Screen):
         try:
             if "export" in app.session.enabled:
                 export_names_file(app.session)
-            write_camera_records(app.session)
             self.commands = build_commands(app.session)
             save_last_run(app.session)     # persist the anchored filesystem paths
         except (OSError, ValueError, RuntimeError) as exc:
@@ -635,7 +584,7 @@ class RunScreen(Screen):
 class StatusScreen(Screen):
     """The census + final components - presenting results."""
 
-    BINDINGS = [Binding("escape", "back", "Back")]
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="panel", id="st-pipeline-panel"):
@@ -656,7 +605,7 @@ class StatusScreen(Screen):
         app: WildScanApp = self.app  # type: ignore[assignment]
         ws = app.session.workspace()
         table = self.query_one("#st-pipeline", DataTable)
-        for key, st in ws.detect().items():
+        for st in stage_statuses(ws).values():
             table.add_row(Text(st.title, style=SAND),
                           status_text(st.status, st.status), st.summary)
         comps = self.query_one("#st-components", DataTable)
@@ -669,7 +618,7 @@ class StatusScreen(Screen):
                 scale, c.scale_status or "-",
                 "done" if c.modelled else "-",
                 ", ".join(c.exported) or "-")
-        note = Text(f"Results folder: {ws.root}\n", style=MIST)
+        note = Text(f"Workspace: {ws.root}\n", style=MIST)
         note.append("No final components are available yet.\n" if not components else
                     "Scale verdicts and model completion use the saved reports for this assembly.\n")
         note.append("Folder presence alone does not verify native processing or dataset quality.")
@@ -688,7 +637,7 @@ class WildScanApp(App):
         self.session: Session = default_session()
         if workspace:
             self.session.results_root = workspace
-        self.scan = RawDataScan()
+        self.scan = RunDataScan()
         self.questions = []
 
     @property
