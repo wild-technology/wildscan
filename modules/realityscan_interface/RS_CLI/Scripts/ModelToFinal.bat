@@ -4,8 +4,8 @@ setlocal EnableDelayedExpansion
 ::   [color correction] -> [cull] -> texture -> [simplify] -> unwrap ->
 ::   reproject -> export -> save
 ::
-:: This is the back half of AlignImagesFromFolder.bat, split out so it can
-:: run against a scene whose mesh already exists (e.g. a Normal Detail
+:: It runs the finishing half of a model workflow against a scene whose
+:: mesh already exists (e.g. a Normal Detail
 :: reconstruction computed interactively in the GUI). It NEVER calculates a
 :: mesh and NEVER creates a new scene.
 ::

@@ -551,34 +551,6 @@ def test_alignment_refuses_output_that_aliases_input(tmp_path, monkeypatch):
         os.rmdir(alias)
 
 
-def test_validation_alignment_passes_absolute_filesystem_arguments(
-        tmp_path, monkeypatch):
-    from types import SimpleNamespace
-    from scripts.validation.run_zone9_validation import run_alignment
-    from modules.realityscan_interface.realityscan_cli import METADATA_DIR
-
-    images = tmp_path / 'images'
-    images.mkdir()
-    (images / 'image.jpg').write_bytes(b'fixture')
-    nav = images / 'nav.txt'
-    nav.write_text(LOG_HEADER, encoding='utf-8')
-    monkeypatch.chdir(tmp_path)
-    calls = []
-
-    def capture(script, args, log_dir):
-        calls.append((script, args, log_dir))
-        return WorkflowResult(False, 1)
-
-    result = run_alignment(SimpleNamespace(run_batch_script=capture),
-                           'images', 'results/zone', 'ordinary_label', QUIET)
-    assert calls == [('AlignImagesFromFolder.bat',
-                      [str(images), str(tmp_path / 'results' / 'zone'), str(nav),
-                       os.path.join(METADATA_DIR, 'FlightLogParams.xml'),
-                       'false', 'false', 'ordinary_label', 'false', 'false'],
-                      str(tmp_path / 'results' / 'zone' / 'logs'))]
-    assert result['success'] is False
-
-
 def _scene(tmp_path):
     scene_dir = tmp_path / 'scene'
     scene_dir.mkdir()
