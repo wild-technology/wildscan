@@ -57,7 +57,10 @@ dependencies = [
 
 [project.optional-dependencies]
 # Test suite. Windows-only path fixtures mean a subset fails off-Windows.
-dev = ["pytest>=9.1"]
+dev = [
+    "pytest>=9.1",
+    "packaging>=22",         # tests/test_dependencies.py - requirement parsing
+]
 # Compatibility extra; the base project already includes the UI and pipeline.
 tui = ["textual>=8.2", "rich>=15.0"]
 
