@@ -381,16 +381,30 @@ def move_foreign_sidecars(image_paths: Iterable[str],
         xmp = sidecar_path(image)
         if not os.path.isfile(xmp):
             continue
-        with open(xmp, 'rb') as f:
-            content = f.read()
-        if is_own_sidecar(content, camera):
+        try:
+            with open(xmp, 'rb') as f:
+                content = f.read()
+        except OSError as exc:
+            # Unreadable here is not provably ours, and RealityScan may
+            # still import it: treat it as foreign and move it.
+            logger.warning('Unreadable sidecar %s (%s) - treated as not '
+                           'written by this pipeline and moved aside',
+                           xmp, exc)
+            content = None
+        if content is not None and is_own_sidecar(content, camera):
             continue
         relative = os.path.relpath(xmp, image_root)
         if relative.startswith(os.pardir):
             raise ValueError(f'{xmp} is not under {image_root}')
         target = _free_path(os.path.join(destination, relative))
         os.makedirs(os.path.dirname(target), exist_ok=True)
-        os.rename(xmp, target)
+        try:
+            os.rename(xmp, target)
+        except OSError as exc:
+            raise ValueError(
+                f'cannot move the sidecar {xmp} out of the way of the '
+                f'calibration sidecar ({exc}); it would be imported with its '
+                'image. Make it readable or remove it, then re-run.') from exc
         moved.append((xmp, target))
     return moved
 
@@ -583,6 +597,7 @@ def sanitize_and_census(image_root: str,
     _check_modes(modes)
     pose_count = restored = cleared = removed = 0
     removed_examples: list[str] = []
+    unreadable: list[str] = []
     for root, _dirs, files in os.walk(image_root):
         for filename in files:
             if not filename.lower().endswith('.xmp'):
@@ -591,7 +606,10 @@ def sanitize_and_census(image_root: str,
             try:
                 with open(path, encoding='utf-8', errors='replace') as f:
                     content = f.read()
-            except OSError:
+            except OSError as exc:
+                # Left in place and reported: the alignment stage refuses
+                # (or moves aside) an unreadable sidecar before the next add.
+                unreadable.append(f'{path} ({exc})')
                 continue
             if 'xcr:Position' not in content:
                 continue
@@ -615,4 +633,9 @@ def sanitize_and_census(image_root: str,
     if removed:
         logger.warning('sanitize: %d pose sidecar(s) of no known camera '
                        'deleted (e.g. %s)', removed, removed_examples)
+    if unreadable:
+        logger.warning('sanitize: %d sidecar(s) could not be read and were '
+                       'left in place unchecked (a pose in them would become '
+                       'a prior on the next add): %s', len(unreadable),
+                       '; '.join(unreadable))
     return pose_count, restored, removed
