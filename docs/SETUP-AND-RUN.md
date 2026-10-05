@@ -244,9 +244,9 @@ with the repository's 13-column format rather than adding a duplicate. Preserve
 the other installed formats; do not replace the installation dictionary with the
 repository's older copy. Editing Program Files may require administrator access.
 
-The full ID must match `gpsLogFileFormat` in both parameter templates. This
-read-only check verifies the two templates and the installed format; adjust the
-dictionary path for your RealityScan installation:
+The full ID must match `gpsLogFileFormat` in the parameter template
+`FlightLogParams.xml`. This read-only check verifies the template and the
+installed format; adjust the dictionary path for your RealityScan installation:
 
 ```powershell
 $flightLogDictionary = 'C:\Program Files\Epic Games\RealityScan_2.2\flightlogs.xml'
@@ -256,12 +256,10 @@ $formatPattern = '<format\b[^>]*\bid\s*=\s*["'']' + [regex]::Escape($formatId) +
 if ([regex]::Matches($dictionaryText, $formatPattern).Count -ne 1) {
     throw 'The installed dictionary must contain exactly one matching format.'
 }
-foreach ($template in @('FlightLogParams.xml', 'FlightLogParamsLocal.xml')) {
-    [xml]$params = Get-Content -Raw -LiteralPath "modules\realityscan_interface\RS_CLI\Metadata\$template"
-    $configuredId = @($params.Configuration.entry | Where-Object { $_.key -eq 'gpsLogFileFormat' })
-    if ($configuredId.Count -ne 1 -or $configuredId[0].value -ne $formatId) {
-        throw "The format ID in $template does not match."
-    }
+[xml]$params = Get-Content -Raw -LiteralPath 'modules\realityscan_interface\RS_CLI\Metadata\FlightLogParams.xml'
+$configuredId = @($params.Configuration.entry | Where-Object { $_.key -eq 'gpsLogFileFormat' })
+if ($configuredId.Count -ne 1 -or $configuredId[0].value -ne $formatId) {
+    throw 'The format ID in FlightLogParams.xml does not match.'
 }
 ```
 

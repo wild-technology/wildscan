@@ -1,10 +1,8 @@
-"""Frame generalization of the flight-log params (two-frames hazard,
-incident 2026-08-07: the shared FlightLogParams template carried ON2026's
-local frame and silently poisoned a UTM 57L import - 3/32 cameras
-registered with exit code 0). Covers UTM/local generation via
-write_flight_log_params, the template-vs-frame mismatch guard in both
-directions, and ensure_frame_match (the guard realityscan_interface.py
-runs before every import). Offline - no RealityScan interaction."""
+"""Flight-log coordinate system: every trajectory is imported in WGS84 UTM,
+in the zone named by the log's own filename tag. Covers the committed
+template, UTM generation via write_flight_log_params, and require_utm_zone
+(the guard the align, merge and grow stages run before every import).
+Offline - no RealityScan interaction."""
 import os
 import sys
 import tempfile
@@ -12,14 +10,13 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
-from modules.flight_logs import (ensure_frame_match, params_template_frame,
+from modules.flight_logs import (params_template_frame, require_utm_zone,
                                  write_flight_log_params)
 
 REPO = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 METADATA = os.path.join(REPO, 'modules', 'realityscan_interface',
                         'RS_CLI', 'Metadata')
 UTM_TEMPLATE = os.path.join(METADATA, 'FlightLogParams.xml')
-LOCAL_TEMPLATE = os.path.join(METADATA, 'FlightLogParamsLocal.xml')
 
 
 def read(path):
@@ -27,17 +24,11 @@ def read(path):
         return f.read()
 
 
-class TestCommittedTemplates(unittest.TestCase):
-    """Tripwire for the exact incident: 902fcf7 hand-promoted local-frame
-    content into the shared template. If either committed template ever
-    switches frames again, these fail before any import does."""
+class TestCommittedTemplate(unittest.TestCase):
+    """Tripwire: the shared template must keep declaring a UTM system."""
 
     def test_shared_template_declares_utm(self):
         self.assertEqual(params_template_frame(UTM_TEMPLATE), 'utm')
-
-    def test_local_template_declares_local(self):
-        self.assertEqual(params_template_frame(LOCAL_TEMPLATE),
-                         'local_euclidean')
 
 
 class TestUtmGeneration(unittest.TestCase):
@@ -59,92 +50,29 @@ class TestUtmGeneration(unittest.TestCase):
             self.assertIn('+proj=utm +zone=9 +south +datum=WGS84', content2)
             self.assertIn('epsg:32709 - WGS 84 / UTM zone 9S', content2)
 
-    def test_utm_frame_requires_zone_and_band(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaises(ValueError):
-                write_flight_log_params(
-                    UTM_TEMPLATE, os.path.join(tmp, 'x.xml'), frame='utm')
-
-    def test_unknown_frame_value_rejected(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaises(ValueError):
-                write_flight_log_params(
-                    UTM_TEMPLATE, os.path.join(tmp, 'x.xml'), 53, 'N',
-                    frame='wgs84')
-
-
-class TestLocalGeneration(unittest.TestCase):
-    def test_local_pair_written(self):
+    def test_the_format_id_survives_generation(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = write_flight_log_params(
-                LOCAL_TEMPLATE, os.path.join(tmp, 'local.xml'),
-                frame='local_euclidean')
-            content = read(out)
-            self.assertIn('+proj=geocent +ellps=WGS84 +no_defs', content)
-            self.assertIn('local:1 - Euclidean', content)
-            self.assertEqual(params_template_frame(out), 'local_euclidean')
-
-    def test_zone_and_band_ignored(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            out = write_flight_log_params(
-                LOCAL_TEMPLATE, os.path.join(tmp, 'local.xml'), 53, 'N',
-                frame='local_euclidean')
-            content = read(out)
-            self.assertNotIn('+proj=utm', content)
-            self.assertIn('local:1 - Euclidean', content)
+                UTM_TEMPLATE, os.path.join(tmp, 'p19T.xml'), 19, 'T')
+            self.assertIn('{B438A617-2434-5A24-C1B7-58980F28345A}', read(out))
+            self.assertIn('epsg:32619 - WGS 84 / UTM zone 19N', read(out))
 
 
-class TestTemplateMismatchGuard(unittest.TestCase):
-    """write_flight_log_params refuses a template that declares the
-    opposite frame from the one requested - both directions."""
+class TestRequireUtmZone(unittest.TestCase):
+    """The guard run before every trajectory import."""
 
-    def test_utm_request_against_local_template_trips(self):
-        # The incident direction: UTM 57L log, local template.
-        with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaises(ValueError) as ctx:
-                write_flight_log_params(
-                    LOCAL_TEMPLATE, os.path.join(tmp, 'x.xml'), 57, 'L')
-            self.assertIn('2026-08-07', str(ctx.exception))
-
-    def test_local_request_against_utm_template_trips(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaises(ValueError) as ctx:
-                write_flight_log_params(
-                    UTM_TEMPLATE, os.path.join(tmp, 'x.xml'),
-                    frame='local_euclidean')
-            self.assertIn('2026-08-07', str(ctx.exception))
-
-    def test_matched_pairs_pass(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            write_flight_log_params(
-                UTM_TEMPLATE, os.path.join(tmp, 'utm.xml'), 57, 'L',
-                frame='utm')
-            write_flight_log_params(
-                LOCAL_TEMPLATE, os.path.join(tmp, 'local.xml'),
-                frame='local_euclidean')
-
-
-class TestEnsureFrameMatch(unittest.TestCase):
-    """The filename-vs-template guard realityscan_interface.py runs
-    before deciding how to build the params file."""
-
-    def test_tagged_log_against_local_template_trips(self):
-        with self.assertRaises(ValueError) as ctx:
-            ensure_frame_match('flight_log_57L_UTM.txt', LOCAL_TEMPLATE)
-        self.assertIn('2026-08-07', str(ctx.exception))
-
-    def test_untagged_log_against_utm_template_trips(self):
-        with self.assertRaises(ValueError) as ctx:
-            ensure_frame_match('flight_log_zones.txt', UTM_TEMPLATE)
-        self.assertIn('2026-08-07', str(ctx.exception))
-
-    def test_matched_pairs_pass(self):
+    def test_tagged_names_yield_zone_and_band(self):
+        self.assertEqual(require_utm_zone('flight_log_19T_UTM.txt'), (19, 'T'))
         self.assertEqual(
-            ensure_frame_match('flight_log_57L_UTM.txt', UTM_TEMPLATE),
-            'utm')
-        self.assertEqual(
-            ensure_frame_match('flight_log_zones.txt', LOCAL_TEMPLATE),
-            'local_euclidean')
+            require_utm_zone(os.path.join('zone_1', 'flight_log_57L_UTM.txt')),
+            (57, 'L'))
+
+    def test_untagged_names_are_refused(self):
+        for name in ('flight_log_UTM.txt', 'flight_log.txt', 'nav.txt'):
+            with self.assertRaises(ValueError) as ctx:
+                require_utm_zone(name)
+            self.assertIn('no UTM zone tag', str(ctx.exception))
+            self.assertIn(name, str(ctx.exception))
 
 
 if __name__ == '__main__':

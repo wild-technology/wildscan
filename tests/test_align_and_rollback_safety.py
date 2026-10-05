@@ -418,10 +418,10 @@ def test_relative_alignment_paths_survive_the_native_script_cwd(tmp_path, monkey
     images = caller / 'images'
     images.mkdir(parents=True)
     (images / 'image.jpg').write_bytes(b'fixture')
-    nav = caller / 'nav.txt'
+    nav = caller / 'flight_log_53N_UTM.txt'
     nav.write_text(LOG_HEADER, encoding='utf-8')
     params = caller / 'params.xml'
-    shutil.copyfile(Path(cli_mod.METADATA_DIR) / 'FlightLogParamsLocal.xml', params)
+    shutil.copyfile(Path(cli_mod.METADATA_DIR) / 'FlightLogParams.xml', params)
     alignment_params = caller / 'alignment.xml'
     shutil.copyfile(Path(cli_mod.METADATA_DIR) / 'AlignmentParams.xml', alignment_params)
     module = RealityScanAlignment(QUIET)
@@ -450,7 +450,8 @@ def test_relative_alignment_paths_survive_the_native_script_cwd(tmp_path, monkey
         calls.append((command, kwargs))
         assert kwargs['cwd'] == cli_mod.SCRIPTS_DIR
         assert command[1:5] == [str(images), str(caller / 'results' / 'zone'),
-                                str(nav), str(params)]
+                                str(nav),
+                                str(caller / 'logs' / 'FlightLogParams_53N.xml')]
         assert all(Path(value).is_absolute() for value in command[1:5])
         assert command[5:] == ['ordinary_zone_name', '50']
         assert kwargs['env']['RS_ALIGN_PARAMS'] == str(alignment_params)
@@ -459,11 +460,38 @@ def test_relative_alignment_paths_survive_the_native_script_cwd(tmp_path, monkey
 
     monkeypatch.setattr(cli_mod.subprocess, 'Popen', capture)
     result, _ = module._RealityScanAlignment__align_zone(
-        'images', 'results/zone', 'ordinary_zone_name', 'nav.txt', 'params.xml')
+        'images', 'results/zone', 'ordinary_zone_name',
+        'flight_log_53N_UTM.txt', 'params.xml')
     assert len(calls) == 1
     assert fingerprints[0][2] == str(alignment_params)
     assert result['Success'] is False
     assert (caller / 'results' / 'zone').is_dir()
+    assert 'epsg:32653' in (caller / 'logs' / 'FlightLogParams_53N.xml').read_text(
+        encoding='utf-8')
+
+
+def test_an_untagged_flight_log_fails_the_zone_before_anything_moves(
+        tmp_path, monkeypatch):
+    """Every trajectory is imported in the UTM zone its own filename names.
+    A log without that tag is refused before the previous run's outputs are
+    moved aside or RealityScan is located."""
+    images = tmp_path / 'images'
+    images.mkdir()
+    (images / 'a.jpg').write_bytes(b'j')
+    nav = tmp_path / 'flight_log_UTM.txt'
+    nav.write_text(LOG_HEADER, encoding='utf-8')
+    out = tmp_path / 'aligned' / 'zone_1'
+    out.mkdir(parents=True)
+    (out / 'zone_1.rsproj').write_bytes(b'previous')
+    module = RealityScanAlignment(QUIET)
+    monkeypatch.delenv('RS_ALIGN_POOL_DIR', raising=False)
+    monkeypatch.setattr(module.cli, 'find_executable',
+                        lambda: pytest.fail('untagged log reached native preparation'))
+    with pytest.raises(ValueError, match='no UTM zone tag'):
+        module._RealityScanAlignment__align_zone(
+            str(images), str(out), 'zone_1', str(nav),
+            os.path.join(cli_mod.METADATA_DIR, 'FlightLogParams.xml'))
+    assert (out / 'zone_1.rsproj').read_bytes() == b'previous'
 
 
 @pytest.mark.parametrize('output_folder', [None, '', ' ', '\t'])

@@ -496,8 +496,8 @@ def test_publish_prefers_the_merge_union_log(tmp_path):
     assert pb.resolve_input_crs(tmp_path) == 'EPSG:32653'
 
 
-def test_publish_has_no_crs_for_a_local_frame_campaign(tmp_path):
-    pb = _publish_ws(tmp_path, ['raw_images/flight_log_local_UTM.txt'])
+def test_publish_has_no_crs_for_an_untagged_log(tmp_path):
+    pb = _publish_ws(tmp_path, ['raw_images/flight_log_UTM.txt'])
     assert pb.resolve_input_crs(tmp_path) is None
 
 

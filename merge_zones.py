@@ -611,32 +611,19 @@ def build_union_flight_log(images_root: str, output_dir: str, logger,
     if not zone_logs:
         raise FileNotFoundError(f'No flight_log*_UTM.txt found under {images_root}')
 
-    # os.walk order is not deterministic and, more importantly, not
-    # CORRECT: the frame for the whole merge used to be read off
-    # zone_logs[0] while the rows were read in sorted() order, so one
-    # untagged (or foreign-zone) log anywhere under images_root flipped
-    # the entire merge to the local template on a logger.warning - the
-    # 2026-08-07 silent mis-frame class _FRAME_INCIDENT exists to prevent
-    # (audit 2026-08-07). Sort once, then require unanimity.
+    # os.walk order is not deterministic, and the zone for the whole merge
+    # must not depend on which log comes first: sort once, then require
+    # unanimity. One log of another zone, or without a zone tag, anywhere
+    # under images_root refuses the merge (audit 2026-08-07).
     zone_logs = sorted(zone_logs)
     zone_band = assert_one_zone(zone_logs, images_root)
-
-    # No UTM tag in the filename = a LOCAL-frame campaign (e.g. COLMAP
-    # local:1 priors, ON2026; C-20260730-05): use the dedicated
-    # FlightLogParamsLocal.xml template. Never fall back to the shared
-    # UTM template "as-is" - a template carrying the wrong frame imports
-    # silently mis-registered (2026-08-07 incident: ON2026's local frame
-    # in the shared template poisoned a UTM 57L import; 3/32 registered,
-    # exit code 0).
-    local_frame = zone_band is None
-    if local_frame:
-        logger.warning(
-            'Flight log "%s" carries no UTM zone tag - LOCAL-frame campaign; '
-            'generating params from FlightLogParamsLocal.xml. Verify this '
-            'cruise really uses local:1 priors!', os.path.basename(zone_logs[0]))
-        zone, band = None, None
-    else:
-        zone, band = zone_band
+    if zone_band is None:
+        raise ValueError(
+            f'No flight log under {images_root} carries a UTM zone tag '
+            f'({", ".join(os.path.basename(p) for p in zone_logs)}). The '
+            'union log is imported in the zone the per-zone logs name; name '
+            'them flight_log_<zone><band>_UTM.txt.')
+    zone, band = zone_band
 
     header, rows = None, {}
     for log_path in zone_logs:
@@ -673,21 +660,14 @@ def build_union_flight_log(images_root: str, output_dir: str, logger,
             len(rows), len(only_basenames))
 
     suffix = f'_{tag}' if tag else ''
-    crs_tag = 'local' if local_frame else f'{zone}{band}'
-    union_path = os.path.join(output_dir, f'flight_log{suffix}_{crs_tag}_UTM.txt')
+    union_path = os.path.join(output_dir, f'flight_log{suffix}_{zone}{band}_UTM.txt')
     with open(union_path, 'w', encoding='utf-8', newline='\r\n') as f:
         f.write(header + '\n' + '\n'.join(rows.values()) + '\n')
 
-    if local_frame:
-        params_path = write_flight_log_params(
-            os.path.join(METADATA_DIR, 'FlightLogParamsLocal.xml'),
-            os.path.join(output_dir, 'FlightLogParams_local.xml'),
-            frame='local_euclidean')
-    else:
-        params_path = write_flight_log_params(
-            os.path.join(METADATA_DIR, 'FlightLogParams.xml'),
-            os.path.join(output_dir, f'FlightLogParams_{zone}{band}.xml'),
-            zone, band)
+    params_path = write_flight_log_params(
+        os.path.join(METADATA_DIR, 'FlightLogParams.xml'),
+        os.path.join(output_dir, f'FlightLogParams_{zone}{band}.xml'),
+        zone, band)
     logger.info('flight log%s: %d rows -> %s', suffix, len(rows), union_path)
     return union_path, params_path
 

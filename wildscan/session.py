@@ -779,8 +779,8 @@ def build_commands(session: Session) -> list[StageCommand]:
 
 
 def workspace_flight_log(ws: Workspace) -> Path | None:
-    """The workspace's zone-tagged flight log, or None for a local-frame
-    campaign (no zone tag anywhere).
+    """The workspace's zone-tagged flight log, or None when no flight log
+    carries a zone tag.
 
     The merge output is searched first: the exported components were built
     against the merge's union log.
