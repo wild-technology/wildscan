@@ -6,7 +6,7 @@ structured `.rsortho` / `.rsbox` / `.rsinfo` / `.rcconfig` files that are config
 name, and the `<format>` dictionaries in the install tree that define which import readers and
 export writers exist at all. It covers the general mechanism (who produces a profile, who consumes
 it, what happens when one is wrong, and which commands silently ignore one), a schema section per
-profile type, the 34 shipped profiles in this repository as worked examples, and an authoring
+profile type, the 36 profiles in this repository as worked examples, and an authoring
 guide. It does **not** re-enumerate the settings-key namespace itself — every `-set` key, its type,
 allowed values and default live in `03-settings-keys.md`, which is the authority for key semantics;
 this document is the authority for the *file* that carries them. Command syntax and per-command
@@ -70,7 +70,7 @@ modeling and export in `10-reconstruction-texturing-export.md`.
    - [3.5 How to read a dictionary to discover legal values](#35-how-to-read-a-dictionary-to-discover-legal-values)
    - [3.6 The dictionaries are not well-formed XML](#36-the-dictionaries-are-not-well-formed-xml)
    - [3.7 Editing an install-tree dictionary](#37-editing-an-install-tree-dictionary)
-4. [This repository's 34 profiles](#4-this-repositorys-34-profiles)
+4. [This repository's 36 profiles](#4-this-repositorys-36-profiles)
    - [4.1 Inventory with purpose and delta-from-default](#41-inventory-with-purpose-and-delta-from-default)
    - [4.2 Which profile to pick when](#42-which-profile-to-pick-when)
    - [4.3 Known defects in the profile set](#43-known-defects-in-the-profile-set)
@@ -1526,8 +1526,7 @@ config "defines the scene transformation settings saved from the import dialog" 
 adjust the coordinate system or apply custom transformations during import". COLMAP takes the path
 to any of the three text files. [OFFICIAL: appbasics/allcommands]
 
-Not used here, and [archive/colmap/](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/colmap/) is retired — do not resurrect it into the active pipeline.
-[ARCHITECTURE.md]
+Not used by this pipeline.
 
 ### 2.23 Classification params and the `.cfd` format file
 
@@ -1970,60 +1969,66 @@ Rules:
 
 ---
 
-## 4. This repository's 34 profiles
+## 4. This repository's 36 profiles
 
-All at `C:\tools\wildscan\modules\realityscan_interface\RS_CLI\Metadata\`.
+All in `modules\realityscan_interface\RS_CLI\Metadata\` of the checkout.
 `SetVariables.bat` declares path variables for many of them; the *consuming* script is what matters
 and is listed below.
 
 ### 4.1 Inventory with purpose and delta-from-default
 
+The file list matches the directory; the "Consumed by" column was read from the workflow scripts
+and Python drivers in this checkout.
+
 | File | Type | Consumed by | What it sets / changes | Status |
 |---|---|---|---|---|
-| `AlignmentParams.xml` | alignment | `AlignZone.bat`, `GrowZone.bat`, `AlignImagesFromFolder.bat`, 3 probe scripts (parsed → `-set`, never passed as an argument) | the full 39-entry production alignment config, §2.1 | **Production** |
-| `FlightLogParams.xml` | trajectory import | `-importFlightLog` at 6 `.bat` call sites — `AlignZone.bat`:77, `GrowZone.bat`:182, `AlignImagesFromFolder.bat`:137, `AlignImageList.bat`:47, `SequentialAlignGrow.bat`:64, `MergeZoneComponents.bat`:154; path supplied by `modules/flight_logs.py`, `merge_zones.py`, `realityscan_interface.py` | 13-column format GUID + per-cruise UTM CRS | **Production, generated** |
+| `AlignmentParams.xml` | alignment | `AlignZone.bat`, `GrowZone.bat` (parsed → `-set`, never passed as an argument); fingerprinted by `modules/align_fingerprint.py` | the production alignment config, §2.1; `sfmDistortionModel=Brown3` | **Production** |
+| `FlightLogParams.xml` | trajectory import | template for `modules/flight_logs.write_flight_log_params`, which writes a per-zone copy for `-importFlightLog` in `AlignZone.bat`, `GrowZone.bat` and `MergeZoneComponents.bat`; path supplied by `realityscan_interface.py`, `merge_zones.py`, `grow_zone.py` | 13-column format GUID + UTM CRS rewritten from the log's zone tag | **Production, generated** |
 | `XMPExportParams.xml` | XMP export | **nothing** | would enable merge / GPS / flags / calib-groups / rig, `xmpCamera=3` | **Unreferenced** |
-| `SimplifyNoise_Params.xml` | simplify | `GenerateModel.bat` step [6/8] | relative 70 %, `simplPreserveParts=2`, `simplEqualizeDensity=true` | **Production** — but a documented placeholder derived from the 50 % template |
-| `SimplifySmooth_80per_Params.xml` | simplify | `GenerateModel.bat` step [7/8], run 4× | relative 80 %, otherwise identical | **Production** — same placeholder caveat |
+| `SimplifyNoise_Params.xml` | simplify | `GenerateModel.bat` | relative 70 %, `simplPreserveParts=2`, `simplEqualizeDensity=true` | **Production** — but a documented placeholder derived from the 50 % template |
+| `SimplifySmooth_80per_Params.xml` | simplify | `GenerateModel.bat`; `ModelToFinal.bat` | relative 80 %, otherwise identical | **Production** — same placeholder caveat |
 | `Simplify50Per_Params.xml` | simplify | declared in `SetVariables.bat` only | relative 50 % | Unused |
-| `SimplifyAutomationParams.xml` | simplify | `AlignImagesFromFolder.bat` (**deprecated** workflow) | relative 70 % — same values as `SimplifyNoise`, different entry order | Legacy |
+| `SimplifyAutomationParams.xml` | simplify | **nothing** (named only in a `ModelToFinal.bat` comment) | relative 70 % — same values as `SimplifyNoise`, different entry order | Unreferenced |
 | `Simplify500k_Params.xml` | simplify | declared in `SetVariables.bat` only | **absolute** 500,000 triangles (`mvsFltSimplificationType=0`) | Unused |
 | `Simplify25per_Params.xml` | simplify | **nothing** | **byte-identical to `Simplify500k_Params.xml`** — absolute 500 k, not 25 % | **Misnamed, unreferenced** |
 | `Smoothing_02_2_Params.xml` | smoothing | declared in `SetVariables.bat` only | weight 0.2, 2 iterations, style 1, type 0 | Unused |
 | `SmoothingSurface_02_2_Params.xml` | smoothing | **nothing** | **byte-identical to `Smoothing_02_2_Params.xml`** | Unused duplicate |
 | `SmoothingPeaks_05_5_Params.xml` | smoothing | **nothing** | weight 0.5, 5 iterations, style 3 — i.e. Epic's shipped default minus `mvsSmoothing_useIntelligentSmoothing`, with `mvsFltSmoothingType` 1→0 | Unused |
-| `Texturing_MaxTextureCount4_16k.xml` | texturing | `GenerateModel.bat` step [6/8] | **4 × 16K adaptive** — the production texture budget | **Production** |
-| `Texturing_MaxTextureCount1_16k.xml` | texturing | `SetVariables.bat` only | 1 × 16K | Unused |
-| `Texturing_MaxTextureCount1_8k.xml` | texturing | `SetVariables.bat` only | 1 × 8K | Unused |
-| `Texturing_MaxTextureCount4_8k.xml` | texturing | `SetVariables.bat` only | 4 × 8K | Unused |
-| `Texturing_HighPolyTexture.xml` | texturing | `AlignImagesFromFolder.bat` (deprecated) | 2 × 16K | Legacy |
-| `Texturing_SimplifiedTexture.xml` | texturing | `AlignImagesFromFolder.bat` (deprecated) | **byte-identical to `Texturing_HighPolyTexture.xml`** | Legacy duplicate |
-| `Texturing_FixedTexelSize100perQuality.xml` | texturing | `SetVariables.bat` only | `FixedTexelSize`, type 0 (optimal texel), gutter 10, max 8K, large-tri thr 400 | Unused |
-| `Texturing_FixedTexelSize50perQuality.xml` | texturing | `SetVariables.bat` only | same but type 1 (2× optimal = 50 % quality) | Unused |
-| `Unwrapping_Simplified_4x16k.xml` | unwrap | `GenerateModel.bat` step [8/8] | 4 × 16K, min 512, `Geometric`, gutter 2, large-tri thr 10 | **Production** |
-| `Unwrapping_Simplified.xml` | unwrap | `AlignImagesFromFolder.bat` (**deprecated** workflow) only — `GenerateModel.bat` references the 4×16k file exclusively | same but 1 × 16K | Legacy; superseded by the 4× variant |
-| `ReprojectionParams.xml` | reprojection | `GenerateModel.bat` step [8/8] | **enables colour reprojection** (`allowColor=true`, `enableColor=-1`, `sourceColorLayer=Color8_0`), `normal=2` | **Production** |
+| `Texturing_MaxTextureCount4_8k.xml` | texturing | `GenerateModel.bat`; `ModelToFinal.bat` preset `4x8k`; declared in `SetVariables.bat` | **4 × 8K**, `MaxTexturesCount` style | **Production** |
+| `Texturing_MaxTextureCount4_16k.xml` | texturing | **nothing** | 4 × 16K adaptive | Unreferenced |
+| `Texturing_MaxTextureCount1_16k.xml` | texturing | `ModelToFinal.bat` preset `16k`; declared in `SetVariables.bat` | 1 × 16K | Optional preset |
+| `Texturing_MaxTextureCount1_8k.xml` | texturing | `ModelToFinal.bat` preset `8k`; declared in `SetVariables.bat` | 1 × 8K | Optional preset |
+| `Texturing_HighPolyTexture.xml` | texturing | `ModelToFinal.bat` preset `highpoly` | 2 × 16K | Optional preset |
+| `Texturing_SimplifiedTexture.xml` | texturing | **nothing** | **byte-identical to `Texturing_HighPolyTexture.xml`** | Unreferenced duplicate |
+| `Texturing_FixedTexelSize100perQuality.xml` | texturing | `ModelToFinal.bat` preset `fixed100`; declared in `SetVariables.bat` | `FixedTexelSize`, type 0 (optimal texel), gutter 10, max 8K, large-tri thr 400 | Optional preset |
+| `Texturing_FixedTexelSize50perQuality.xml` | texturing | `ModelToFinal.bat` preset `fixed50`; declared in `SetVariables.bat` | same but type 1 (2× optimal = 50 % quality) | Optional preset |
+| `Unwrapping_Simplified_4x8k.xml` | unwrap | `GenerateModel.bat`; `ModelToFinal.bat` preset `4x8k` | 4 × 8K, min 512, `Geometric`, gutter 2, large-tri thr 10 | **Production** |
+| `Unwrapping_Simplified_4x16k.xml` | unwrap | **nothing** | 4 × 16K, min 512, `Geometric`, gutter 2, large-tri thr 10 | Unreferenced |
+| `Unwrapping_Simplified.xml` | unwrap | `ModelToFinal.bat` (presets other than `4x8k`) | 1 × 16K | Optional preset |
+| `ReprojectionParams.xml` | reprojection | `GenerateModel.bat`; `ModelToFinal.bat`; declared in `SetVariables.bat` | **enables colour reprojection** (`allowColor=true`, `enableColor=-1`, `sourceColorLayer=Color8_0`), `normal=2` | **Production** |
 | `ModelExportParamsOBJ_NiraParts.xml` | model export | `ExportDeliverables.bat` | OBJ, **by parts**, png, scale 1.0, number format 6, CRS type 3 — Nira's documented layout | **Production** |
 | `ModelExportParamsFBX_Parts.xml` | model export | `ExportDeliverables.bat` | FBX, **by parts**, materials on, png, scale 1.0 | **Production** |
 | `ModelExportParamsPLY_DensePoints.xml` | model export | `ExportDeliverables.bat` | PLY, **vertex colours on, textures off**, scale 1.0 | **Production** |
 | `ModelExportParams.xml` | model export | `SetVariables.bat` + declared in `ExportDeliverables.bat` | generic v13, scale 100, jpg | Unused as an argument |
-| `ModelExportParamsObj.xml` | model export | **nothing** (`SetVariables.bat` refers to `ModelExportParamsOBJ.xml`, which resolves only because NTFS is case-insensitive — and the variable is never consumed) | OBJ, scale 100, `Unreal` preset, jpg, a `_Normal_0` layer | Unreferenced |
-| `ModelExportParamsGLB.xml` | model export | `SetVariables.bat` only | GLB, scale 10, rotation X `-90.0`, **embedded jpeg** | Unused |
-| `ModelExportParamsFBX_U1V1.xml` | model export | `SetVariables.bat` only | FBX, tile `_u1_v1`, no materials, 32bppBGRA | Unused |
-| `ModelExportParamsFBX_U1V1_material.xml` | model export | `SetVariables.bat` only | same + materials + normal layer | Unused |
-| `ModelExportParamsFBX_UV.xml` | model export | `SetVariables.bat` only | FBX, tile `(u,v)` | Unused |
-| `ModelExportParamsFBX_UDIM.xml` | model export | `SetVariables.bat` only | FBX, UDIM tiles, no materials | Unused |
-| `ModelExportParamsFBX_UDIM_material.xml` | model export | `SetVariables.bat` only | FBX, UDIM tiles + materials + normal layer | Unused |
+| `ModelExportParamsObj.xml` | model export | `ModelToFinal.bat` format `obj` (`SetVariables.bat` also refers to `ModelExportParamsOBJ.xml`, which resolves only because NTFS is case-insensitive) | OBJ, scale 100, `Unreal` preset, jpg, a `_Normal_0` layer | Optional format |
+| `ModelExportParamsObj_Metric.xml` | model export | `ModelToFinal.bat` format `objmetric` | OBJ at scale 1.0, georeferenced, jpg, normal layer, not by parts | Optional format |
+| `ModelExportParamsGLB.xml` | model export | `ModelToFinal.bat` format `glb`; declared in `SetVariables.bat` | GLB, scale 10, rotation X `-90.0`, **embedded jpeg** | Optional format |
+| `ModelExportParamsFBX_U1V1_material.xml` | model export | `ModelToFinal.bat` format `fbx`; declared in `SetVariables.bat` | FBX, tile `_u1_v1`, materials + normal layer | Optional format |
+| `ModelExportParamsFBX_U1V1.xml` | model export | declared in `SetVariables.bat` only | FBX, tile `_u1_v1`, no materials, 32bppBGRA | Unused |
+| `ModelExportParamsFBX_UV.xml` | model export | declared in `SetVariables.bat` only | FBX, tile `(u,v)` | Unused |
+| `ModelExportParamsFBX_UDIM.xml` | model export | declared in `SetVariables.bat` only | FBX, UDIM tiles, no materials | Unused |
+| `ModelExportParamsFBX_UDIM_material.xml` | model export | declared in `SetVariables.bat` only | FBX, UDIM tiles + materials + normal layer | Unused |
 
-[VERIFIED-by-probe: repo-wide reference scan excluding `Metadata/` itself, plus per-file reads and
-MD5 comparison, 2026-08-04]
+[VERIFIED-by-probe for the profile contents: per-file reads and MD5 comparison, 2026-08-04;
+VERIFIED-by-inspection for the file list and the "Consumed by" column against the current
+checkout]
 
-Summary: of 34 profiles, **10 are in the production path** (`AlignmentParams`, `FlightLogParams`,
-`SimplifyNoise`, `SimplifySmooth_80per`, `Texturing_MaxTextureCount4_16k`,
-`Unwrapping_Simplified_4x16k`, `ReprojectionParams`, and the three `ExportDeliverables` model-export
-profiles), **4 belong to the deprecated `AlignImagesFromFolder.bat`** (`SimplifyAutomationParams`,
-`Texturing_HighPolyTexture`, `Texturing_SimplifiedTexture`, `Unwrapping_Simplified`), and the
-remaining **20 are declared-but-unconsumed or entirely unreferenced**.
+Summary: of 36 profiles, **10 are in the production path** (`AlignmentParams`, `FlightLogParams`,
+`SimplifyNoise`, `SimplifySmooth_80per`, `Texturing_MaxTextureCount4_8k`,
+`Unwrapping_Simplified_4x8k`, `ReprojectionParams`, and the three `ExportDeliverables` model-export
+profiles), **10 are optional presets or formats of `ModelToFinal.bat`** (five texturing presets,
+`Unwrapping_Simplified`, and four export formats), and the remaining **16 are
+declared-but-unconsumed or entirely unreferenced**.
 
 ### 4.2 Which profile to pick when
 
@@ -2058,8 +2063,8 @@ trusting a filename.
    (MD5 `ba7b5ba9b6e9d7f9c7b4b0e3ca0eb0d9`). The "Surface" name asserts a `mvsFltSmoothingStyle`
    semantic that has never been verified. [VERIFIED-by-probe]
 3. **`Texturing_SimplifiedTexture.xml` is byte-identical to `Texturing_HighPolyTexture.xml`**
-   (MD5 `d97f57c353d62570a3fe6ba51c834112`) — both 2 × 16K. The deprecated workflow that uses them
-   therefore textures the simplified model at high-poly settings. [VERIFIED-by-probe]
+   (MD5 `d97f57c353d62570a3fe6ba51c834112`) — both 2 × 16K. Only `Texturing_HighPolyTexture.xml` is
+   used (`ModelToFinal.bat` preset `highpoly`). [VERIFIED-by-probe]
 4. **`SimplifyNoise_Params.xml` (70 % rel) and `SimplifySmooth_80per_Params.xml` (80 % rel) are
    placeholders** derived from the 50 % template, not GUI exports of custom presets. They are
    nonetheless in the production model recipe. If custom presets exist they should be exported over
