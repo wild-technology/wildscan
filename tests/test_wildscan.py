@@ -445,7 +445,9 @@ def test_portal_walks_session_to_stage_pick(tmp_path, store):
             await pilot.pause()
             assert isinstance(app.screen, StagePickScreen)
             picker = app.screen.query_one("#stage-pick")
-            assert picker.option_count == 9
+            # One option per stage: preprocess, batch, align, merge, model,
+            # export, publish (extract and georeference were removed).
+            assert picker.option_count == len(session_mod.ALL_STAGES) == 7
             assert results.is_dir(), "the results root must be auto-created"
     asyncio.run(drive())
 
