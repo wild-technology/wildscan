@@ -81,7 +81,7 @@ DEFAULT_INSTANCE_NAME = 'RS1'
 
 # Console-subsystem children (tasklist, cmd) each pop a visible console
 # window when their parent has none - over a long run that is hundreds of
-# flashing windows stealing focus (operator report, 2026-07-23). Suppress on
+# flashing windows stealing focus. Suppress on
 # every helper subprocess; harmless for GUI-subsystem RealityScan.exe.
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 
@@ -98,7 +98,7 @@ EXECUTABLE_CANDIDATES = [
 # a warning only — large datasets can legitimately be quiet for a long time.
 STALL_WARNING_SECONDS = 2 * 60 * 60
 # Near-OOM, RealityScan slows to a crawl WITHOUT crashing and without
-# spilling to disk (observed, 2026-07-24) — in the progress feed
+# spilling to disk — in the progress feed
 # that is indistinguishable from a hang or a quiet compute phase, so the
 # monitor samples available RAM and warns when it gets low.
 LOW_MEMORY_WARN_GB = 4.0
@@ -198,14 +198,14 @@ STATUS_CALL_TIMEOUT_SECONDS = 60
 # Python's list2cmdline quotes an argument only when it contains WHITESPACE,
 # and cmd re-parses even a quoted argument, so these characters are silently
 # eaten, split on, or executed when a path or name crosses into a .bat.
-# Measured with an echo-only .bat (audit 2026-08-07), every case rc=0:
-#   'D:\NA167 Wreck & Debris\exports' -> ARG1='D:\NA167 Wreck ', the rest RUN
-#   'D:\NA167^b\exports'              -> 'D:\NA167b\exports'  (caret eaten)
-#   'D:\dive\a=b\exports'             -> split; every later positional shifts
-#   'D:\dive\with,comma\final'        -> split
-# ARCHITECTURE.md hard rule 8 names this trap for delimited DATA; nothing enforced
-# it for PATHS, which is exactly what a fresh user supplies ("NA167, dive 2",
-# "Wreck & Debris" are ordinary expedition folder names).
+# With an echo-only .bat, every case rc=0:
+#   '<root>\Wreck & Debris\exports' -> ARG1='<root>\Wreck ', the rest RUN
+#   '<root>\a^b\exports'            -> '<root>\ab\exports'  (caret eaten)
+#   '<root>\a=b\exports'            -> split; every later positional shifts
+#   '<root>\with,comma\final'       -> split
+# ARCHITECTURE.md hard rule 8 names this trap for delimited DATA; this guard
+# enforces it for PATHS, which is exactly what a fresh user supplies ("run, 2",
+# "Wreck & Debris" are ordinary folder names).
 #
 # ':' and '\' are absent deliberately - every argument here is a Windows
 # path. '%' and '!' ARE included: %VAR% expands at parse time and ! expands
@@ -258,8 +258,7 @@ def set_project_save_env(zone_images_root: str, label: str) -> str:
 
     Projects live in RC_projects ONE LEVEL UP from the zone image
     directory, one copy per day per scene named
-    {expedition_dive}_{zone|merged}_YYYYMMDD.rsproj (project requirement
-    2026-07-23). The scripts compose the filename from
+    {label}_{zone|merged}_YYYYMMDD.rsproj. The scripts compose the filename from
     RS_PROJECT_LABEL/RS_PROJECT_DATE; scenes re-saved later the same day
     overwrite that day's copy, a new day starts a fresh copy.
 
@@ -294,9 +293,7 @@ class RealityScanCLI:
         # rs_settings.json -> default. The env var was previously only ever
         # WRITTEN (for the .bat layer), never read - so a driver exporting
         # RS_INSTANCE=RS2 for isolation silently ran on whatever the settings
-        # file held, and could -quit a live instance it did not own
-        # (2026-07-28: an overlap-probe session running from this checkout
-        # landed on RS1 while it was the production instance; audit #19).
+        # file held, and could -quit a live instance it did not own.
         self.instance_name = (
             instance_name
             or os.environ.get('RS_INSTANCE')
@@ -417,8 +414,8 @@ class RealityScanCLI:
         exists but is unresponsive - same conservative reading as
         :meth:`is_instance_running`).
 
-        stdout goes to a temporary FILE, never a pipe (WINDOWS TRAP recorded
-        2026-08-07): startRealityScan.bat launches the GUI-subsystem
+        stdout goes to a temporary FILE, never a pipe:
+        startRealityScan.bat launches the GUI-subsystem
         instance via ``start ""`` and that child INHERITS any captured
         stdout/stderr pipe handles, keeping the pipe alive for the
         instance's whole life - so pipe capture anywhere near a boot path
@@ -560,8 +557,7 @@ class RealityScanCLI:
     def _clear_markers(self) -> None:
         # -getStatus can report an instance gone a few seconds before its
         # process fully exits and releases the progress-file handle
-        # (observed 2026-07-23: next workflow's marker clear raced the
-        # teardown). Retry briefly (per file) before declaring the
+        # (the next workflow's marker clear can race the teardown). Retry briefly (per file) before declaring the
         # instance alive.
         for kind in ('progress', 'errors', 'results'):
             deadline = time.monotonic() + 60
@@ -758,8 +754,7 @@ class RealityScanCLI:
         # is "never boot, never reset". Booting from here would go through
         # startRealityScan.bat, whose already-running branch issues
         # '-newScene -deleteAutosave' and destroys the very scene this
-        # workflow exists to finish (the ON2026 near-miss, status log
-        # 2026-08-07).
+        # workflow exists to finish.
         status = self.get_instance_status(instance)
         if status is None:
             raise RuntimeError(
@@ -809,7 +804,7 @@ class RealityScanCLI:
             # absence is not success, and clearing a foreign instance's
             # markers would corrupt error detection mid-run.
             #
-            # OWN-instance exception (live gate B9, 2026-08-07): when
+            # OWN-instance exception: when
             # attaching to the instance THIS checkout owns, a previous
             # run's ErrorWriter entries are ours and legitimately stale -
             # they tripped ModelToFinal's own-marker gate on the very
@@ -833,7 +828,7 @@ class RealityScanCLI:
                                 # Second sharing violation: warn and let the
                                 # .bat's own marker gate produce the loud
                                 # abort - do not kill the attach before the
-                                # workflow even starts (clean-sweep 2026-08-07).
+                                # workflow even starts.
                                 self.logger.warning(
                                     'Could not clear stale own marker %s - '
                                     'the workflow marker gate may abort on it.',
@@ -985,7 +980,7 @@ class RealityScanCLI:
                 # '#timeout'-tagged progress is RealityScan reporting a
                 # stalled operation: the elapsed counter keeps ticking, so
                 # treating those lines as activity muted the stall warning
-                # for 6 h while -importComponent hung (2026-07-23).
+                # for as long as an operation hung.
                 if not line.rstrip().endswith('#timeout'):
                     last_activity = time.monotonic()
                     stall_warned = False
@@ -1033,18 +1028,15 @@ class RealityScanCLI:
         # Free space on the drive this trace lives on - the drive holding
         # the project and its scratch data. RealityScan surfaces a full disk as
         # HRESULT 0x80070070 through the process hook, indistinguishable from
-        # any other failure without this column: the hull model ran 143 min and
-        # died on ERROR_DISK_FULL at the texture step while this very trace
-        # recorded only CPU and RAM (2026-07-26).
+        # any other failure without this column.
         try:
             disk_free = shutil.disk_usage(
                 os.path.dirname(trace.name) or '.').free / (1024 ** 3)
         except OSError:
             disk_free = None
-        # ...and on the CACHE drive, which is a DIFFERENT disk and is the one
-        # that actually killed the hull model three times. The column above
-        # watched the project drive and read 773.9 GB free for a whole run
-        # while this one hit zero (2026-07-26).
+        # ...and on the CACHE drive, which can be a DIFFERENT disk: the
+        # project drive can show ample free space while the cache drive
+        # fills up.
         cache_dir = os.environ.get('RS_CACHE_DIR')
         cache_free = None
         if cache_dir:

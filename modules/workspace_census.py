@@ -1,8 +1,7 @@
 """Workspace model: pure artifact-census logic, no UI, no subprocesses.
 
-Moved here from wildscan/workspace.py (2026-08-07, consolidation step 8):
-run_models.py needs the census without dragging in the TUI package, and
-the layering rule is that wildscan may import modules, never the reverse.
+Lives in modules rather than wildscan because run_models.py needs the
+census without dragging in the TUI package, and the layering rule is that wildscan may import modules, never the reverse.
 wildscan.workspace remains as a re-export shim for compatibility.
 
 Everything the app shows is derived from artifacts the canonical pipeline
@@ -15,11 +14,11 @@ already writes - the same signals the unattended drivers use to resume:
     <merge>/merge_report.json       merge terminal + EVALUATION_READY.txt
     <merge>/assembly/*.rsproj       the assembly project
     models_report.json              modelled components (run_models.py -
-                                    the CURRENT writer; the two H2024
+                                    the CURRENT writer; the two
                                     names below are legacy and kept
                                     readable so old workspaces still
                                     census)
-    final_report.json               modelled components (legacy H2024)
+    final_report.json               modelled components (legacy)
     fused_models_report.json        fused-component models + measured scale
     exports/<comp>/{obj,fbx,ply}    deliverable exports
 
@@ -98,10 +97,10 @@ def _find_flight_logs(root: Path) -> list[Path]:
 
 
 # Model-report filenames, newest convention FIRST. run_models.py writes
-# models_report.json (both modes); the other two are the retired H2024
+# models_report.json (both modes); the other two are retired
 # driver names, still read so an old workspace censuses correctly. Adding
 # models_report.json here is what stops the portal re-ticking a finished
-# model stage on every resume (audit 2026-08-07).
+# model stage on every resume.
 MODEL_REPORT_NAMES = ("models_report.json", "final_report.json",
                       "fused_models_report.json")
 
@@ -121,7 +120,7 @@ def _records(report: dict, *keys: str) -> list[dict]:
     _load_json guards I/O and JSON errors but not SHAPE: a report whose
     ``clusters`` is a dict (or whose entries are strings) used to crash the
     census with ``AttributeError: 'str' object has no attribute 'get'``
-    (audit 2026-08-07). Anything that is not a dict record is dropped.
+    Anything that is not a dict record is dropped.
     """
     for key in keys:
         value = report.get(key)
@@ -309,7 +308,7 @@ class Workspace:
         # Zone folders that hold NO images are the flight-log/disk filename
         # mismatch artifact - the batcher created the folders and copied
         # nothing. Counting folders alone reported that 'done' and handed
-        # empty trees to alignment (audit 2026-08-07).
+        # empty trees to alignment.
         if zones and total == 0:
             return StageStatus("batch", "blocked",
                                f"{len(zones)} zone folders but ZERO images "
@@ -369,7 +368,7 @@ class Workspace:
         # The gate file alone is not proof: merge_zones used to write it
         # BEFORE checking the assembly workflow's result, so a failed
         # assembly left a document declaring a terminal state for a project
-        # that was never saved (audit 2026-08-07). Require the recorded
+        # that was never saved. Require the recorded
         # workflow_success too - absent (older reports) still counts.
         assembly = report.get("assembly")
         assembly_ok = (not isinstance(assembly, dict)
@@ -465,7 +464,7 @@ class Workspace:
                 details.append(f"{c.name}: {', '.join(sorted(kinds))}")
         # The denominator is what the MERGE declared final, not what
         # exports/ happens to contain: measuring exports against itself
-        # reported "1 of 1" for a 1-of-6 export (audit 2026-08-07).
+        # reported "1 of 1" for a 1-of-6 export.
         expected = set()
         merge = self.latest_merge()
         if merge:

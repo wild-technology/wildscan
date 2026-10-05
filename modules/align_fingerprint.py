@@ -6,7 +6,7 @@ Records the alignment inputs needed for retries and downstream verification:
   component (align had no equivalent of the batcher's batch_inputs.json);
 - resume logic (any driver's zone_done) was nav-blind: any .rsalign +
   .json = skip, even when the components were built from a superseded
-  flight log (the two-frames incident class, C-20260805-01);
+  flight log;
 - merged deliverables carried no record of frame/settings unanimity
   across their input zones.
 

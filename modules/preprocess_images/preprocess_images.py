@@ -4,12 +4,11 @@ Canonical implementation of the CLAHE / white-balance transforms; the
 manual check (scripts/validation/check_preprocessing.py) imports from here
 rather than maintaining its own copy.
 
-Defaults (CLAHE clip 2.0, 8x8 tiles, no white balance) come from the
-2026-07-21 zone_9 A/B iteration on a 400-image subset:
-baseline registered 0/400 images (alignment produced no component at
-all), CLAHE 2.0/8x8 registered 59.8%, every neighboring clip/tile setting
-scored lower, and adding gray-world white balance dropped registration to
-~34%. See rs_cli_tests/REPORT.md from that run.
+Defaults (CLAHE clip 2.0, 8x8 tiles, no white balance) come from an A/B
+comparison on an image subset: without CLAHE alignment produced no
+component, CLAHE 2.0/8x8 registered the most images, every neighboring
+clip/tile setting scored lower, and adding gray-world white balance
+lowered registration.
 
 Originals are never modified: processed copies are written to
 <output_dir>/preprocessed_images with the input's folder structure and the

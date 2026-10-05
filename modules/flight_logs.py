@@ -33,7 +33,7 @@ from typing import Iterable, NamedTuple
 # MGRS latitude bands C..M lie south of the equator, N..X north (I and O
 # are never used). The band letter rides along in the flight-log filename
 # (utm.from_latlon's zone letter), so the EPSG code can be derived instead
-# of hand-edited per cruise in FlightLogParams.xml.
+# of hand-edited per dataset in FlightLogParams.xml.
 _SOUTH_BANDS = set('CDEFGHJKLM')
 _NORTH_BANDS = set('NPQRSTUVWX')
 
@@ -49,9 +49,8 @@ def assert_one_zone(paths, context: str) -> tuple[int, str] | None:
     including a mix of tagged and untagged names.
 
     Determinism is not correctness: picking "the first" log out of a
-    mixed-zone directory georeferences the other cruise's imagery ~2,000 km
-    away, silently, under a CRS derived from the wrong filename
-    (audit 2026-08-07).
+    mixed-zone directory georeferences the other dataset's imagery far
+    away, silently, under a CRS derived from the wrong filename.
     """
     seen: dict[tuple[int, str] | None, list[str]] = {}
     for path in paths:
@@ -98,7 +97,7 @@ def find_flight_log(*directories: str | None) -> str | None:
 
 def utm_zone_from_flight_log_name(path: str) -> tuple[int, str] | None:
     """(zone number, band letter) parsed from a flight-log filename like
-    ``flight_log_53N_UTM.txt`` / ``flight_log_NA167_H2075_53N_UTM.txt``,
+    ``flight_log_53N_UTM.txt`` / ``flight_log_<run>_53N_UTM.txt``,
     or None when the name carries no zone tag."""
     match = _ZONE_IN_NAME.search(os.path.basename(path))
     if not match:
@@ -134,7 +133,7 @@ def validate_utm_zone(zone, band) -> tuple[int, str]:
     below took whatever they were handed, so a typo produced a
     plausible-looking but nonexistent CRS with exit code 0 - and an
     unknown band silently fell into the NORTHERN branch, turning a
-    southern-hemisphere typo into a northern EPSG (audit 2026-08-07).
+    southern-hemisphere typo into a northern EPSG.
     """
     try:
         zone_int = int(zone)
@@ -157,8 +156,7 @@ def crs_for_flight_log(path: str | None) -> str | None:
     The publish path needs this: georeferenced OBJ/FBX exports carry raw
     UTM metres (ModelExportParamsOBJ_NiraParts sets
     MvsExportIsGeoreferenced with scale 1.0 and no offset), and uploading
-    them without a CRS puts the asset in the wrong part of the world
-    (audit 2026-08-07).
+    them without a CRS puts the asset in the wrong part of the world.
     """
     if not path:
         return None
@@ -184,8 +182,7 @@ def _read_params_template(template_path: str) -> str:
 
     Named instead of a raw FileNotFoundError (missing file) or
     PermissionError (a DIRECTORY passed as the template) out of open(),
-    so the operator is told WHICH file the pipeline wanted
-    (audit 2026-08-07).
+    so the operator is told WHICH file the pipeline wanted.
     """
     if not os.path.isfile(template_path):
         raise FileNotFoundError(
@@ -236,7 +233,7 @@ def write_flight_log_params(template_path: str, output_path: str,
         lambda m: m.group(1) + crs_type + m.group(2), content)
 
     # A bare relative output name has no dirname; makedirs('') raises
-    # WinError 3 (audit 2026-08-07).
+    # WinError 3.
     out_dir = os.path.dirname(output_path)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)

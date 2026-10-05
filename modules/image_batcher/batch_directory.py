@@ -107,11 +107,11 @@ class BatchDirectory(RSModule):
             default_value=0.0,
             description='Donated overlap images further than this from the '
                         'receiving zone are dropped. 0 keeps the legacy '
-                        'uncapped behaviour. The right band width is an OPEN '
-                        'question (overlap probe, 2026-07-28) - what is not '
-                        'open is that uncapped donation nullified H2023\'s '
-                        'zoning entirely (zone_1 ended with 98.7%% of the '
-                        'dive).',
+                        'uncapped behaviour. Uncapped '
+                        'donation can let one zone '
+                        'absorb nearly the whole '
+                        'dataset, nullifying the '
+                        'zoning.',
             prompt_user=False
         )
 
@@ -168,9 +168,9 @@ class BatchDirectory(RSModule):
                          'structure (shipwreck masts/hull): XY-only zones are '
                          'vertical columns mixing depth strata whose imagery '
                          'shares no visual field, fragmenting every zone into '
-                         'per-stratum components (ON2026 diagnosis '
-                         '2026-07-30: zone_2 = 7 components in disjoint Z '
-                         'bands over one 6x4 m footprint).'),
+                         'per-stratum components in disjoint Z '
+                         'bands over one '
+                         'footprint.'),
             prompt_user=False
         )
 
@@ -190,7 +190,7 @@ class BatchDirectory(RSModule):
                          'zone flight log whose filename column carries those '
                          'same full paths, so every zone references the ONE '
                          'on-disk file and overlap images are genuinely shared '
-                         'cameras (project decision 2026-08-08). pool '
+                         'cameras. pool '
                          'requires the '
                          'align stage to add images from the .imagelist.'),
             prompt_user=False
@@ -224,10 +224,9 @@ class BatchDirectory(RSModule):
                     h.update(chunk)
             digest = h.hexdigest()
         # EVERY parameter that changes zone membership belongs here. The
-        # overlap distance ceiling was added 2026-07-28 and initially left
-        # out - which would have let a re-run with a new ceiling silently
-        # reuse zones built without one, the exact fail-open the guard was
-        # written to close (final review, must-fix #1).
+        # overlap distance ceiling included: leaving it out would let a re-run
+        # with a new ceiling silently reuse zones built without one, the exact
+        # fail-open the guard exists to close.
         keys = ('batch_target_images_per_zone', 'batch_min_zone_size',
                 'batch_max_zone_size', 'batch_initial_overlap_percent',
                 'batch_density_weight', 'batch_kde_bandwidth',
@@ -269,10 +268,9 @@ class BatchDirectory(RSModule):
         The unattended resume path reuses an existing batched folder, which is
         only sound while the flight log and batching parameters are unchanged -
         `__copy_files` skips files already present, so it cannot remove a zone
-        member that the new zoning no longer wants. When the lever-arm fix
-        changed every Port position, reuse left the previous zoning in place
-        and the folders ended up holding 12,679 images against a reported
-        9,834 (2026-07-26). Nothing detected it. Now the premise is checked.
+        member that the new zoning no longer wants. When positions change,
+        reuse would leave the previous zoning in place and the folders would
+        hold more images than reported, undetected. So the premise is checked.
 
         Returns (ok, message).
         """
@@ -356,12 +354,9 @@ class BatchDirectory(RSModule):
         plt.show() BLOCKS on an interactive backend until the window is
         dismissed, and the second plot cannot even appear until the first is
         closed (observed). The previous guard inferred a human from
-        sys.stdin.isatty() - but isatty() lies under hidden consoles (this
-        repo's own Windows-traps list), and the batcher kept stalling for
-        hours after the gate landed: 2 h 53 min between the two figure saves
-        on a run with the gate 'active', against 1.35 s of actual zone
-        computation (measured 2026-07-28). Presence of a human is not
-        inferable here, so it must be declared. Both figures are always
+        sys.stdin.isatty() - but isatty() lies under hidden consoles, so an
+        unattended batcher could stall for hours on a figure window.
+        Presence of a human is not inferable here, so it must be declared. Both figures are always
         written as PNGs beside the zones; showing them is pure convenience.
         """
         if os.environ.get('RS_SHOW_PLOTS', '').strip() != '1':
@@ -391,7 +386,7 @@ class BatchDirectory(RSModule):
         # zone (or mix tagged and untagged names). Surface that message
         # and return None so validate_parameters reports "a valid flight
         # log is required" instead of an argparse-era traceback escaping
-        # to main.py (audit 2026-08-07).
+        # to main.py.
         try:
             return find_flight_log(os.path.join(output_dir, "raw_images"),
                                    output_dir)
@@ -423,7 +418,7 @@ class BatchDirectory(RSModule):
             # through here and blew up much later as a raw
             # `KeyError: 'filename'` inside __create_geographic_zones -
             # OUTSIDE run()'s try/except, i.e. an unhandled traceback out
-            # of main.py (audit 2026-08-07).
+            # of main.py.
             if 'filename' not in df.columns:
                 self.logger.error(
                     "Flight log has no 'filename' (or 'Name') column - found "
@@ -688,13 +683,10 @@ class BatchDirectory(RSModule):
                     final_zones.append(final_zone_files)
                     continue
 
-                # The donor pool is the ENTIRE rest of the dive, so the slice
-                # below must be capped against it: sized only by the RECEIVER,
-                # a large zone swallows most of everything else. Measured on
-                # H2023 (2026-07-28): zone_1's 20% overlap = 756 images = 93%
-                # of the whole remainder, leaving it with 4,540 of 4,598
-                # unique images (98.7% of the dive) spanning all three
-                # co-visibility blocks - the zoning was nullified. The cap is
+                # The donor pool is the ENTIRE rest of the dataset, so the
+                # slice below must be capped against it: sized only by the
+                # RECEIVER, a large zone swallows most of everything else and
+                # the zoning is nullified. The cap is
                 # symmetric: at most overlap_percent of the receiver AND at
                 # most overlap_percent of the donor pool.
                 overlap_size = int(len(zone_i) * (overlap_percent / 100.0))
@@ -855,8 +847,7 @@ class BatchDirectory(RSModule):
 
         Keys are LOWERCASED: Windows filesystems are case-insensitive, so a
         log naming `C231C0001.JPG` against `C231C0001.jpg` on disk used to
-        match nothing and produce zone folders holding zero images
-        (audit 2026-08-07)."""
+        match nothing and produce zone folders holding zero images."""
         by_name: dict[str, list[str]] = {}
         by_stem: dict[str, str] = {}
         by_path: dict[str, str] = {}
@@ -897,9 +888,8 @@ class BatchDirectory(RSModule):
         Returns (copied, missing). Both used to be discarded: a missing
         file emitted one warning and `continue`d, and run() reported its
         image count from the flight-log rows assigned to zones, never from
-        what actually landed on disk - so a whole-dive filename mismatch
-        copied nothing and still returned Success with a plausible number
-        (audit 2026-08-07).
+        what actually landed on disk - so a dataset-wide filename mismatch
+        copied nothing and still returned Success with a plausible number.
         """
         if file_index is None:
             file_index = self.__index_files(input_dir)
@@ -912,7 +902,7 @@ class BatchDirectory(RSModule):
         # bare lowercase basename - so resolution is by BASENAME. Two
         # different paths collapsing to one basename would then silently
         # copy the same indexed file under both rows' identities; refuse
-        # loudly instead (colmap_studio FINDINGS C-20260827-06).
+        # loudly instead.
         claimed: dict[str, str] = {}
         for file in files:
             raw = str(file)
@@ -1009,7 +999,7 @@ class BatchDirectory(RSModule):
         # A .tif/.heif dataset is recognised imagery elsewhere in the
         # pipeline (modules.image_exts.ALL_IMAGE_EXTS) but cannot be
         # batched here; say what is being left behind instead of filtering
-        # it away in silence (audit 2026-08-07).
+        # it away in silence.
         skipped = image_exts.skipped_by_extension(
             file_index[2], self.ACCEPTED_EXTENSIONS)
         if skipped:
@@ -1072,8 +1062,8 @@ class BatchDirectory(RSModule):
                     zone_flight_log_df[col] = ""
 
                 if layout == 'pool':
-                    # Rows carry the COMPLETE canonical path (project
-                    # decision 2026-08-08): every zone's rows name the
+                    # Rows carry the COMPLETE canonical path: every zone's
+                    # rows name the
                     # same on-disk file, so overlap images are shared
                     # cameras and merges can fuse.
                     zone_flight_log_df.index = [
@@ -1116,11 +1106,9 @@ class BatchDirectory(RSModule):
         An EXPLICIT caller value (a --b_min flag reaching the Parameter)
         must WIN over rs_settings.json; the stored value is only a
         convenience default for an unanswered prompt. Before this, the
-        'batch' section beat the command line: with the repo's stored
-        min_zone_size=300 (from NA173) and --b_min 2000, the batcher zoned
-        at 300 - and because both keys feed _input_fingerprint, the wrong
-        zoning was then recorded as legitimate provenance
-        (audit 2026-08-07). Mirrors SettingsStore.ask's precedence, which
+        'batch' section beat the command line: a stored min_zone_size
+        overrode --b_min, and because both keys feed _input_fingerprint, the
+        wrong zoning was then recorded as legitimate provenance. Mirrors SettingsStore.ask's precedence, which
         already gets this right, and the reason the merge driver pins its
         options rather than inheriting them.
         """
@@ -1292,11 +1280,11 @@ class BatchDirectory(RSModule):
 
             # FAIL CLOSED on what actually landed on disk. The summary used
             # to be built from the ZONE LISTS ('Total Images in Batches'),
-            # so a whole-dive filename mismatch - extension case, path-
+            # so a dataset-wide filename mismatch - extension case, path-
             # qualified names in the log - copied nothing, reported
             # Success with a plausible number, wrote the 'complete'
             # fingerprint (which then blessed the empty tree for reuse) and
-            # handed empty folders to alignment (audit 2026-08-07).
+            # handed empty folders to alignment.
             if copied == 0:
                 self.logger.error(
                     'ZERO images were copied into the zone folders: none of '

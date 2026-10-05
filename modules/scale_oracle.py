@@ -9,25 +9,22 @@ georeferenced it.
 Method: the ratio of solved-to-nav distance over many random camera
 pairs. Pairwise distance is invariant to translation AND rotation, so the
 figure is meaningful even when a component's absolute placement is
-arbitrary - which it often is (see FINDINGS 2026-07-25).
+arbitrary - which it often is.
 
     ratio ~= 1.0   metrically sound
     ratio << 1.0   solve is SMALLER than reality (scale collapse)
     wide IQR       not a similarity error - drift, fold, or mixed bodies
 
-Discovered by this measurement: fresh-run zone_1 hull components solved
-at 0.175 and 0.220 (5.7x / 4.5x too small) while the bow and other zones
-solved at ~1.0. A uniform scale error is invisible in the viewer, so
-nothing upstream caught it.
+A component can solve several times too small while other zones solve at
+~1.0. A uniform scale error is invisible in the viewer and passes every
+other check.
 
-PROMOTED out of tests/ on 2026-07-26: this is a DELIVERABLE GATE, called by
-merge_zones before any model is generated, so it must not live beside the unit
-tests. A 0.236-scale H2024 component passed every existing check and reached a
-deliverable because nothing called this module (review finding D3).
+This is a DELIVERABLE GATE, called by merge_zones before any model is
+generated, so it does not live beside the unit tests.
 
 Positions come from the pose XMPs of an identity_r<K> harvest directory
-(zone-scene exports carry real stems - B10 only degrades imported-
-component scenes). Components are separated by successive difference,
+(zone-scene exports carry real stems; only imported-component scenes
+export ordinal sidecars). Components are separated by successive difference,
 exactly as the align workflow's identity loop defines them.
 """
 from __future__ import annotations
@@ -91,9 +88,8 @@ def component_members(components_dir: str) -> list[set]:
 def solved_position_cloud(identity_dir: str) -> list[tuple]:
     """EVERY pose position in a harvest dir, identity-free.
 
-    For FUSED components the sidecars are ORDINAL (B10) so stems carry no
-    identity and the stem-pairing oracle returns UNMEASURED - which is how
-    the scale gate correctly blocked the H2024 hull's model. The quantile
+    For FUSED components the sidecars are ORDINAL so stems carry no
+    identity and the stem-pairing oracle returns UNMEASURED. The quantile
     method below measures those components anyway. The frame is the model
     frame, not UTM; irrelevant, because distance ratios are rigid-invariant
     and the scale factor is exactly what is measured."""
@@ -146,9 +142,8 @@ def quantile_ratio_scale(solved: list[tuple], nav: list[tuple]) -> dict | None:
 
     Under a similarity transform, SORTED distances-from-centroid of the same
     camera multiset correspond rank-for-rank, so quantile ratios give median
-    + IQR without any pairing. Validated 2026-07-29: known-good zone_1_c1
-    measured 1.045 vs the stem oracle's 1.023 (same verdict); the hull's
-    clouds shrunk by 0.236 FAIL at 0.235. Gross non-similarity (drift, a
+    + IQR without any pairing, and agrees with the stem oracle's verdict on
+    known-good components and on clouds shrunk by a known factor. Gross non-similarity (drift, a
     fold) widens the IQR and trips the same wide-IQR call-out as the stem
     oracle."""
     if len(solved) < 30 or len(nav) < 30:
