@@ -29,6 +29,19 @@ from .. import camera_registry
 from .. import image_exts
 
 
+def _has_area(points: np.ndarray) -> bool:
+    """True when 2-D points span a nonzero area, i.e. a convex hull exists.
+
+    Coincident or collinear points have none, and Qhull rejects them.
+    """
+    if len(points) < 3:
+        return False
+    # Relative tolerance: UTM magnitudes leave rounding noise of about
+    # 1e-10 m after centring, which an exact rank test reads as area.
+    spread = np.linalg.svd(points - points.mean(axis=0), compute_uv=False)
+    return bool(spread[0] > 0 and spread[1] > spread[0] * 1e-9)
+
+
 class BatchDirectory(RSModule):
     ACCEPTED_EXTENSIONS = [".png", ".jpg", ".jpeg"]
 
@@ -499,7 +512,8 @@ class BatchDirectory(RSModule):
 
         labels = self.__density_aware_kmeans(coords, density, 2, density_weight)
 
-        return [zone_gdf[labels == 0].copy(), zone_gdf[labels == 1].copy()]
+        halves = [zone_gdf[labels == 0].copy(), zone_gdf[labels == 1].copy()]
+        return [half for half in halves if len(half)]
 
     def __find_nearest_zone(self, zone_gdf, other_zones):
         """Find the nearest zone based on centroid distance (3D when
@@ -538,7 +552,10 @@ class BatchDirectory(RSModule):
         labels = self.__density_aware_kmeans(coords, density, initial_k, density_weight)
         gdf['cluster'] = labels
 
+        # k-means returns empty clusters when k exceeds the number of
+        # distinct positions; an empty cluster is never a zone.
         zones = [gdf[gdf['cluster'] == i].copy() for i in range(initial_k)]
+        zones = [zone for zone in zones if len(zone)]
 
         # Iterative split/merge refinement
         max_iterations = 10
@@ -626,6 +643,22 @@ class BatchDirectory(RSModule):
         if coords.shape[1] == 3:
             self.logger.info("Z-aware batching: clustering and overlap "
                              "donation run in 3D (batch_use_z)")
+
+        distinct = np.unique(coords, axis=0)
+        if len(distinct) == 1:
+            self.logger.warning(
+                'All %d images share one position (%s); there is nothing to '
+                'zone, so they form a single zone. A static navigation fix '
+                'looks like this.', len(gdf),
+                ', '.join(f'{v:.3f}' for v in distinct[0]))
+            gdf['density'] = 1.0
+            gdf['cluster'] = 0
+            files = gdf['filename'].tolist()
+            return [list(files)], {0: files}, gdf
+        if not _has_area(distinct[:, :2]):
+            self.logger.info('Image positions are collinear (zero area): '
+                             'zones are computed as usual and drawn without '
+                             'outlines.')
 
         bw = float(kde_bw)
         if bw <= 0.0:
@@ -727,7 +760,8 @@ class BatchDirectory(RSModule):
 
         fig1, ax1 = plt.subplots(figsize=(12, 10))
         try:
-            sns.kdeplot(x=x, y=y, ax=ax1, cmap="viridis", fill=True, levels=25, bw_adjust=1.0, thresh=None)
+            sns.kdeplot(x=x, y=y, ax=ax1, cmap="viridis", fill=True, levels=25, bw_adjust=1.0, thresh=None,
+                        warn_singular=False)
             sc = ax1.scatter(x, y, c=gdf['density'].to_numpy(), cmap='viridis', s=10)
             cbar = fig1.colorbar(sc, ax=ax1)
             cbar.set_label('Density')
@@ -779,7 +813,7 @@ class BatchDirectory(RSModule):
             zy = zone_gdf.geometry.y.to_numpy(dtype=np.float64, copy=False)
             ax2.scatter(zx, zy, color=color, label=f'Zone {i + 1}', s=25, alpha=0.8)
 
-            if len(zone_gdf) >= 3:
+            if _has_area(np.column_stack([zx, zy])):
                 try:
                     points = np.column_stack([zx, zy])
                     hull = ConvexHull(points)
