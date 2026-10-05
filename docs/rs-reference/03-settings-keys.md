@@ -125,7 +125,7 @@ Three consequences, all observed together:
    were declared void and re-run.
 
 [VERIFIED: NA167 B5; FINDINGS 2026-07-23; the NA167 log item 15;
-docs/validation/merge_test_plan.md §5 item 7 — the two log lines above are quoted from
+ea3ad5d:docs/validation/merge_test_plan.md §5 item 7 — the two log lines above are quoted from
 the NA167 log item 15]
 
 Two mandatory mitigations, both in force in this repo:
@@ -252,7 +252,7 @@ set "RS_CACHE_ARGS=-set "appCacheLocation=Custom" -set "appCacheCustomLocation=%
 | Question | Answer | Source |
 |---|---|---|
 | Does a `-set` value survive `-newScene`? | Yes. The namespace is application-global, not per-scene. | [INFERRED from global storage + persistence across restarts; no cell isolated it] |
-| Does a `-set` value survive an instance restart? | **Yes.** `docs/validation/merge_test_plan.md` §3 lists "swept `-set` keys are pinned in every cell (values persist across instance restarts)" as a standing contamination control, i.e. the persistence was treated as established and designed around. Corroborated independently below: the settings live in a **registry** blob, not in process memory. | [VERIFIED-as-control-in-force: docs/validation/merge_test_plan.md §3, 2026-07-23 — no cell isolated persistence as its measured variable] + [VERIFIED: registry read, below] |
+| Does a `-set` value survive an instance restart? | **Yes.** `ea3ad5d:docs/validation/merge_test_plan.md` §3 lists "swept `-set` keys are pinned in every cell (values persist across instance restarts)" as a standing contamination control, i.e. the persistence was treated as established and designed around. Corroborated independently below: the settings live in a **registry** blob, not in process memory. | [VERIFIED-as-control-in-force: ea3ad5d:docs/validation/merge_test_plan.md §3, 2026-07-23 — no cell isolated persistence as its measured variable] + [VERIFIED: registry read, below] |
 | Where is the state stored? | `HKCU\Software\EpicGames.RealityScan\RealityScan\Workspace`, values `appConfig` (REG_BINARY, 33,325 bytes on this machine) and `appSharedConfig` (REG_BINARY, 158 bytes). **`appConfig` is a UTF-16LE key/value serialisation and the key names ARE readable** — decoding it yields `appCacheLocation`, `appQuitOnError`, `appProcessAction`, `appProcessActionTime`, `appProcessExecCmd`, `appCacheCustomLocation`, `appCacheImageMetadata`, `appQuitOnReset`, `s235l`/`s236l`/`s237l`/`s250`…, `ifCSopt`, `ifuuInh`, `ifuuInhEn`, `ifKmode`, `mvsFlt*`, `reprojectionTool_*`, `gpsLogFileFormat`, `csvFLSep`, and ~460 more tokens. `appSharedConfig` holds only `appVersion` / `appSubVersion` / `appMinorVersion` / `appBuildVersion`. | [UNDOCUMENTED: read-only registry read + UTF-16LE decode of the blob, this build] — **corrects an earlier claim in this document that the blobs were opaque** |
 | How do I wipe it? | `-reset cfg` (settings), `-reset ui`, `-reset cfgui`, `-reset all` (clean-install equivalent). **Works only from a batch file and never with delegation.** | [OFFICIAL: appbasics/allcommands, tutorials/commandline_4] |
 | Do two concurrent instances share settings? | Unknown. Never exercised — multi-instance parallelism has never been run here. | [OPEN] |
@@ -543,7 +543,7 @@ here" entry.
   `E2-F6`, no focal length, no lens tag, identical exposure block) into ONE calibration
   group. Left `false`, images calibrate without EXIF grouping, which is weak. The answer
   is per-image XMP `Camera:CalibrationGroup` sidecars, one group per **physical** camera.
-  [VERIFIED-by-inspection: docs/settings-evaluation-2026-07 §1, 2026-07-23]
+  [VERIFIED-by-inspection: ea3ad5d:docs/settings-evaluation-2026-07.md §1, 2026-07-23]
 - `appCopyImportedComponentsToCache` — never swept. Worth a probe because it may interact
   with the hard rule that a **relocated** `.rsalign` import hangs forever (`#timeout`,
   observed 6 h+). [OPEN]
@@ -668,7 +668,7 @@ fisheye]
 Epic's own recommended workflow — "starting with a simpler Division model first, and later
 change it to Brown and click Align Images (F6) to optimize data" — is quoted approvingly in
 this repo's settings evaluation §3. [OFFICIAL: same topic]
-[VERIFIED-by-inspection: docs/settings-evaluation-2026-07 §3]
+[VERIFIED-by-inspection: ea3ad5d:docs/settings-evaluation-2026-07.md §3]
 
 **Measured, Division vs Brown3, on underwater imagery through a dome port:**
 
@@ -795,7 +795,7 @@ network drive; copy between local SSDs. [OFFICIAL: tutorials/commandline_2]
 triangles are removed **post hoc** with `-selectMarginalTriangles` +
 `-removeSelectedTriangles`, which keeps the removal an inspectable, orderable step in
 `GenerateModel.bat` rather than a mesh-time side effect.
-[VERIFIED: docs/settings-evaluation-2026-07 §7]
+[VERIFIED: ea3ad5d:docs/settings-evaluation-2026-07.md §7]
 
 **GUI control with no documented key:** *Maximal depth-map pixel count* (Preview and
 Normal), described in `appbasics/modelsettings` (default `0` = ignored; does not override
@@ -1049,7 +1049,7 @@ quality, **not unseen-area synthesis** — reprojection samples the source surfa
 invent color for surface no camera ever saw. This is why the production recipe textures
 *after* `-closeHoles` + `-cleanModel` (so `-calculateTexture` projects from the source
 images with multi-band blending) rather than texturing a holey model and reprojecting onto
-the filled one. [VERIFIED: docs/settings-evaluation-2026-07 §7]
+the filled one. [VERIFIED: ea3ad5d:docs/settings-evaluation-2026-07.md §7]
 
 ### 8.4 `xmp*` — `-exportXMP <params.xml>`
 
@@ -1409,7 +1409,7 @@ per-key read-back command. An instance therefore carries whatever the last sessi
 or CLI, yours or someone else's — left in it. Defaults are also undocumented for a large
 part of the namespace and have changed across builds. Consequently: **every run pins every
 key it depends on, and never relies on a default.**
-[VERIFIED: docs/validation/merge_test_plan.md §3 contamination controls, 2026-07-23; repo policy
+[VERIFIED: ea3ad5d:docs/validation/merge_test_plan.md §3 contamination controls, 2026-07-23; repo policy
 "never align on instance defaults", `AlignZone.bat` header]
 
 ### 10.1 At instance boot
@@ -1493,7 +1493,7 @@ Replayed row-by-row from `RS_CLI/Metadata/AlignmentParams.xml` (filter `sfm`/`li
 | `s235l`/`s236l`/`s237l`, `s251l`..`s254l` | `5.0`/`5.0`/`0.5`, `0.05`/`0.05`/`0.1`/`0.001` | **Filtered out by the `sfm`/`lis` prefix test and never applied** — §13.3 |
 
 [VERIFIED-by-inspection: `AlignmentParams.xml`; rationale from
-docs/settings-evaluation-2026-07 §4 unless noted]
+ea3ad5d:docs/settings-evaluation-2026-07.md §4 unless noted]
 
 ### 10.4 The merge ladder
 
@@ -1634,10 +1634,10 @@ path currently known. [VERIFIED: registry read + binary scan]
 
 | Key | Claim | What was observed |
 |---|---|---|
-| `sfmMergeGeoreferencedComponents=true` | [OFFICIAL: appbasics/alignsettings] "When multiple components are created and each is georeferenced, enabling this setting allows them to be merged even without visual overlap" | **The documented "without visual overlap" behaviour has never been observed headless.** Cell D1 (`-mergeComponents`, flag on, zone_6+zone_4, no shared content) → no fuse; the result count `1,533` was zone_6 alone. Cell D2 (`-align`, georef `true` + rematch `true`, same pair) → no fuse, `1,533`. Cell D3 (shared-path pair, both flags pinned `false`) → no fuse, `1,534`. In each case the workflow exits SUCCESS and the components stay separate, silently. See the correction immediately below for what this does **not** mean. [CONTRADICTED: NA167 wave-2 cells D1/D2/D3, 2026-07-24, docs/validation/merge_test_plan.md §4 "Wave 2"] |
+| `sfmMergeGeoreferencedComponents=true` | [OFFICIAL: appbasics/alignsettings] "When multiple components are created and each is georeferenced, enabling this setting allows them to be merged even without visual overlap" | **The documented "without visual overlap" behaviour has never been observed headless.** Cell D1 (`-mergeComponents`, flag on, zone_6+zone_4, no shared content) → no fuse; the result count `1,533` was zone_6 alone. Cell D2 (`-align`, georef `true` + rematch `true`, same pair) → no fuse, `1,533`. Cell D3 (shared-path pair, both flags pinned `false`) → no fuse, `1,534`. In each case the workflow exits SUCCESS and the components stay separate, silently. See the correction immediately below for what this does **not** mean. [CONTRADICTED: NA167 wave-2 cells D1/D2/D3, 2026-07-24, ea3ad5d:docs/validation/merge_test_plan.md §4 "Wave 2"] |
 | `sfmBackgroundDetectThreadPriority` | — | Inert **by composition** whenever `sfmBackgroundDetectFeatures=false`, which is the production setting [INFERRED] |
 | `sfmEnableAutoSuggestions` | measurement suggestions in the 3Ds view | GUI-only effect; no headless consequence [INFERRED from the Help's description] |
-| `sfmMergeGeoreferencedComponents` without `sfmEnableCameraPrior` | — | Inert by composition: (a) `sfmEnableCameraPrior` is per-camera during alignment and is what makes components georeferenced; (b) `sfmMergeGeoreferencedComponents` is per-component and post-solve. (b) without (a) has nothing to act on [INFERRED from Help prose + design reasoning, docs/settings-evaluation-2026-07 §5; **not isolated by a cell**] |
+| `sfmMergeGeoreferencedComponents` without `sfmEnableCameraPrior` | — | Inert by composition: (a) `sfmEnableCameraPrior` is per-camera during alignment and is what makes components georeferenced; (b) `sfmMergeGeoreferencedComponents` is per-component and post-solve. (b) without (a) has nothing to act on [INFERRED from Help prose + design reasoning, ea3ad5d:docs/settings-evaluation-2026-07.md §5; **not isolated by a cell**] |
 
 **CORRECTION — fusion is CONTENT-driven, not identity-driven.** An earlier version of this
 document (and of the surveys behind it) concluded from D1–D3 that "`-mergeComponents` fuses
@@ -1657,7 +1657,7 @@ zero path overlap. One rule explains every observation to date:
 Corollaries recorded with it: the union flight log is still **required** to georeference the
 merged result but plays no part in fusion; bbox border gating is the correct candidate
 filter, since content overlap requires spatial adjacency.
-[VERIFIED: FINDINGS 2026-07-24 "D7 RESOLVED"; docs/validation/merge_test_plan.md "D7 probe wave"]
+[VERIFIED: FINDINGS 2026-07-24 "D7 RESOLVED"; ea3ad5d:docs/validation/merge_test_plan.md "D7 probe wave"]
 [SUPERSEDED: the identity-only reading]
 
 **Do not close the `sfmMergeGeoreferencedComponents` question yet.** A superseded-risk flag
@@ -1710,7 +1710,7 @@ observed, and how.
   `NA167 notes` records "subfolders were included WITHOUT setting the key", while
   `FINDINGS` records the opposite for H2023. Reconciliation adopted: **the flag, not the
   build, was the variable** — the NA167 run had `appIncSubdirs` set by the fixed workflow.
-  `docs/validation/merge_test_plan.md` line 26 preserves the superseded observation.
+  `ea3ad5d:docs/validation/merge_test_plan.md` line 26 preserves the superseded observation.
 - **Resolution:** `-set "appIncSubdirs=true"` before **every** `-addFolder`, no exceptions.
   [VERIFIED: FINDINGS 2026-07-23]
 
@@ -1811,7 +1811,7 @@ Full treatment in §12.2. Summary in three lines:
   Aggregated from 5,050 PD-6 harvest records.
 - **Consequence:** a mixed-optics rig gets **one** distortion model; only the coefficients
   differ per calibration group. The "per-camera model via XMP" plan in
-  `docs/settings-evaluation-2026-07 §3` is not achievable — choose one global model and
+  `ea3ad5d:docs/settings-evaluation-2026-07.md §3` is not achievable — choose one global model and
   supply measured coefficients per group.
 - The grouping itself demonstrably works: given the **same** 16.0 mm prior, the solve
   separated the two cameras by 5.6% with IQRs of ±0.5% (cinema focal 35 mm-eq 16.374,

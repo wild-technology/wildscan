@@ -18,8 +18,8 @@ It fuses two sources that do not otherwise exist in one place:
 2. **The project's empirical record** — two years of production use driving RealityScan
    headless over ROV underwater photogrammetry at 8,000+ camera scale: the engineering log
    (cited as `FINDINGS <date>`, and `NA167 B<n>` / `NA167 #<n>` for the NA167 campaign's
-   numbered bugs and findings), the test plans in `docs/validation/`, `docs/*.md`, and the working
-   code in `modules/realityscan_interface/`. The engineering log is kept outside this
+   numbered bugs and findings), the dated test plans and decision records listed under
+   [Sources](#sources), and the working code in `modules/realityscan_interface/`. The engineering log is kept outside this
    repository; this reference is its distilled, self-contained form, so every citation
    states the fact it supports.
 
@@ -164,15 +164,21 @@ accordingly.
 | Dated fact log | engineering log (external), cited as `FINDINGS <date>` |
 | Dated project status and decisions | status log (external), cited as `status log <date>` |
 | Numbered bugs B1–B11 and findings #1–31 | NA167 campaign notes (external), cited as `NA167 B<n>` / `NA167 #<n>` |
-| Test matrices | `docs/validation/merge_test_plan.md`, `docs/validation/alignment_merge_hardening_plan.md`, `docs/validation/priors_distortion_test_plan.md`, `docs/validation/merge_strategy_report.md` |
-| Decision records | `docs/settings-evaluation-2026-07.md`, `docs/merge-growth-strategy-2026-07.md`, `docs/MERGE_REWORK_RECOMMENDATIONS.md`, `docs/WORKFLOW_WALKTHROUGH.md`, `docs/code-review-2026-07.md` |
-| Working code | `modules/realityscan_interface/realityscan_cli.py`, `modules/realityscan_interface/RS_CLI/Scripts/*.bat`, `RS_CLI/Metadata/*.xml`, `modules/camera_registry.py`, `modules/flight_logs.py`, `merge_zones.py`, `georeference_survey.py`, `poses_to_flight_log.py` |
+| Test matrices (commit `ea3ad5d`) | `docs/validation/merge_test_plan.md`, `docs/validation/alignment_merge_hardening_plan.md` (its cells are cited as `hardening cell U<n>`), `docs/validation/priors_distortion_test_plan.md`, `docs/validation/merge_strategy_report.md`, `docs/validation/zone9_test_plan.md` |
+| Decision records (commit `ea3ad5d`) | `docs/settings-evaluation-2026-07.md`, `docs/merge-growth-strategy-2026-07.md`, `docs/MERGE_REWORK_RECOMMENDATIONS.md`, `docs/WORKFLOW_WALKTHROUGH.md`, `docs/code-review-2026-07.md`, `docs/COLMAP_CROSSOVER.md` |
+| Result evidence (commit `ea3ad5d`) | `docs/validation/results/z14_forensic_rslog.txt` and the other files in that folder |
+| Working code | `modules/realityscan_interface/realityscan_cli.py`, `modules/realityscan_interface/RS_CLI/Scripts/*.bat`, `RS_CLI/Metadata/*.xml`, `modules/camera_registry.py`, `modules/flight_logs.py`, `merge_zones.py`, `poses_to_flight_log.py` |
 | Architecture, hard rules, operating practices | `ARCHITECTURE.md` |
 
-Current Python checks live in `tests/`; runnable campaigns, validation tools
-and analysis commands live under `scripts/`. Dated plans and result files
-are preserved under `docs/validation/`. Their original command paths and
-source line numbers describe the recorded snapshots. Retired code citations
+Current Python checks live in `tests/`; manual validation tools live under
+`scripts/validation/`. The dated test matrices, decision records and result
+files above are not in the current tree. They are preserved at commit
+`ea3ad5d` (`ea3ad5d4493e45dea81c02dd17f12bce471223d8`): a citation such as
+`ea3ad5d:docs/settings-evaluation-2026-07.md §4` is printed by
+`git show ea3ad5d:docs/settings-evaluation-2026-07.md`, and the same records are
+also cited by name (for example `PRIORS_DISTORTION_TEST_PLAN`,
+`MERGE_TEST_PLAN`). Their original command paths and source line numbers
+describe the recorded snapshots. Retired code citations
 link to the [original archive snapshot](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive),
 which is excluded from the current published tree.
 

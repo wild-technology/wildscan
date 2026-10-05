@@ -234,7 +234,7 @@ Facts about this form:
   priors on any later `-add`, and the original prior content measurably reduced
   registration (§7.5). [VERIFIED: NA167 B7]
 - `Camera:CalibrationGroup` and `Camera:LensDistortionGroup` are the **only** mechanism
-  that can separate EXIF-identical cameras. [VERIFIED: docs/settings-evaluation-2026-07 §1–2]
+  that can separate EXIF-identical cameras. [VERIFIED: ea3ad5d:docs/settings-evaluation-2026-07.md §1–2]
 - The element-vs-attribute form and the 1.0-vs-1.1 namespace are both accepted.
   [VERIFIED-by-consequence: the calibration groups demonstrably took effect, FINDINGS
   2026-07-26] [UNDOCUMENTED: no Help coverage of the `Camera:` namespace at all]
@@ -662,7 +662,7 @@ Alignment in such case will take just a few seconds." [OFFICIAL: appbasics/camer
 multi-camera rigs. Port and Starboard on the ROV rig share a lens *spec* but are different
 units. The pre-2026-07 writer grouped three cameras together as "12 mm fisheye" when one of
 them was a rectilinear 17 mm — plausibly the whole explanation for the priors A/B that cost
-6.7 points of registration (§7.5). [VERIFIED: docs/settings-evaluation-2026-07 §2]
+6.7 points of registration (§7.5). [VERIFIED: ea3ad5d:docs/settings-evaluation-2026-07.md §2]
 
 ### 4.4 Proof that XMP grouping works (and how it was measured)
 
@@ -899,7 +899,7 @@ the same six slots. [OFFICIAL: tutorials/editselectioncommand]
 - **How observed**: parsing `xcr:` attributes out of every sidecar produced by the PD-6
   identity harvest, then grouping by camera. [VERIFIED: FINDINGS 2026-07-26; PD-2]
 - **Consequence**: a mixed fisheye/rectilinear rig gets **one** model. This retires the
-  "per-camera model via XMP" design in `docs/settings-evaluation-2026-07 §3`. Supplying
+  "per-camera model via XMP" design in `ea3ad5d:docs/settings-evaluation-2026-07.md §3`. Supplying
   measured coefficients per group remains useful and per-group.
 - An earlier repo statement — "per-image XMP overrides the global key"
   (settings-evaluation §3) — is **SUPERSEDED**.
@@ -1179,7 +1179,7 @@ XMP camera positions and flight-log priors. Orientations are deliberately **not*
 *"Six rotation-convention candidates were tested against the flight-log yaw/pitch/roll; none
 matched (best mean error ~77°)."* Writing orientations in an unverified convention would
 poison future priors, which carry weight 10.
-[VERIFIED: docs/code-review-2026-07 Part 3, "Deliberate non-changes"]
+[VERIFIED: ea3ad5d:docs/code-review-2026-07.md Part 3, "Deliberate non-changes"]
 That result is the strongest single reason to treat the export-side rotation convention as
 **unestablished for this pipeline**, not merely undocumented.
 
@@ -1467,7 +1467,7 @@ Facts about the frames established here:
 - **`xcr:Position` in exported XMPs is in a GRID-ANCHORED LOCAL frame, not UTM.** Verified
   on zone_9: the values are small and local, the anchor is the grid origin, and the
   lat/long XMP attributes are **garbage** (e.g. `179.98N`). Fit local→UTM with
-  `poses_to_flight_log.py`. [VERIFIED: NA167 B10-adjacent, 2026-07-23; docs/code-review-2026-07]
+  `poses_to_flight_log.py`. [VERIFIED: NA167 B10-adjacent, 2026-07-23; ea3ad5d:docs/code-review-2026-07.md]
   [OPEN: cell U13 — re-verify on an **original** georeferenced zone scene; if positions are
   UTM there, manifests could carry true per-camera positions and better bboxes. Open since
   2026-07-23.]
@@ -1524,13 +1524,13 @@ Two design facts, both deliberate:
 - **Scale is locked at 1.** The alignment already pins scale via the camera priors, and
   fitting scale against noise-dominated nav data collapses it — **0.50 observed on
   zone_9**. `--allow-scale` exists for diagnostics only.
-  [VERIFIED: docs/code-review-2026-07 Part 3]
+  [VERIFIED: ea3ad5d:docs/code-review-2026-07.md Part 3]
 - **Orientations are not rewritten** — see §6.6.
 
 Measured output on the zone_9 subset: residual vs prior **4.3 m median, 10 m p95** —
 comfortably inside the 10 m accuracy the log claims for itself, i.e. the residual magnitude
 is a usable estimate of USBL/DVL navigation error.
-[VERIFIED: docs/code-review-2026-07]
+[VERIFIED: ea3ad5d:docs/code-review-2026-07.md]
 
 ### 8.4 Georeferencing verification is still a blind spot
 

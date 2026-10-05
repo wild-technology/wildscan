@@ -117,7 +117,7 @@ complete; none is [VERIFIED]. [OFFICIAL: appbasics/allcommands]
 - **It runs feature detection itself** when features are not already cached. The
   RealityScan log of a bare `-align` shows `Detected N features in image '<file>'` lines
   for every input, then a matching phase, then reconstruction
-  [VERIFIED-by-inspection: `docs/validation/results/z14_forensic_rslog.txt`, a 1,476-image align
+  [VERIFIED-by-inspection: `ea3ad5d:docs/validation/results/z14_forensic_rslog.txt`, a 1,476-image align
   captured end to end]. `-detectFeatures` exists to do only that step and cache the
   result [OFFICIAL: appbasics/allcommands]; the repo has never used it
   [VERIFIED-by-inspection: no `-detectFeatures` in `RS_CLI/Scripts/*.bat`].
@@ -250,7 +250,7 @@ SECONDS, not milliseconds** ("during a defined period of time (timeout in second
 [OFFICIAL: appbasics/allcommands, tutorials/commandline_5]. `startRealityScan.bat` passes
 `600` [VERIFIED-by-inspection], and the value `600` is echoed back in the app log line
 `Executing command 'writeProgress' with parameters '…\progress_RS1.txt 600'`
-[VERIFIED-by-inspection: `docs/validation/results/z14_forensic_rslog.txt` line 8].
+[VERIFIED-by-inspection: `ea3ad5d:docs/validation/results/z14_forensic_rslog.txt` line 8].
 
 The file has **five** whitespace-separated columns [OFFICIAL: tutorials/commandline_5]:
 
@@ -424,13 +424,13 @@ what every production align has run with since 2026-07-25.
 | Key | Type | Default | Allowed | Repo | Meaning / measured effect |
 |---|---|---|---|---|---|
 | `sfmFeatureDetectionQuality` | enum | `High` | `High` `Normal` | `RealityScan.FeatureDetector.RSa1` | "Choose the quality level for detecting features in images. Setting it to High improves feature detection, resulting in a more precise alignment process, but increases processing time and RAM usage." [OFFICIAL: appbasics/alignsettings]. See the contradiction in §3.7. |
-| `sfmMaxFeaturesPerMpx` | int | `10000` | any positive int | `0x36b0` (14000) | "Set the maximum number of features per megapixel … Using more features may slow processing but can result in less components." [OFFICIAL] Raised for low-texture seabed [VERIFIED-as-decision: docs/settings-evaluation-2026-07 §4]. |
-| `sfmMaxFeaturesPerImage` | int | `40000` | any positive int | `0xc350` (50000) | Same idea, per image. The default is directly observable: an align run **without** the settings replay logged `Detected 40000 features in image '…'` for every one of 1,476 inputs [VERIFIED-by-inspection: `docs/validation/results/z14_forensic_rslog.txt`]. |
+| `sfmMaxFeaturesPerMpx` | int | `10000` | any positive int | `0x36b0` (14000) | "Set the maximum number of features per megapixel … Using more features may slow processing but can result in less components." [OFFICIAL] Raised for low-texture seabed [VERIFIED-as-decision: ea3ad5d:docs/settings-evaluation-2026-07.md §4]. |
+| `sfmMaxFeaturesPerImage` | int | `40000` | any positive int | `0xc350` (50000) | Same idea, per image. The default is directly observable: an align run **without** the settings replay logged `Detected 40000 features in image '…'` for every one of 1,476 inputs [VERIFIED-by-inspection: `ea3ad5d:docs/validation/results/z14_forensic_rslog.txt`]. |
 | `sfmImagesOverlap` | enum | `Medium` | `Low` `Medium` `High` | `Medium` | See §3.6 — the direction of this control is genuinely unsettled. |
 | `sfmImageDownscaleFactor` | int | `1` | `1`,`2`,`4`,… | `1` | "A multiplier by which the size of an image is reduced before feature detection. In order to get the best precision, use full image resolution (downscale factor 1)." [OFFICIAL] Never varied here [OPEN]. |
 | `sfmMaxFeatureReprojectionError` | float | `2.0` | Epic: ≤ `3` px | `1.29999995` | "Internal precision level used during alignment. We recommend you to set it maximum to 3px." [OFFICIAL] Never A/B'd here. |
 | `sfmPreselectorFeatures` | int | `10000` | any positive int | `0x4e20` (20000) | "This is the number of features that will be used in alignment from the detected ones. Optimally, set it to 1/4-1/2 of the detected features." [OFFICIAL] 20000 is 40 % of 50000 — above Epic's band. |
-| `sfmDetectorSensitivity` | enum | `Medium` | `Low` `Medium` `High` `Ultra` | `Ultra` | "Higher sensitivity, like Ultra, allows detection of more features, even in areas with weak texture, but may also include less reliable points caused by image noise." [OFFICIAL] In force for all production aligns (weak underwater texture); the CLAHE A/B was validated at this setting [VERIFIED-as-in-use: docs/settings-evaluation-2026-07 §4]. A staff caution exists that Ultra manufactures noise points on turbid imagery [OFFICIAL-adjacent, second-hand, unverified here]. **No Ultra-vs-High A/B has ever been run on this rig** [OPEN]. |
+| `sfmDetectorSensitivity` | enum | `Medium` | `Low` `Medium` `High` `Ultra` | `Ultra` | "Higher sensitivity, like Ultra, allows detection of more features, even in areas with weak texture, but may also include less reliable points caused by image noise." [OFFICIAL] In force for all production aligns (weak underwater texture); the CLAHE A/B was validated at this setting [VERIFIED-as-in-use: ea3ad5d:docs/settings-evaluation-2026-07.md §4]. A staff caution exists that Ultra manufactures noise points on turbid imagery [OFFICIAL-adjacent, second-hand, unverified here]. **No Ultra-vs-High A/B has ever been run on this rig** [OPEN]. |
 | `sfmBackgroundDetectFeatures` | bool | — | `true` `false` | `false` | "Choose whether you want the system to automatically detect feature points in the background with a low priority of the processor." [OFFICIAL: appbasics/alignsettings prose] — the key name itself is [UNDOCUMENTED: present in `AlignmentParams.xml` and in the 2.2 binary; absent from the Help key table]. Pinned `false`: background detection competes with the foreground align for CPU and there is no interactive session to benefit. |
 | `sfmBackgroundDetectThreadPriority` | enum | — | `Low` `Normal` | `Low` | "Priority of the background detection. You have the possibility to choose from low and normal." [OFFICIAL: prose] Key name [UNDOCUMENTED]. Inert while `sfmBackgroundDetectFeatures=false` [INFERRED]. |
 | `sfmGPUAcceleration` | bool | — | `true` `false` | `true` | "Enable GPU usage to speed up the alignment process." [OFFICIAL: appbasics/alignsettings prose, "GPU acceleration" under Advanced] Key name [UNDOCUMENTED: `AlignmentParams.xml` + binary string sweep]. It is a **single on/off switch, not a device selector** [INFERRED from the bool type and the absence of any device-list key in the binary]; per-instance GPU selection is done by exporting `CUDA_VISIBLE_DEVICES` before boot, never by this key [VERIFIED-by-inspection: `startRealityScan.bat`, `RS_GPU_DEVICES` branch]. |
@@ -442,7 +442,7 @@ strongly they influence the alignment." [OFFICIAL: appbasics/alignsettings]
 
 | Key | Type | Default | Repo | Applied in production? | Meaning |
 |---|---|---|---|---|---|
-| `sfmEnableCameraPrior` | bool | `true` | `true` | **yes** | GUI "Use camera priors for georeferencing". "When set to Yes, prior positions for the images are used in the alignment process **and** for georeferencing the scene." [OFFICIAL] Pose priors participate inside the bundle adjustment and make the resulting components georeferenced [VERIFIED: docs/settings-evaluation-2026-07 §4–§5]. Kept ON always. |
+| `sfmEnableCameraPrior` | bool | `true` | `true` | **yes** | GUI "Use camera priors for georeferencing". "When set to Yes, prior positions for the images are used in the alignment process **and** for georeferencing the scene." [OFFICIAL] Pose priors participate inside the bundle adjustment and make the resulting components georeferenced [VERIFIED: ea3ad5d:docs/settings-evaluation-2026-07.md §4–§5]. Kept ON always. |
 | `sfmCameraPriorAccuracyX` | float | `10.0` | `s235l=5.0` | **no** — filtered out, see §2.6 | "Specify the accuracy of the cameras' prior positions. It defines the range, in which the calculated positions are going to be considered as equal to the prior values." [OFFICIAL] |
 | `sfmCameraPriorAccuracyY` | float | `10.0` | `s236l=5.0` | **no** | as above |
 | `sfmCameraPriorAccuracyZ` | float | `20.0` | `s237l=0.5` | **no** | as above |
@@ -508,7 +508,7 @@ a bigger overlap makes RealityScan faster (fewer candidate pairs need checking).
 **This repo's operative reading** is the opposite direction: the setting controls "breadth
 of the candidate-pair search", and `Low` → `Medium` was adopted precisely to *widen* the
 search for loop closures on 2–3 s frame spacing with interleaved cameras and track revisits
-[VERIFIED-as-decision: docs/settings-evaluation-2026-07 §4, 2026-07-23; comment preserved
+[VERIFIED-as-decision: ea3ad5d:docs/settings-evaluation-2026-07.md §4, 2026-07-23; comment preserved
 verbatim in `AlignmentParams.xml`]. The same reading is used to reject `High` as a merge
 ladder rung: "it only widens candidate-pair search, so it can help only where components
 share content the matcher skipped" [VERIFIED-as-reasoning: FINDINGS 2026-07-27].
@@ -585,7 +585,7 @@ Division model first, and later change it to Brown and click Align Images (F6) t
 data." [OFFICIAL: appbasics/settings_distortion_models]
 
 **The key is global and all-or-nothing.**
-[CONTRADICTED: `docs/settings-evaluation-2026-07 §3` asserted that a per-image XMP
+[CONTRADICTED: `ea3ad5d:docs/settings-evaluation-2026-07.md §3` asserted that a per-image XMP
 `Camera:DistortionModel` overrides the global key, and Epic documents per-image lens
 priors including a per-image Model (`inpDistortionModel`, appbasics/camerasettings_priors)
 / observed: the Cinema sidecars declared `brown3`, yet **all 2,558** Cinema pose XMPs came
@@ -955,7 +955,7 @@ save [VERIFIED: FINDINGS 2026-07-24; `GrowZone.bat` `:save_quit`].
 | **Pose priors** — per-image position, optionally orientation, with accuracies | flight log imported by `-importFlightLog <log> <FlightLogParams.xml>` | `sfmEnableCameraPrior=true` | per camera, inside the bundle adjustment; also georeferences the result |
 | **Calibration priors** — calibration/lens group, focal, distortion model hint, coefficients | `<stem>.xmp` sidecars beside the images, auto-imported on add | none — read directly | per image |
 
-[VERIFIED: docs/settings-evaluation-2026-07 §2 and §5]
+[VERIFIED: ea3ad5d:docs/settings-evaluation-2026-07.md §2 and §5]
 
 Flight-log formats, CRS derivation and the `ifKGrp` / `ifKmode` unknowns are the
 georeferencing document's subject. Two facts from there are load-bearing here:
@@ -1252,7 +1252,7 @@ Processing failed: Unexpected program state.
   [\0x13011\0x13010\0x10001\0x4999\0x10001]
 ```
 
-[VERIFIED: `docs/validation/results/z14_forensic_rslog.txt`; NA167 #17/#18/#27 / B8, 2026-07-23/24]
+[VERIFIED: `ea3ad5d:docs/validation/results/z14_forensic_rslog.txt`; NA167 #17/#18/#27 / B8, 2026-07-23/24]
 
 **Data exonerated**: full-pixel decode of all 1,476 frames, zero MD5 duplicates, zero
 near-black or featureless frames (Laplacian), clean nav, normal motion profile, bracketed
@@ -2078,7 +2078,7 @@ point here.
 16. **`-selectImage` regexp dialect** (§5.3) — the Help documents a regexp form; only
     literal full paths select anything. Standing forum-mine item since 2026-07-23; a staff
     reply may explain the discrepancy without any RealityScan time.
-17. **Report `MSS_STR001` to Epic** (§8.1) — never done; `docs/validation/results/z14_forensic_rslog.txt`
+17. **Report `MSS_STR001` to Epic** (§8.1) — never done; `ea3ad5d:docs/validation/results/z14_forensic_rslog.txt`
     is the artifact. No probe needed, only a submission.
 18. **Multi-GPU parallel aligns** — single-instance GPU pinning is exercised; two concurrent
     instances on different GPUs is untested. *Probe:* boot RS1 on GPU 0 and RS2 on GPU 1,

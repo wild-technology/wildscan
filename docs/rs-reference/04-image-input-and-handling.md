@@ -454,7 +454,7 @@ GCP, a distance constraint or a locked XMP.
 confirmed (through Aug 2025) that RealityScan has **no stereo-rig support**, so a
 fixed-baseline ROV rig cannot get BLK3D-style automatic scale
 [VERIFIED-second-hand: COLMAP fact base F-20260723-27, quoted in
-`docs/COLMAP_CROSSOVER.md` §4 and status log; recorded 2026-07-24, not reproduced here].
+`ea3ad5d:docs/COLMAP_CROSSOVER.md` §4 and status log; recorded 2026-07-24, not reproduced here].
 But the shipped build plainly *has* rig constructs: the XMP schema carries `xcr:Rig`,
 `xcr:RigInstance` and `xcr:RigPoseIndex` [OFFICIAL: tools/xmpalign], the Selected Input
 panel has a **Rigging** section (Rig ID / Prior / Model) and a **Relative coordinates**
@@ -681,7 +681,7 @@ This is the most consequential and most expensively-learned section in this docu
   shared-camera set is the **deterministic** route `-mergeComponents` fuses through:
   cell D6 merged two zone_6 halves (749 + 342 cameras, **390 shared images**) in 56 min
   of real reconstruction ending "Finalizing 1 component".
-  [VERIFIED: NA167 D6 / docs/validation/merge_test_plan.md, 2026-07-24]
+  [VERIFIED: NA167 D6 / ea3ad5d:docs/validation/merge_test_plan.md, 2026-07-24]
   It is **not the only** route — content overlap alone also fuses; see §12.5, which
   supersedes the "shared cameras are the ONLY mechanism" reading.
 - **Basename, not path, is what the flight-log importer matches on** — bare filenames
@@ -1272,7 +1272,7 @@ entries were keyed to NA167-era model strings ("ZCAM F6 8-15mm Fisheye Upper") t
 current EXIF (`Z CAM` / `E2-F6`, §16.4), and even a matching entry could not distinguish
 two cameras with identical EXIF — matching is per *camera model*, and this rig's cameras
 report the same one. Per-image XMP is the only separator; see §16.4.
-[VERIFIED-by-inspection: docs/settings-evaluation-2026-07 §1, 2026-07-23]
+[VERIFIED-by-inspection: ea3ad5d:docs/settings-evaluation-2026-07.md §1, 2026-07-23]
 
 ### 16.4 The EXIF-identical-cameras case — why XMP groups are the only answer here
 
@@ -1813,7 +1813,7 @@ subsets, one variant per row, scored on registered cameras:**
 | **`baseline`** (no preprocessing) | **0 / 400** | **failed to form any component** |
 
 [VERIFIED: 2026-07-21 zone_9 A/B, `scripts/validation/run_zone9_validation.py` phase 2; table reproduced
-from `docs/code-review-2026-07.md` §"Preprocessing, measured then baked in"; defaults
+from `ea3ad5d:docs/code-review-2026-07.md` §"Preprocessing, measured then baked in"; defaults
 recorded in `modules/preprocess_images/preprocess_images.py`]
 
 Three things the full grid says that the headline does not:
@@ -1934,7 +1934,7 @@ Everything below is a measurement made through this CLI, not an estimate.
 | Hardlinked image pool | 9,835 files | 35.8 GB logical, **0.05 GB actual** |
 | Image decode census (full decode, not verify) | 8,197 JPGs | zero corruption, `camera_registry.identify` classified all (cinema 4,100 + port 4,097, zero unknown) |
 
-[VERIFIED: FINDINGS / status log / docs/validation/merge_test_plan.md cells B and C_joint,
+[VERIFIED: FINDINGS / status log / ea3ad5d:docs/validation/merge_test_plan.md cells B and C_joint,
 2026-07-21 … 2026-07-28]
 
 **Memory note that belongs here:** joint alignment extrapolates to **~700 GB for a

@@ -2,8 +2,7 @@
 """Feature-aware cross-zone merge driver (reworked 2026-07-24).
 
 Replaces the maximal-fraction ladder with the workflow the bow/hull
-governing intent requires (status log workflow-evaluation queue;
-docs/MERGE_REWORK_RECOMMENDATIONS.md):
+governing intent requires (status log workflow-evaluation queue):
 
 1. Manifests -> twin resolution -> border graph -> CONNECTED CLUSTERS.
    Components whose UTM bboxes never touch are different physical
@@ -79,10 +78,9 @@ from modules.realityscan_interface.realityscan_cli import (
 COMPONENT_EXTENSIONS = ('.rsalign', '.rcalign')
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.heif')
 
-# Escalation ladder - one variable per rung. Order is revisited by the
-# D7 probe verdict (tests/MERGE_TEST_PLAN.md "D7 probe wave"): if
-# align-rematch is the only content-capable mechanism for duplicate-path
-# zones, put it first via rs_settings merge.ladder="content_first".
+# Escalation ladder - one variable per rung. If align-rematch is the only
+# content-capable mechanism for duplicate-path zones, put it first via
+# rs_settings merge.ladder="content_first".
 LADDERS = {
     'merge_first': [
         {'label': 'merge_georef', 'mode': 'merge',
