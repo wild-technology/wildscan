@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Zone layout 'pool' (project decision 2026-08-08).
+"""Zone layout 'pool'.
 
 The copy layout materializes overlap donation as per-zone physical
 copies, so the same survey image is a DIFFERENT camera in every zone it

@@ -846,7 +846,7 @@ class BatchDirectory(RSModule):
         previous per-file os.walk (O(images x tree size)).
 
         Keys are LOWERCASED: Windows filesystems are case-insensitive, so a
-        log naming `C231C0001.JPG` against `C231C0001.jpg` on disk used to
+        log naming `IMG_0001.JPG` against `IMG_0001.jpg` on disk used to
         match nothing and produce zone folders holding zero images."""
         by_name: dict[str, list[str]] = {}
         by_stem: dict[str, str] = {}
@@ -912,7 +912,7 @@ class BatchDirectory(RSModule):
                 raise ValueError(
                     f"flight-log basename collision: '{prior}' and '{raw}' "
                     f"both map to '{key}' - basename lookup cannot tell "
-                    "them apart (C-20260827-06)")
+                    "them apart")
 
         for file in files:
             # Basename-normalized row name: the lookup key, the copied

@@ -1,9 +1,7 @@
 @echo off
 setlocal
-:: Canonical per-zone alignment workflow (2026-07 consolidation of
-:: AlignImagesFromFolder.bat's chaining/CRS handling and
-:: AlignZonesSequentially.bat's settings application - see
-:: docs/settings-evaluation-2026-07.md).
+:: Canonical per-zone alignment workflow: chaining, CRS handling and the
+:: explicit application of the canonical alignment settings.
 ::
 :: Aligns one zone as ONE scene and exports ALL resulting components
 :: (>= min size), not just the maximal one: underwater zones routinely
@@ -34,7 +32,7 @@ echo Reading default variables
 call "%~dp0SetVariables.bat"
 if errorlevel 1 exit /b 1
 set "AlignmentParams=%Metadata%\AlignmentParams.xml"
-:: Test-cell override (PRIORS_DISTORTION_TEST_PLAN): a cell may point at
+:: Test override: RS_ALIGN_PARAMS may point at
 :: a variant params file without touching the canonical Metadata copy.
 if defined RS_ALIGN_PARAMS if not "%RS_ALIGN_PARAMS%" == "" set "AlignmentParams=%RS_ALIGN_PARAMS%"
 
@@ -55,7 +53,7 @@ set "calibration_rscmd=%~7"
 
 if not exist "%input_dir%" ( echo ERROR: input directory not found: %input_dir% & exit /b 1 )
 
-:: POOL layout (FLIGHTLOG_ARCHITECTURE):
+:: POOL layout:
 :: RS_ALIGN_POOL_DIR set = the zone holds NO images, only a .imagelist
 :: of canonical pool paths + a full-path flight log. Images are added
 :: from the list, and the identity harvest sweeps the POOL (exportXMP

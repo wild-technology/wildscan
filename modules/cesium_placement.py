@@ -616,8 +616,8 @@ def plan_placement(objs: list[Path], nav_envelope: dict | None = None,
             'below the SEA SURFACE but ion will read it as a height above the '
             'WGS84 ELLIPSOID. The asset will be wrong by the local geoid '
             'undulation - measured at +4.5 m at Papahanaumokuakea, +15.9 m at '
-            'Oahu, -27.1 m in the Gulf of Mexico and +72.7 m at this repo''s '
-            'NA168 site. Use this only for a deliberately local-frame asset.')
+            'Oahu, -27.1 m in the Gulf of Mexico and +72.7 m at a western '
+            'Pacific survey site. Use this only for a deliberately local-frame asset.')
 
     localised = [(obj, to_local_enu(g, (float(anchor[0]), float(anchor[1])),
                                     depth_msl))

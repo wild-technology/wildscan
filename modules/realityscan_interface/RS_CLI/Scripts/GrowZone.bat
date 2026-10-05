@@ -153,7 +153,7 @@ call :run -load "%scene_path%" || goto :fail
 :: (exports silently empty under -silent); start clean.
 call :run -deselectAllImages || goto :fail
 
-:: Per-step flight-log reload (FLIGHTLOG_ARCHITECTURE 1b): importing a flight log onto an
+:: Per-step flight-log reload: importing a flight log onto an
 :: ALIGNED scene and running -update re-places the components onto the
 :: CURRENT priors without a re-align. Env-gated: legacy callers that do
 :: not set RS_GROW_FLIGHT_LOG are byte-identical in behavior. The
