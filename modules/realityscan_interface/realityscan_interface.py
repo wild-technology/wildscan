@@ -7,7 +7,7 @@ import time
 from module_base.rs_module import RSModule
 from module_base.parameter import Parameter
 from .. import align_fingerprint
-from .. import camera_registry
+from .. import calibration_sidecars
 from .. import component_manifest
 from ..flight_logs import (find_flight_log, require_utm_zone,
                            write_flight_log_params)
@@ -360,7 +360,8 @@ class RealityScanAlignment(RSModule):
         # which would poison the next attempt as auto-imported priors
         # (B7). The registration census now comes from the manifests
         # (harvested sidecars), not from this sweep.
-        leftover, restored, removed = camera_registry.sanitize_and_census(hygiene_root)
+        leftover, restored, removed = calibration_sidecars.sanitize_and_census(
+            hygiene_root)
         if leftover:
             self.logger.warning(
                 '%d pose sidecars were left beside the images (partial '
@@ -378,7 +379,7 @@ class RealityScanAlignment(RSModule):
         # ungrouped, which CONFOUNDED PD-4/PD-4a) that the same entry
         # records as fixed (audit 2026-08-07). Idempotent: (0, 0) on a
         # complete tree.
-        created, no_camera = camera_registry.ensure_calibration_sidecars(
+        created, no_camera = calibration_sidecars.ensure_calibration_sidecars(
             hygiene_root)
         if created:
             self.logger.info(
@@ -427,10 +428,10 @@ class RealityScanAlignment(RSModule):
         except OSError as exc:
             self.logger.warning('Could not write %s: %s',
                                 align_fingerprint.FINGERPRINT_NAME, exc)
-        # (The calibration-sidecar repair ran above, on every exit path -
-        # capture_component_identities also regenerates each member's
-        # sidecar as it walks the harvest, so nothing is lost by the move.)
-        camera_registry.ensure_calibration_sidecars(input_folder)
+        # (The calibration-sidecar repair ran above, on every exit path;
+        # this call covers the input folder when it differs from the
+        # hygiene root.)
+        calibration_sidecars.ensure_calibration_sidecars(input_folder)
 
         registered = 0
         for mp in manifest_paths:
@@ -476,8 +477,8 @@ class RealityScanAlignment(RSModule):
         exported and deleted. members(c<K>) = stems(r<K>) - stems(r<K+1>).
         The harvest also displaced the calibration sidecars beside the
         images (pose exports overwrite <stem>.xmp and the harvest MOVES
-        them), so calibration-only sidecars are regenerated here for
-        every member (B7 hygiene is automatic).
+        them); calibration_sidecars.ensure_calibration_sidecars puts the
+        decided ones back.
         """
         # stem -> (image basename, full path), one walk of the zone tree
         stem_to_image = {}
@@ -525,13 +526,6 @@ class RealityScanAlignment(RSModule):
                     members.append(stem)
                     continue
                 members.append(entry[0])
-                # Regenerate the displaced calibration-only sidecar
-                camera = camera_registry.identify(entry[0])
-                if camera is not None:
-                    sidecar = os.path.splitext(entry[1])[0] + '.xmp'
-                    if not os.path.exists(sidecar):
-                        with open(sidecar, 'w', encoding='utf-8') as fh:
-                            fh.write(camera_registry.calibration_xmp(camera))
 
             bbox = component_manifest.bbox_from_flight_log(
                 flight_log_path or None, members)

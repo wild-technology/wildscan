@@ -172,7 +172,9 @@ working copies or the pipeline's prepared zone tree.
 | `publish_batch.py` | Publishes every exported component (`exports/<comp>/obj`) to Cesium ion and/or Nira — whichever credentials are present — by driving the two publishers below; writes `publish_report.json` |
 | `publish_cesium.py` | Uploads one mesh export (OBJ) to Cesium ion as a tiled 3D asset via ion's REST flow — the scripted equivalent of the GUI-only "Share to Cesium ion" button |
 | `publish_nira.py` | Uploads one export to Nira through the official `niraclient` (Enterprise plan required), building the explicit typed file list Nira's docs recommend |
-| `modules/camera_registry.py` | Single source of truth for the four physical rig cameras (lens, calibration groups, XMP content, filename families) |
+| `modules/camera_registry.py`, `modules/cameras.json` | Camera registry for the two ILX-LR1 cameras: calibration, Wild Sync filename families, mounts, the stereo rig |
+| `modules/calibration_sidecars.py` | Decides per camera whether RealityScan gets the calibration prior, calibration groups only, or nothing; writes the XMP sidecars and the `.rscmd` add list |
+| `calibration/` | The ILX-LR1 stereo calibration record |
 | `poses_to_flight_log.py` | Post-alignment: rewrite camera locations back to UTM from the computed poses (XMP sidecars), producing a refined flight log + per-image nav-error QC |
 | `decimate_images.py` | Copy a percentage of images to a new folder (dataset thinning) |
 | `module_base/` | Framework: `RSModule` base class, `Parameter`, `SettingsStore` |

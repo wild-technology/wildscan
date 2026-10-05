@@ -64,7 +64,7 @@ import logging
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 from module_base.settings_store import SettingsStore, realityscan_env
-from modules import camera_registry
+from modules import calibration_sidecars
 from modules import component_analysis
 from modules import component_manifest
 from modules import scale_oracle
@@ -944,7 +944,7 @@ def merge_cluster(cli: RealityScanCLI, cluster: list[dict], cluster_idx: int,
                 log_path, params_path, images_root, logs_dir, harvest=True,
                 logger=logger)
             snapshot_rs_log(os.path.join(adir, 'rslog.txt'), logger)
-            registered, _r, _d = camera_registry.sanitize_and_census(images_root)
+            registered, _r, _d = calibration_sidecars.sanitize_and_census(images_root)
 
             sizes = peel_counts_from(adir)
             # INSTRUMENT INVARIANT: an empty peel next to a non-empty export is
@@ -1379,7 +1379,7 @@ def main() -> int:
     # observe the assembly - it reads leftovers from whatever ran last,
     # and reported 0 for a sound 4,496-camera assembly on 2026-07-25.
     # The assembly's camera count is the manifest sum, tagged as such.
-    camera_registry.sanitize_and_census(images_root)
+    calibration_sidecars.sanitize_and_census(images_root)
 
     report['assembly'] = {
         'workflow_success': result.success,

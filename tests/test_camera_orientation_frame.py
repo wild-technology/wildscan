@@ -14,7 +14,9 @@ The pitch convention is RealityScan's, not a house choice:
     roll  = vehicle_roll
 
 Read the pitch as: start horizontal (90), tilt the camera down by its mount
-angle, then add whatever the vehicle itself is doing.
+angle, then add whatever the vehicle itself is doing. The ILX-LR1 cameras
+are mounted nominally straight down (down tilt 90), so their pitch is the
+vehicle pitch.
 """
 from __future__ import annotations
 
@@ -26,6 +28,7 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
+from modules import camera_registry  # noqa: E402
 from modules.flight_logs import realityscan_orientation  # noqa: E402
 
 
@@ -75,6 +78,16 @@ def test_a_nadir_mount_passes_the_vehicle_pitch_through():
     for vehicle_pitch in (-7.5, 0.0, 3.25):
         assert convert(vehicle_pitch=vehicle_pitch, tilt=90.0)[1] == \
             pytest.approx(vehicle_pitch)
+
+
+def test_the_ilx_mounts_are_nadir():
+    for name in ('Cam1_20260820_192542.42.jpg', 'Cam2_20260820_192542.42.jpg'):
+        mount = camera_registry.mount_for(name)
+        assert mount.down_tilt_deg == 90.0 and mount.yaw_offset_deg == 0.0
+        _yaw, pitch, _roll = convert(vehicle_pitch=2.0,
+                                     tilt=mount.down_tilt_deg,
+                                     yaw_offset=mount.yaw_offset_deg)
+        assert pitch == pytest.approx(2.0)
 
 
 def test_yaw_is_true_heading_and_wraps():

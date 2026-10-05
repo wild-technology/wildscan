@@ -267,12 +267,13 @@ Exceptions that must NOT be renamed:
 
 **Domain modules**
 
-- `modules/camera_registry.py` — single source of truth for the FOUR
-  physical rig cameras (Zeuss rect 23mm, Port fisheye 14mm, Cinema rect
-  17mm, Starboard fisheye 14mm; legacy cammid/camlower/camupper and WCA
-  P/C/S###C filename families). Calibration XMP content and the pose-sidecar
-  sanitize/census live here. Mount geometry stays per-cruise in the
-  georeference module.
+- `modules/camera_registry.py` — loads and validates `modules/cameras.json`,
+  the single source for the two ILX-LR1 cameras (`ilx_left`, `ilx_right`):
+  calibration, the Wild Sync filename families `Cam1_`/`Cam2_` (node cam1 is
+  the left eye, cam2 the right), each camera's mount, the stereo rig with its
+  `node_assignment_confirmed` switch, and the default prior accuracies. A
+  malformed entry stops the import. The calibration record is
+  `calibration/ilx_lr1_stereo_dive_001.json`; a test keeps the two in step.
 - `modules/flight_logs.py` — flight-log discovery (`find_flight_log`, the
   ONLY way any stage locates a log on disk) and per-cruise CRS generation
   (`write_flight_log_params`: UTM zone parsed from the log's filename tag →
@@ -282,9 +283,13 @@ Exceptions that must NOT be renamed:
   convention (`realityscan_orientation`: pitch 0 = looking straight down).
   RealityScan's flight-log import behavior is documented in
   `docs/rs-reference/06-georeferencing-flightlogs-and-scale.md`.
-- `modules/calibration_sidecars.py` — per-eye approximate calibration XMPs
-  from manufacturer values, plus the sensor registry. The A/B/C ladder
-  verdict (prior content collapses registration) is in the engineering log.
+- `modules/calibration_sidecars.py` — decides per camera whether RealityScan
+  receives the calibration as an initial prior (`prior`: only when the node
+  assignment is confirmed and the images match the calibration's aspect
+  ratio and focal length), calibration and distortion groups only
+  (`groups`), or nothing (`off`); writes the `xcr` 1.1 sidecars and the
+  `.rscmd` file that adds each image with `-addImageWithCalibration`; and
+  owns the pose-sidecar sanitize/census and sidecar repair.
 - `modules/preprocess_images/` — canonical CLAHE / white-balance transforms
   + the pre-alignment preprocessing module (default CLAHE 2.0/8×8,
   validated on zone_9 — baseline aligns to nothing on this imagery).

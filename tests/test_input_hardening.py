@@ -22,13 +22,6 @@ produced either a raw traceback or a plausible-looking wrong answer
       with EOFError although ask() had been guarded for exactly this
     - a stored empty instance_name was exported verbatim as RS_INSTANCE=''
 
-  modules/camera_registry.py
-    - the parity brace demanded a byte-for-byte reproduction of the
-      retired tables, so ADDING a camera to cameras.json was a hard
-      ImportError that bricked main.py, wildscan and the standalone
-      drivers together - while the module docstring calls that file the
-      place per-rig settings live
-
 Offline: no RealityScan, no repo state touched (every fixture is a
 tempdir, every store is a temp path).
 
@@ -234,105 +227,6 @@ def test_empty_stored_instance_name_falls_back(tmp_path):
                     encoding='utf-8')
     env = realityscan_env(SettingsStore(str(path)))
     assert env['RS_INSTANCE'] == DEFAULT_INSTANCE_NAME
-
-
-# -------------------------------------------------- camera registry parity
-
-_PROBE_SEQ = [0]
-
-
-def _registry_with(tmp_path, mutate):
-    """Import a COPY of camera_registry beside a MUTATED cameras.json.
-
-    The module resolves cameras.json relative to its own __file__, so a
-    verbatim copy in a tempdir picks up the mutated data with no patching.
-    It is registered in sys.modules under a unique name because
-    @dataclass resolves annotations through sys.modules[cls.__module__].
-    """
-    import importlib.util
-    import shutil
-
-    data = json.load(open(os.path.join(REPO_ROOT, 'modules', 'cameras.json'),
-                          encoding='utf-8'))
-    mutate(data)
-    (tmp_path / 'cameras.json').write_text(json.dumps(data), encoding='utf-8')
-    module_path = tmp_path / 'camera_registry_probe.py'
-    shutil.copyfile(os.path.join(REPO_ROOT, 'modules', 'camera_registry.py'),
-                    module_path)
-
-    _PROBE_SEQ[0] += 1
-    name = f'camera_registry_probe_{_PROBE_SEQ[0]}'
-    spec = importlib.util.spec_from_file_location(name, str(module_path))
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    try:
-        spec.loader.exec_module(module)
-    finally:
-        sys.modules.pop(name, None)
-    return module
-
-
-NEW_FAMILY = {'family': 'voyis_new', 'camera': 'voyis_new',
-              'pattern': r'^vn\d+_'}
-NEW_CAMERA = {'voyis_new': {
-    'calibration_group': '9', 'calibration_prior': 'Approximate',
-    'focal_length_35mm': 21.0, 'lens_distortion_group': '9',
-    'lens_distortion_prior': 'Approximate', 'distortion_model': 'brown3'}}
-
-
-def test_a_new_expedition_camera_can_be_added(tmp_path):
-    """Adding a family + camera to cameras.json must WORK. It used to be
-    `ImportError: cameras.json parity: cameras['voyis_new'] diverges from
-    the legacy table` - a hard stop on every entry point at once."""
-    def mutate(data):
-        data['cameras'].update(NEW_CAMERA)
-        data['families'] = list(data['families']) + [NEW_FAMILY]
-
-    registry = _registry_with(tmp_path, mutate)
-    assert registry.family('VN0001_20260807T120000Z.jpg') == 'voyis_new'
-    camera = registry.identify('VN0001_20260807T120000Z.jpg')
-    assert camera is not None and camera.key == 'voyis_new'
-    # ... and every legacy family still resolves exactly as before.
-    assert registry.family('P231C0001.jpg') == 'wca_port'
-    assert registry.family('camlower_20231104020854.jpg') == 'legacy_camlower'
-
-
-def test_changing_a_legacy_camera_is_still_a_hard_error(tmp_path):
-    """The brace must still catch a DRIFT - only additions are allowed."""
-    def mutate(data):
-        data['cameras']['port']['focal_length_35mm'] = 99.0   # was 16.0
-
-    with pytest.raises(ImportError, match=r"cameras\['port'\]"):
-        _registry_with(tmp_path, mutate)
-
-
-def test_removing_a_legacy_family_is_still_a_hard_error(tmp_path):
-    def mutate(data):
-        data['families'] = [f for f in data['families']
-                            if f['family'] != 'wca_cinema']
-
-    with pytest.raises(ImportError, match='wca_cinema'):
-        _registry_with(tmp_path, mutate)
-
-
-def test_removing_a_legacy_camera_is_still_a_hard_error(tmp_path):
-    """The subset check must catch a DELETION, not only a value change -
-    'may be extended but never removed'."""
-    def mutate(data):
-        del data['cameras']['port']
-
-    with pytest.raises(ImportError, match='MISSING'):
-        _registry_with(tmp_path, mutate)
-
-
-def test_reordering_the_legacy_families_is_still_a_hard_error(tmp_path):
-    """family() matches MOST SPECIFIC FIRST; an unanchored 'herc' token
-    once ran first and would have beaten an anchored WCA prefix."""
-    def mutate(data):
-        data['families'] = list(reversed(data['families']))
-
-    with pytest.raises(ImportError, match='relative order'):
-        _registry_with(tmp_path, mutate)
 
 
 def test_get_and_set_survive_an_in_process_non_dict_section(tmp_path):

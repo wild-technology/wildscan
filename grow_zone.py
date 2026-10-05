@@ -59,7 +59,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 from module_base.settings_store import SettingsStore, realityscan_env
-from modules import camera_registry
+from modules import calibration_sidecars
 from modules.flight_logs import require_utm_zone, write_flight_log_params
 from modules.realityscan_interface.realityscan_cli import (
     METADATA_DIR, RealityScanCLI, set_project_save_env)
@@ -101,7 +101,7 @@ def registered_basenames(images_root: str, stem_index: dict[str, str],
     """Registration census: image basenames whose XMP sidecar carries a
     pose (-exportXMP writes pose entries only for registered cameras).
     Read-only - callers must follow up with
-    camera_registry.sanitize_and_census so pose sidecars can never leak
+    calibration_sidecars.sanitize_and_census so pose sidecars can never leak
     into later adds as exact-pose priors (bug B7)."""
     names: set[str] = set()
     unmapped = 0
@@ -130,7 +130,8 @@ def registered_basenames(images_root: str, stem_index: dict[str, str],
 
 def take_census(images_root: str, stem_index: dict[str, str], logger) -> set[str]:
     names = registered_basenames(images_root, stem_index, logger)
-    pose_count, _restored, removed = camera_registry.sanitize_and_census(images_root)
+    pose_count, _restored, removed = calibration_sidecars.sanitize_and_census(
+        images_root)
     if removed:
         logger.warning('%d pose sidecars of unknown cameras deleted', removed)
     if pose_count != len(names):
