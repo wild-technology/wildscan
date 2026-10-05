@@ -50,6 +50,10 @@ cameras captured with Wild Sync. This release is breaking.
   partial and refused by alignment instead of reading as "no intake".
 - An intake re-run accepts, and leaves untouched, the pipeline's own
   calibration sidecars beside its images in `raw_images/`.
+- An image without depth gets altitude accuracy 1000 m
+  (`--w_surface_alt_accuracy`) with its surface-altitude fallback, instead of
+  the normal altitude accuracy that pinned it to the surface; the manifest
+  counts these images.
 - `packaging` is declared as a test dependency.
 - The test suite moved from `testing/` to `tests/`.
 

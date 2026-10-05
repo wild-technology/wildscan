@@ -341,6 +341,7 @@ Wild Sync Intake flags (defaults in brackets):
 | `--w_static_pos_accuracy` | X/Y accuracy when a run carries one static fix [`1000`] |
 | `--w_alt_accuracy` | Altitude accuracy in metres [`1`] |
 | `--w_surface_altitude` | Altitude written when depth is empty [`0.0`, camera at the sea surface] |
+| `--w_surface_alt_accuracy` | Altitude accuracy in metres written instead of `--w_alt_accuracy` when depth is empty [`1000`] |
 | `--w_orientation_accuracy` | Yaw and roll accuracy in degrees; pitch accuracy comes from the mount [`15`] |
 | `--w_min_match_rate` | Fail below this percentage of matched frames; `0` disables [`80`] |
 | `--w_time_err_warn` | Warn when `time_err_ms` exceeds this [`50`] |

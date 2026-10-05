@@ -416,13 +416,16 @@ filename;X (East);Y (North);Alt;X Accuracy;Y Accuracy;Alt Accuracy;Yaw;Pitch;Rol
 |---|---|---|
 | `filename` | the copied image's name | |
 | `X (East)`, `Y (North)` | `xutm`, `yutm` (plus the horizontal lever arm, zero while it is not measured) | 10 m (`--w_pos_accuracy`); 1000 m for a static fix (`--w_static_pos_accuracy`) |
-| `Alt` | `-abs(depth_from_xplore9)` minus the downward lever arm; `--w_surface_altitude` (default 0.0, camera at the sea surface) when depth is empty | 1 m (`--w_alt_accuracy`) |
+| `Alt` | `-abs(depth_from_xplore9)` minus the downward lever arm; `--w_surface_altitude` (default 0.0, camera at the sea surface) when depth is empty | 1 m (`--w_alt_accuracy`); 1000 m when depth is empty (`--w_surface_alt_accuracy`) |
 | `Yaw`, `Pitch`, `Roll` | [orientation convention](#orientation-convention) | yaw and roll 15 degrees (`--w_orientation_accuracy`); pitch from the mount, 15 degrees |
 
 A run is a static fix when every row's position lies within 1 m (bounding-box
 diagonal). The August 2026 runs carry the same static navigation fix on every
 row and empty depth, so their images are written with position accuracy 1000 m,
-which cannot constrain the solve, and altitude 0.
+which cannot constrain the solve, and altitude 0 with altitude accuracy
+1000 m, so the fallback does not pin the cameras to the surface. The manifest
+records, under `altitude`, the surface-altitude accuracy and how many images
+it was written for (`images_with_surface_altitude_accuracy`).
 
 The 13-column format must be installed in RealityScan's own `flightlogs.xml`
 before alignment; see
