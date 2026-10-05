@@ -198,8 +198,8 @@ Reproduced **byte-for-byte identically** in all twelve workflow scripts: `AlignZ
 `MergeZoneComponents.bat`, `GenerateModel.bat`, `ExportDeliverables.bat`, `GrowZone.bat`,
 `AlignImageList.bat`, `SequentialAlignGrow.bat`, `SaveProjectCopy.bat`,
 `ProbeLockAlign.bat`, `ProbeSubsetAlign.bat`, `ProbeSubsetAlign2.bat`, and the deprecated
-`AlignImagesFromFolder.bat` (kept only for `scripts/validation/run_zone9_validation.py`)
-[VERIFIED-by-inspection: RS_CLI/Scripts/*.bat, 2026-08-04]. Only the leading comment
+`AlignImagesFromFolder.bat` (since removed) [VERIFIED-by-inspection: RS_CLI/Scripts/*.bat,
+2026-08-04]. Only the leading comment
 differs between files. Copying it into a new workflow is the sanctioned way to add one —
 there is deliberately no shared include, because a `call`ed child `.bat` would add a
 process per operation:
@@ -776,9 +776,9 @@ Variables are **popped**, not left stale, when the feature is off — a leftover
 
 Not in the table and deliberately so: `AlignImagesFromFolder.bat` (`%1` input dir, `%2`
 component output dir, `%3` flight log, `%4` flight-log params, `%5` generate model, `%6`
-cull polygons, `%7` scene name, `%8` texture model, `%9` simplify model) is **DEPRECATED**
-— it is the pre-consolidation workflow, exhausts all nine slots on booleans, and survives
-only because `scripts/validation/run_zone9_validation.py` still calls it. Do not build on it; `AlignZone.bat`
+cull polygons, `%7` scene name, `%8` texture model, `%9` simplify model) was the
+**DEPRECATED** pre-consolidation workflow, exhausted all nine slots on booleans, and has
+been removed from the repository. Do not rebuild it; `AlignZone.bat`
 plus `GenerateModel.bat` is the supported split [VERIFIED: FINDINGS 2026-07-28 deprecation
 sweep; ARCHITECTURE.md architecture section].
 

@@ -2129,8 +2129,8 @@ Each item states the question and the cheapest probe that answers it.
 
 5. **Does the hand-merged `{B438A617-…}` format survive a RealityScan update?**
    After any update or repair, verify that the installed dictionary contains exactly
-   one format whose **complete ID** matches `gpsLogFileFormat` in both
-   `FlightLogParams.xml` and `FlightLogParamsLocal.xml`. Searching only for the
+   one format whose **complete ID** matches `gpsLogFileFormat` in
+   `FlightLogParams.xml`. Searching only for the
    `B438A617` prefix misses the measured two-place mismatch. Use the read-only
    [installation check](../SETUP-AND-RUN.md#54-flight-log-import-format), then
    inspect the parser and validate the imported priors on a small copied fixture. (§2.3)

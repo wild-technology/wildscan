@@ -1896,7 +1896,7 @@ Two regression-pinned traps [VERIFIED: `tests/test_rig_mounts.py`]:
 The same Cinema unit sits **10° down** under legacy `camlower` names and **45° down** under
 WCA `C###C` names. Keying geometry off the physical camera would silently rewrite every
 legacy dataset by tens of degrees. `MOUNTS` in
-`modules/georeference/georeference_images.py`, imported unchanged by `georeference_survey.py`:
+`modules/georeference/georeference_images.py`:
 
 | Family | fwd (m) | lat (m) | down (m) | pitch (° down from vehicle forward axis) | pitch accuracy (°) |
 |---|---:|---:|---:|---:|---:|
@@ -1921,7 +1921,7 @@ always **wins**; the fallback is reached only where there is none.
 |---|---|
 | Source of truth | `ASSUMED_MOUNT_DEFAULTS` + `assumed_pitch_prior()` in `modules/georeference/georeference_images.py`, consumed by **both** implementations |
 | Config record | `modules/cameras.json` → `defaults.assumed_mount` |
-| Knobs | `--assumed-pitch` / `--assumed-pitch-accuracy` (`georeference_survey.py`); `--g_assumed_pitch` / `--g_assumed_pitch_accuracy` (module) |
+| Knobs | `--g_assumed_pitch` / `--g_assumed_pitch_accuracy` (georeference module) |
 | Opt-out | a **negative** assumed pitch restores the 2026-08-07 behaviour (no pitch prior at all) |
 | Never applies to | `voyis_*` — poses come from the COLMAP bridge, so a vehicle-nav prior is the **wrong pipeline**, not a missing measurement, and a fallback would mask that |
 | Applies to | `wca_starboard` and any unrecognised family. The unknown-camera warning still fires, so the run still SAYS the mount was never measured |

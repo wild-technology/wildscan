@@ -653,8 +653,8 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
 - **Symptom.** The asset tiles to `COMPLETE`, lands at the right latitude and longitude,
   looks right in plan view, and is **wrong in depth by a fixed amount** — 72.7 m at NA168
   H2080, 70.4 m in the Solomon Sea, 27.1 m the *other* way in the Gulf of Mexico.
-- **Cause.** The exported Z is a depth below the **sea surface** (`georeference_survey.py:320` writes
-  `-abs(kalman_depth)`), i.e. an orthometric height on the geoid. Cesium — and any
+- **Cause.** The exported Z is a depth below the **sea surface** (the georeference stage writes
+  `-abs(depth)`), i.e. an orthometric height on the geoid. Cesium — and any
   ellipsoid-referenced consumer — reads it as height above the **WGS84 ellipsoid**. Every
   CRS in the chain is 2D, so nothing ever declares which. The gap is the geoid undulation N.
   [VERIFIED: FINDINGS 2026-08-31] See `06-…` §3.5.

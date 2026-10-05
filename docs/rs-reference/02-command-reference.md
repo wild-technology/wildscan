@@ -2506,7 +2506,7 @@ without a selection.
 | `-exportUndistoredImages` | Typo spelling | [INFERRED: §11] | `-exportUndistortedImages` |
 | `-stdConsole` | Not deprecated by Epic; **retired in this repo** | [VERIFIED: allocates a console window per instance boot, 2026-07-23] | `-writeProgress` + the `appProcessExecCmd` completion hook |
 | `RealityCapture*` setting keys | **Dead** in 2.x | [VERIFIED: overhaul commit 2, 2026-07-21] | the `app*` keys — see `03-settings-keys.md` |
-| `AlignImagesFromFolder.bat` (this repo) | Deprecated workflow, kept only for one legacy test driver | [VERIFIED: ARCHITECTURE.md] | `AlignZone.bat` |
+| `AlignImagesFromFolder.bat` (this repo) | Deprecated workflow, since removed from the repository | [VERIFIED: ARCHITECTURE.md] | `AlignZone.bat` |
 
 Legacy **file extensions** that are still accepted and are not deprecated spellings to be
 "fixed": `.rcproj` (`-unlockPPIProject` requires it), `.rcalign`, `.rccmd`, `.rcconfig`
