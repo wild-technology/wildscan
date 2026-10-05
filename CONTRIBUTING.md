@@ -18,17 +18,17 @@ py -3.13 -m venv .venv
 
 The offline tests use temporary inputs and settings. The EGM2008 geoid test
 skips when its grid is unavailable. Passing tests do not establish native
-alignment, model quality, or authenticated publishing. Manual validation
-tools in `scripts/validation/` can process data or create remote assets;
-read their help before using them.
+alignment, model quality, or authenticated publishing. The manual validation
+tool in `scripts/validation/` processes copies of your images; read its help
+before using it.
 
 ## Make changes
 
 - Reuse existing path, settings, camera, and process helpers. Check callers,
   serialized data, numeric types, and downstream effects before changing a contract.
 - Use `snake_case` for Python files, functions, and variables and `PascalCase`
-  for classes. Preserve native workflow filenames, CLI flags, saved setting
-  keys, and legacy compatibility aliases.
+  for classes. Preserve native workflow filenames, CLI flags, and saved setting
+  keys.
 - Keep `.bat` and `.vbs` files in CRLF format; `.gitattributes` supplies the
   checkout rules. Route native execution through `RealityScanCLI`.
 - Keep tests in `tests/` and manual checks in `scripts/validation/`. Keep
