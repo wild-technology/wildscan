@@ -43,7 +43,6 @@ pytest.importorskip('utm')
 pytest.importorskip('PIL')
 
 from PIL import Image  # noqa: E402
-import georeference_survey  # noqa: E402
 
 from module_base.parameter import Parameter  # noqa: E402
 from modules.georeference.georeference_images import (  # noqa: E402
@@ -118,15 +117,13 @@ def _rows(path):
     ('ROLL', 'kalman_roll_deg'),
 ])
 @pytest.mark.parametrize('value', ['nan', 'inf', '-inf'])
-def test_nonfinite_nav_fields_become_missing_in_both_readers(tmp_path, field, column,
-                                                           value):
+def test_nonfinite_nav_fields_become_missing(tmp_path, field, column, value):
     nav = _nav(tmp_path / 'nav.csv', 1)
     lines = nav.read_text(encoding='utf-8').splitlines()
     cells = lines[1].split(',')
     cells[lines[0].split(',').index(column)] = value
     nav.write_text(lines[0] + '\n' + ','.join(cells) + '\n', encoding='utf-8')
-    readers = [_module()._GeoreferenceImages__read_csv_data, georeference_survey.read_csv_data]
-    for reader in readers:
+    for reader in [_module()._GeoreferenceImages__read_csv_data]:
         rows = reader(str(nav))
         assert len(rows) == 1 and rows[0][field] is None
         assert rows[0]['TIME'] == BASE
@@ -293,7 +290,7 @@ def test_accuracy_overrides_reach_the_flight_log(tmp_path):
 
 def test_declination_reaches_the_yaw(tmp_path):
     """A named trajectory variable that was unreachable from every
-    interactive path: prompt_user was False and geoall had no flag."""
+    interactive path: prompt_user was False."""
     _m, plain, _raw = _run(tmp_path / 'a', ['P231C0001'])
     _m2, shifted, _raw2 = _run(tmp_path / 'b', ['P231C0001'],
                                magnetic_declination_deg=10.0)

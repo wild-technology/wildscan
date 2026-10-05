@@ -269,7 +269,7 @@ def test_a_good_log_still_parses(tmp_path):
 
 
 def test_a_Name_headed_log_still_parses(tmp_path):
-    """geoall writes 'Name'; the georeference module writes 'filename'."""
+    """Logs headed 'Name' parse like the georeference module's 'filename'."""
     path = tmp_path / 'flight_log_53N_UTM.txt'
     path.write_text('Name;X (East);Y (North)\na.jpg;1;2\n', encoding='utf-8')
     module = _module()

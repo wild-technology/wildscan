@@ -39,7 +39,6 @@ from __future__ import annotations
 import io
 import json
 import os
-import subprocess
 import sys
 
 import pytest
@@ -202,11 +201,11 @@ def test_good_sections_survive_beside_a_bad_one(tmp_path):
 
 def test_prompt_is_eof_safe(tmp_path, monkeypatch):
     path = tmp_path / 'rs_settings.json'
-    path.write_text(json.dumps({'geoall': {'image_base_dir': 'D:/stored'}}),
+    path.write_text(json.dumps({'tool': {'image_base_dir': 'D:/stored'}}),
                     encoding='utf-8')
     monkeypatch.setattr('sys.stdin', io.StringIO(''))
     store = SettingsStore(str(path))
-    assert store.prompt('geoall', 'image_base_dir', 'Folder') == 'D:/stored'
+    assert store.prompt('tool', 'image_base_dir', 'Folder') == 'D:/stored'
 
 
 def test_prompt_bool_is_eof_safe(tmp_path, monkeypatch):
@@ -223,7 +222,7 @@ def test_prompt_without_a_default_fails_with_a_named_error(tmp_path,
     monkeypatch.setattr('sys.stdin', io.StringIO(''))
     store = SettingsStore(str(tmp_path / 'rs_settings.json'))
     with pytest.raises(ValueError, match='Non-interactive run'):
-        store.prompt('geoall', 'never_set', 'Folder containing images')
+        store.prompt('tool', 'never_set', 'Folder containing images')
 
 
 def test_empty_stored_instance_name_falls_back(tmp_path):
@@ -232,23 +231,6 @@ def test_empty_stored_instance_name_falls_back(tmp_path):
                     encoding='utf-8')
     env = realityscan_env(SettingsStore(str(path)))
     assert env['RS_INSTANCE'] == DEFAULT_INSTANCE_NAME
-
-
-# ------------------------------------------------------ geoall runs headless
-
-def test_geoall_help_does_not_prompt():
-    """geoall ignored argv entirely and prompted unconditionally, so
-    `georeference_survey.py --help` was an EOFError traceback - in the file the docs
-    call the canonical georeferencer."""
-    proc = subprocess.run(
-        [sys.executable, os.path.join(REPO_ROOT, 'georeference_survey.py'), '--help'],
-        stdin=subprocess.DEVNULL, capture_output=True, text=True,
-        cwd=REPO_ROOT)
-    assert proc.returncode == 0, proc.stderr
-    assert 'Traceback' not in proc.stderr
-    for flag in ('--declination', '--pos-accuracy', '--alt-accuracy',
-                 '--orientation-accuracy', '--image-base-dir'):
-        assert flag in proc.stdout
 
 
 # -------------------------------------------------- camera registry parity

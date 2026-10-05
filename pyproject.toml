@@ -42,7 +42,7 @@ dependencies = [
     "numpy>=2.5",
     "opencv-python>=5.0",    # extract_images / preprocess_images (CLAHE, WB)
     "pandas>=3.0",
-    "Pillow>=12.3",          # georeference_survey.py, georeference, timestamp_rename (EXIF/JPEG)
+    "Pillow>=12.3",          # georeference (EXIF/JPEG)
     "pyproj>=3.7",           # cesium_placement - EGM2008 geoid, CRS transforms
     "requests>=2.33.0",      # publish_cesium.py - ion REST
     "rich>=15.0",            # wildscan TUI
@@ -52,7 +52,7 @@ dependencies = [
     "shapely>=2.1",
     "textual>=8.2",          # wildscan TUI
     "tqdm>=4.69",
-    "utm>=0.8",              # georeference_survey.py, georeference - UTM <-> WGS84
+    "utm>=0.8",              # georeference - UTM <-> WGS84
 ]
 
 [project.optional-dependencies]

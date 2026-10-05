@@ -1,11 +1,8 @@
 """The RealityScan orientation frame: pitch 0 = nadir, 90 = horizontal.
 
 This conversion decides which way every camera in every solve is claimed to
-point, and until 2026-08-31 it had **no test at all** - the two
-implementations (`geoall.convert_to_rc_orientation` and the georeference
-module's `_convert_to_rc_orientation`) were free to drift, and a
-same-session claim that "we write pitch from horizontal, so Port is 90 deg
-wrong" had to be refuted by argument rather than by a red test.
+point. The georeference module's `_convert_to_rc_orientation` is the one
+implementation; these tests pin it.
 
 The convention is not a house choice, it is RealityScan's:
 `-renderMeshFromCustomPositionYPR` documents a camera at `(0,0,150)` with
@@ -28,15 +25,19 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-import georeference_survey  # noqa: E402
 from modules.georeference.georeference_images import (  # noqa: E402
     ASSUMED_MOUNT_DEFAULTS, GeoreferenceImages, MOUNTS,
     NO_ASSUMED_MOUNT_FAMILIES)
 
 
+def _to_rc(heading, vehicle_pitch, roll, tilt, decl):
+    module = GeoreferenceImages(logging.getLogger('quiet'))
+    return module._convert_to_rc_orientation(heading, vehicle_pitch, roll,
+                                             tilt, decl)
+
+
 def convert(heading=0.0, vehicle_pitch=0.0, roll=0.0, tilt=0.0, decl=0.0):
-    return georeference_survey.convert_to_rc_orientation(heading, vehicle_pitch, roll,
-                                            tilt, decl)
+    return _to_rc(heading, vehicle_pitch, roll, tilt, decl)
 
 
 # --------------------------------------------------------------------------
@@ -90,33 +91,17 @@ def test_roll_passes_through_untouched():
 # --------------------------------------------------------------------------
 
 def test_missing_vehicle_pitch_yields_no_pitch_prior():
-    assert georeference_survey.convert_to_rc_orientation(10.0, None, 0.0, 10.0, 0.0)[1] is None
+    assert _to_rc(10.0, None, 0.0, 10.0, 0.0)[1] is None
 
 
 def test_missing_mount_tilt_yields_no_pitch_prior():
     """`convert_to_rc_orientation` is the last line of defence: whatever the
     caller decided about assumed mounts, a None tilt here must not become 0."""
-    assert georeference_survey.convert_to_rc_orientation(10.0, 0.0, 0.0, None, 0.0)[1] is None
+    assert _to_rc(10.0, 0.0, 0.0, None, 0.0)[1] is None
 
 
 def test_missing_heading_yields_no_yaw():
-    assert georeference_survey.convert_to_rc_orientation(None, 0.0, 0.0, 10.0, 0.0)[0] is None
-
-
-# --------------------------------------------------------------------------
-# the two implementations must not drift
-# --------------------------------------------------------------------------
-
-@pytest.mark.parametrize('heading,vp,roll,tilt,decl', [
-    (0.0, 0.0, 0.0, 10.0, 0.0),
-    (137.5, 3.25, -2.0, 45.0, 11.5),
-    (359.0, -8.0, 15.0, 0.0, -4.0),
-    (90.0, 0.0, 0.0, 90.0, 0.0),
-])
-def test_geoall_and_the_module_agree(heading, vp, roll, tilt, decl):
-    module = GeoreferenceImages(logging.getLogger('quiet'))
-    assert (module._convert_to_rc_orientation(heading, vp, roll, tilt, decl)
-            == georeference_survey.convert_to_rc_orientation(heading, vp, roll, tilt, decl))
+    assert _to_rc(None, 0.0, 0.0, 10.0, 0.0)[0] is None
 
 
 # --------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge union log, merge exit codes, and the folder-organisation step.
+"""Merge union log and merge exit codes.
 
 merge_zones.build_union_flight_log (audit 2026-08-07):
   - the coordinate FRAME for the whole merge came from zone_logs[0] in
@@ -20,15 +20,6 @@ merge_zones.main:
     checked: an on-disk document declaring a terminal state for a project
     that was never saved.
 
-organize_by_date.py (step 1 of the processing chain):
-  - its date regex was anchored at the START of the name, so it matched
-    only the Sony scheme. On rig imagery every file took the "no date
-    pattern" branch and the script printed 'Complete: 0 files moved' and
-    exited 0. Probed: 'P231C0001_20260807T120000Z.jpg' -> None,
-    'camlower_20231104020854.jpg' -> None, 'ZEUSS_...' -> None.
-  - it shipped a hardcoded per-user default path (hard rule 5).
-  - shutil.move onto an existing FILE overwrites silently.
-
 Offline: no RealityScan; merge_zones' union builder is called directly and
 the exit-code contracts are checked as source structure.
 
@@ -38,16 +29,12 @@ from __future__ import annotations
 
 import logging
 import os
-import re
-import subprocess
 import sys
 
 import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, REPO_ROOT)
-
-import organize_by_date  # noqa: E402
 
 QUIET = logging.getLogger('merge-test')
 QUIET.addHandler(logging.NullHandler())
@@ -178,80 +165,3 @@ def test_the_evaluation_gate_is_written_only_on_success():
     assert failure_return < gate_write, \
         'the gate is still written before the assembly result is checked'
     assert 'EVALUATION_BLOCKED.txt' in source
-
-
-# ---------------------------------------------------------- organize_by_date
-
-@pytest.mark.parametrize('name', [
-    'P231C0001_20260807T120000Z.jpg',      # WCA
-    'camlower_20231104020854.jpg',         # legacy rig
-    'ZEUSS_20260807T120000Z.jpg',          # Zeuss
-    '20250729T155918__DSC7725_ILCE-1.jpg',  # Sony (the only one that worked)
-])
-def test_every_rig_filename_family_is_dated(name):
-    assert organize_by_date.extract_date_from_filename(name) is not None, name
-
-
-def test_an_undateable_name_is_still_None():
-    assert organize_by_date.extract_date_from_filename('IMG_0001.jpg') is None
-
-
-def test_files_are_sorted_into_date_folders(tmp_path):
-    (tmp_path / 'P231C0001_20260807T120000Z.jpg').write_bytes(b'j')
-    (tmp_path / 'camlower_20231104020854.jpg').write_bytes(b'j')
-    assert organize_by_date.organize_images_by_date(str(tmp_path)) == 0
-    assert (tmp_path / '07August' /
-            'P231C0001_20260807T120000Z.jpg').is_file()
-    assert (tmp_path / '04November' / 'camlower_20231104020854.jpg').is_file()
-
-
-def test_moving_nothing_is_a_LOUD_failure(tmp_path):
-    """'Complete: 0 files moved' + exit 0 reads identically whether the
-    folder was already organised, held no imagery, or holds imagery this
-    script cannot date."""
-    (tmp_path / 'IMG_0001.jpg').write_bytes(b'j')
-    assert organize_by_date.organize_images_by_date(str(tmp_path)) == 1
-
-
-def test_an_imageless_folder_is_a_LOUD_failure(tmp_path):
-    assert organize_by_date.organize_images_by_date(str(tmp_path)) == 1
-
-
-def test_an_existing_destination_file_is_skipped_not_overwritten(tmp_path):
-    """shutil.move's collision check only fires when the destination is a
-    DIRECTORY, so a same-named file was silently replaced."""
-    name = 'P231C0001_20260807T120000Z.jpg'
-    (tmp_path / name).write_bytes(b'NEW')
-    target = tmp_path / '07August'
-    target.mkdir()
-    (target / name).write_bytes(b'ORIGINAL')
-    organize_by_date.organize_images_by_date(str(tmp_path))
-    assert (target / name).read_bytes() == b'ORIGINAL'
-    assert (tmp_path / name).read_bytes() == b'NEW', 'the source was consumed'
-
-
-def test_dry_run_moves_nothing(tmp_path):
-    name = 'P231C0001_20260807T120000Z.jpg'
-    (tmp_path / name).write_bytes(b'j')
-    assert organize_by_date.organize_images_by_date(str(tmp_path),
-                                                    dry_run=True) == 0
-    assert (tmp_path / name).is_file()
-    assert not (tmp_path / '07August').exists()
-
-
-def test_no_hardcoded_per_user_path_remains():
-    """hard rule 5: data lives on volumes with user-specific paths."""
-    source = open(os.path.join(REPO_ROOT, 'organize_by_date.py'),
-                  encoding='utf-8').read()
-    assert not re.search(r"r?['\"][A-Z]:\\\\?[A-Za-z]", source), \
-        'a hardcoded drive-letter default is back'
-
-
-def test_organize_runs_unattended():
-    proc = subprocess.run(
-        [sys.executable, os.path.join(REPO_ROOT, 'organize_by_date.py'),
-         '--help'],
-        capture_output=True, text=True, stdin=subprocess.DEVNULL,
-        cwd=REPO_ROOT)
-    assert proc.returncode == 0 and 'Traceback' not in proc.stderr
-    assert '--dry-run' in proc.stdout and '--source' in proc.stdout

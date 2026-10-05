@@ -13,9 +13,9 @@ Usage:
     from module_base.settings_store import SettingsStore
 
     settings = SettingsStore()
-    input_dir = settings.prompt("geoall", "image_base_dir",
-                                "Folder containing the images to georeference")
-    settings.set("geoall", "image_base_dir", input_dir)  # prompt() already saves
+    images_dir = settings.prompt("poses2flightlog", "images_dir",
+                                 "Aligned image directory (with .xmp sidecars)")
+    settings.set("poses2flightlog", "images_dir", images_dir)  # prompt() already saves
 """
 
 from __future__ import annotations
@@ -182,7 +182,7 @@ class SettingsStore:
         isatty()=True with an EOF stdin - Windows trap registry), and a
         bare input() then aborts the driver with an EOFError traceback.
         ``ask()`` has always guarded this; ``prompt``/``prompt_bool`` did
-        not, so georeference_survey.py and organize_by_date.py could not run unattended
+        not, so standalone scripts that prompt could not run unattended
         at all (audit 2026-08-07). Returns ``default`` on EOF; raises a
         NAMED error when there is no default to fall back to.
         """

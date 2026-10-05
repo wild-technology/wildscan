@@ -141,7 +141,7 @@ def test_raw_data_scan_finds_video_nav_imagery(tmp_path):
     scan = scan_raw_data(raw)
     assert len(scan.videos) == 2
     assert scan.nav_files[0].name == "H2024_final_datatable.csv", (
-        "final_datatable must be preferred, mirroring geoall")
+        "final_datatable must be preferred")
     assert scan.image_count == 1
 
 

@@ -4,7 +4,6 @@ The pipeline writes flight logs under several names depending on which
 stage produced them:
 
 - ``flight_log_<zone>_UTM.txt``          georeference module (zone = UTM zone)
-- ``flight_log_<dive>_<zone>_UTM.txt``   georeference_survey.py (multi-dive)
 - ``flight_log<suffix>_UTM.txt``         per-zone copies from Batch Directory
   (suffix may be empty, giving ``flight_log_UTM.txt``)
 - ``flight_log.txt``                     legacy runs

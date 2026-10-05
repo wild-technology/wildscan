@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
-"""Pins the rig mount table and its family resolution (review M4/M5).
+"""Pins the rig mount table and its family resolution (review M5).
 
-Three bugs motivated this, all found 2026-07-26:
+The bug that motivated this, found 2026-07-26:
 
 M5  The georeferencer matched literal cruise digits ('p231c', 'c231c'), so the
     next cruise's 'C245C0007_*.jpg' fell through to a ZERO lever arm and a 0 deg
     pitch offset - Cinema losing its 45 deg down-look - asserted at 10 deg
     confidence, with one suppressed warning for the whole run. WCA Starboard
     ('S231C*') fell through even for the CURRENT cruise.
-
-M4  georeference_survey.py - which ARCHITECTURE.md hard rule 6 and the README call the CANONICAL
-    georeferencer - had no WCA branch at all and claimed 3 deg orientation
-    accuracy where the module claimed 15. Same rig, two answers.
 
 A design trap this test guards: geometry belongs to the FILENAME FAMILY, not to
 the physical camera. Legacy 'camlower' and WCA 'C###C' are the SAME Cinema unit
@@ -36,7 +32,6 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-import georeference_survey  # noqa: E402
 from modules import camera_registry  # noqa: E402
 from modules.georeference import georeference_images as geo_module  # noqa: E402
 from modules.georeference.georeference_images import (  # noqa: E402
@@ -164,52 +159,6 @@ def test_unknown_family_is_counted(geo):
     assert geo._unknown_camera_count > before
 
 
-# ------------------------------------------------------- geoall parity (M4)
-
-@pytest.mark.parametrize('family,filename', SAMPLE.items())
-def test_geoall_matches_the_module(geo, family, filename):
-    """Standalone georeferencing must agree with the pipeline module."""
-    assert georeference_survey.get_camera_offsets(filename) == geo._get_camera_offsets(filename)
-    assert georeference_survey.get_camera_pitch_offset(filename) == geo._get_camera_pitch_offset(filename)
-    # Pitch ACCURACY was the one column the M4/M5 unification missed: geoall
-    # kept a stale prefix chain that gave WCA 10.0 against the module's 15.0
-    # and Zeuss 10.0 against 30.0 - a 3x-overconfident prior on the mount
-    # with the least ground truth, and PD-0 shows over-tight orientation
-    # accuracy FRAGMENTS the solve (audit #6, 2026-07-28).
-    assert georeference_survey.get_camera_pitch_accuracy(filename) == \
-        geo._get_camera_pitch_accuracy(filename)
-
-
-@pytest.mark.parametrize('filename', ['S231C0003_x.jpg', 'mystery_cam.jpg'])
-def test_geoall_fallback_matches_the_module_for_unmapped_families(geo, filename):
-    """Starboard (mount None) and unknown families must fall back to the SAME
-    figure in both implementations - the parity requirement does not stop at
-    the mapped families (final review: geoall briefly used 15 vs 10)."""
-    assert georeference_survey.get_camera_pitch_accuracy(filename) == \
-        geo._get_camera_pitch_accuracy(filename)
-
-
-def test_geoall_covers_wca_at_all(geo):
-    """geoall had NO WCA branch, so Cinema lost its 45 deg down-look."""
-    assert georeference_survey.get_camera_pitch_offset('C231C0003_x.jpg') == 45.0
-    assert georeference_survey.get_camera_offsets('P231C0003_x.jpg') == (1.0, 0.0, 1.0)
-
-
-def test_geoall_orientation_accuracy_is_the_measured_value():
-    """3 deg FRAGMENTS the solve (PD-0); 15 deg is the measured DEFAULT.
-
-    Was a source grep for the literal `yaw_acc = 15.0`; the value now comes
-    from the shared PRIOR_ACCURACY_DEFAULTS table geoall imports, so the
-    check is on the default it actually writes (audit 2026-08-07)."""
-    assert georeference_survey._ACCURACY_DEFAULTS['yaw'] == 15.0
-    assert georeference_survey._ACCURACY_DEFAULTS['roll'] == 15.0
-    # No second table anywhere in geoall: the 3-vs-15 divergence M4 exists
-    # to prevent came from exactly such a private copy.
-    src = open(os.path.join(REPO_ROOT, 'georeference_survey.py'), encoding='utf-8').read()
-    assert 'yaw_acc = 3.0' not in src
-    assert 'yaw_acc = 15.0' not in src
-
-
 # ------------------------------------------------- cameras.json parity (belt)
 # camera_registry already hard-fails the import if cameras.json diverges from
 # its retained legacy tables (the brace); these tests are the belt on top -
@@ -283,13 +232,12 @@ def test_cameras_json_patterns_resolve_like_the_runtime_matcher():
     assert json_family('unrecognised.jpg') is None
 
 
-def test_cameras_json_defaults_match_the_shared_accuracy_table():
+def test_cameras_json_defaults_match_the_shared_accuracy_table(geo):
     """cameras.json's defaults and the ONE runtime table must agree.
 
     The accuracies used to be literals in BOTH flight-log writers and this
     test grepped for them as source text; they are now the defaults of
-    georeference_images.PRIOR_ACCURACY_DEFAULTS, which geoall imports, so
-    the contract is a value comparison rather than a string search
+    georeference_images.PRIOR_ACCURACY_DEFAULTS, so the contract is a value comparison rather than a string search
     (audit 2026-08-07)."""
     data = _cameras_json()
     d = data['defaults']
@@ -298,24 +246,20 @@ def test_cameras_json_defaults_match_the_shared_accuracy_table():
     assert geo_module.PRIOR_ACCURACY_DEFAULTS['alt'] == pos['alt']
     assert geo_module.PRIOR_ACCURACY_DEFAULTS['yaw'] == ori['yaw']
     assert geo_module.PRIOR_ACCURACY_DEFAULTS['roll'] == ori['roll']
-    # geoall must consume the SAME object, not a copy of the numbers.
-    assert georeference_survey._ACCURACY_DEFAULTS is geo_module.PRIOR_ACCURACY_DEFAULTS
     # An UNKNOWN mount takes the house convention (adopted 2026-08-31):
-    # 10 deg down at 30 deg accuracy. cameras.json, the shared table and BOTH
-    # implementations must agree, or the two georeferencers drift the way the
-    # 3-vs-15 orientation accuracy once did.
+    # 10 deg down at 30 deg accuracy. cameras.json, the shared table and the
+    # module must agree.
     assumed = d['assumed_mount']
     assert geo_module.ASSUMED_MOUNT_DEFAULTS['pitch'] == assumed['pitch_deg']
     assert geo_module.ASSUMED_MOUNT_DEFAULTS['p_acc'] == assumed['pitch_accuracy_deg']
-    assert georeference_survey._ASSUMED_MOUNT is geo_module.ASSUMED_MOUNT_DEFAULTS
-    assert georeference_survey.get_camera_pitch_offset('mystery_cam.jpg') == assumed['pitch_deg']
-    assert georeference_survey.get_camera_pitch_accuracy('mystery_cam.jpg') == assumed['pitch_accuracy_deg']
+    assert geo._get_camera_pitch_offset('mystery_cam.jpg') == assumed['pitch_deg']
+    assert geo._get_camera_pitch_accuracy('mystery_cam.jpg') == assumed['pitch_accuracy_deg']
     # The exclusion list is part of the contract, not an implementation detail.
     assert set(assumed['excluded_families']) == set(
         geo_module.NO_ASSUMED_MOUNT_FAMILIES)
     # A MEASURED mount is never overridden by the assumption.
-    assert georeference_survey.get_camera_pitch_offset('C231C0001.jpg') == 45.0
-    assert georeference_survey.get_camera_pitch_accuracy('C231C0001.jpg') == 15.0
+    assert geo._get_camera_pitch_offset('C231C0001.jpg') == 45.0
+    assert geo._get_camera_pitch_accuracy('C231C0001.jpg') == 15.0
 
 
 def test_cameras_json_voyis_entries_registered_and_gated():

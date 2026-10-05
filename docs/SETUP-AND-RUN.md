@@ -393,17 +393,6 @@ $env:RS_NO_INTERACTIVE = "1"
 
 `& ".\.venv\Scripts\python.exe" main.py --help` lists the flags for the enabled modules.
 
-**Georeferencing on its own** uses
-`& ".\.venv\Scripts\python.exe" georeference_survey.py`, whose
-standalone workflow includes multiprocessing image copying. It asks for the image
-folder, the ROV data folder and an output folder, or takes `--image-base-dir`,
-`--rov-data-dir` and `--output-dir`.
-
-Image-copy retries check existing destination content before reuse. A stale
-destination is preserved and rejected. If any image copy fails for a dive,
-the standalone command withholds that dive's new flight log and returns a
-failed result; validated outputs for successful dives remain available.
-
 **Merge the per-zone components, then model the merged result:**
 
 ```powershell
