@@ -380,14 +380,138 @@ def test_a_stale_sidecar_of_another_form_is_replaced_before_the_run(
     stale = _images(ws)[0]
     assert camera_registry.identify(stale.name) is left
     name = stale.name[:-len('.JPG')] + '.xmp'
-    stale.with_name(name).write_text(sidecar_xmp(left, 'prior'),
-                                     encoding='utf-8')
+    stale.with_name(name).write_bytes(
+        sidecar_xmp(left, 'prior').encode('utf-8'))
     seen = {}
     module, _calls = _module(
         tmp_path, monkeypatch, ws, logging.getLogger('align-calibration-test'),
         on_run=lambda args: seen.update(_sidecars(ws)), min_size=2)
     module.run()
     assert seen[name] == sidecar_xmp(left, 'groups')
+
+
+def _sidecar_of(image: Path) -> Path:
+    return image.with_name(image.name[:-len('.JPG')] + '.xmp')
+
+
+PRE_EXISTING = Path('aligned_components', 'zone_1', 'pre_existing_sidecars')
+
+
+def test_a_foreign_pose_sidecar_is_moved_aside_before_the_run(
+        tmp_path, monkeypatch, logs):
+    """A sidecar beside an image that this pipeline did not write (here a
+    pose prior) is moved, content intact, under the zone's output folder
+    before the decided sidecar is written - never overwritten."""
+    modes = {'ilx_left': 'groups', 'ilx_right': 'prior'}
+    ws = _workspace(tmp_path, modes)
+    zone = ws / 'batched_images_by_zone' / 'zone_1'
+    image = _images(ws)[0]
+    foreign = _sidecar_of(image)
+    foreign.write_bytes(POSE_SIDECAR.encode('utf-8'))
+    seen = {}
+    module, _calls = _module(
+        tmp_path, monkeypatch, ws, logging.getLogger('align-calibration-test'),
+        on_run=lambda args: seen.update(_sidecars(ws)), min_size=2)
+    assert module.run()['Success'] is True
+
+    moved = ws / PRE_EXISTING / foreign.relative_to(zone)
+    assert moved.read_bytes() == POSE_SIDECAR.encode('utf-8')
+    camera = camera_registry.identify(image.name)
+    assert seen[foreign.name] == sidecar_xmp(camera, modes[camera.key])
+    warnings = [m for m in logs.messages if 'pre-existing' in m]
+    assert len(warnings) == 1, logs.messages
+    assert '1 pre-existing sidecar(s)' in warnings[0]
+    assert str(ws / PRE_EXISTING) in warnings[0]
+    assert 'MOVED' in warnings[0]
+
+
+def test_own_stale_sidecar_of_another_mode_is_replaced_not_moved(
+        tmp_path, monkeypatch, logs):
+    modes = {'ilx_left': 'groups', 'ilx_right': 'groups'}
+    ws = _workspace(tmp_path, modes)
+    image = _images(ws)[0]
+    camera = camera_registry.identify(image.name)
+    # Bytes as the pipeline writes them (LF; write_text would give CRLF on
+    # Windows, which is not byte for byte the pipeline's own sidecar).
+    _sidecar_of(image).write_bytes(sidecar_xmp(camera, 'prior').encode('utf-8'))
+    module, _calls = _module(tmp_path, monkeypatch, ws,
+                             logging.getLogger('align-calibration-test'),
+                             min_size=2)
+    assert module.run()['Success'] is True
+    assert _sidecar_of(image).read_text(encoding='utf-8') == \
+        sidecar_xmp(camera, 'groups')
+    assert not (ws / PRE_EXISTING).exists()
+    assert not any('pre-existing' in m for m in logs.messages), logs.messages
+
+
+@pytest.mark.parametrize('modes', [
+    {'ilx_left': 'off', 'ilx_right': 'off'},
+    None,
+])
+def test_nothing_is_moved_aside_with_calibration_off(tmp_path, monkeypatch,
+                                                     logs, modes):
+    ws = _workspace(tmp_path, modes)
+    foreign = _sidecar_of(_images(ws)[0])
+    foreign.write_bytes(POSE_SIDECAR.encode('utf-8'))
+    seen = {}
+    module, _calls = _module(
+        tmp_path, monkeypatch, ws, logging.getLogger('align-calibration-test'),
+        on_run=lambda args: seen.update(_sidecars(ws)), min_size=2)
+    module.run()
+    assert seen == {foreign.name: POSE_SIDECAR}
+    assert not (ws / PRE_EXISTING).exists()
+    heads_up = [m for m in logs.messages if 'HEADS UP' in m]
+    assert len(heads_up) == 1, logs.messages
+    assert 'imports them as pose priors' in heads_up[0]
+    assert 'not preserved' in heads_up[0]
+    assert 'pre_existing_sidecars' not in heads_up[0]
+
+
+def test_a_moved_sidecar_never_clobbers_an_earlier_one(tmp_path, monkeypatch,
+                                                       logs):
+    modes = {'ilx_left': 'groups', 'ilx_right': 'groups'}
+    ws = _workspace(tmp_path, modes)
+    zone = ws / 'batched_images_by_zone' / 'zone_1'
+    foreign = _sidecar_of(_images(ws)[0])
+    target = ws / PRE_EXISTING / foreign.relative_to(zone)
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b'earlier')
+    target.with_name(target.stem + '.1.xmp').write_bytes(b'earlier 1')
+    foreign.write_bytes(b'user edit')
+    module, _calls = _module(tmp_path, monkeypatch, ws,
+                             logging.getLogger('align-calibration-test'),
+                             min_size=2)
+    module.run()
+    # The previous run's folder (holding the earlier moves) is kept: it is
+    # moved aside with the rest of the zone output, never deleted.
+    superseded = list((ws / 'superseded').iterdir())
+    assert len(superseded) == 1
+    kept = superseded[0] / 'pre_existing_sidecars' / foreign.relative_to(zone)
+    assert kept.read_bytes() == b'earlier'
+    assert kept.with_name(kept.stem + '.1.xmp').read_bytes() == b'earlier 1'
+    assert (ws / PRE_EXISTING / foreign.relative_to(zone)).read_bytes() == \
+        b'user edit'
+
+
+def test_a_moved_sidecar_gets_a_numbered_name_on_collision(tmp_path):
+    camera = camera_registry.CAMERAS['ilx_left']
+    images = tmp_path / 'images' / 'ilx_left'
+    images.mkdir(parents=True)
+    image = images / 'Cam1_20260820_192542.42.card.JPG'
+    image.write_bytes(b'jpeg')
+    destination = tmp_path / 'out' / 'pre_existing_sidecars'
+    for attempt in range(3):
+        _sidecar_of(image).write_bytes(f'user {attempt}'.encode())
+        moved = calibration_sidecars.move_foreign_sidecars(
+            [str(image)], {camera.key: 'groups'}, str(tmp_path / 'images'),
+            str(destination))
+        assert len(moved) == 1
+    names = sorted(p.name for p in (destination / 'ilx_left').iterdir())
+    assert names == ['Cam1_20260820_192542.42.card.1.xmp',
+                     'Cam1_20260820_192542.42.card.2.xmp',
+                     'Cam1_20260820_192542.42.card.xmp']
+    assert (destination / 'ilx_left' / names[2]).read_bytes() == b'user 0'
+    assert (destination / 'ilx_left' / names[1]).read_bytes() == b'user 2'
 
 
 def test_a_change_of_calibration_mode_is_reported_on_a_rerun(tmp_path,

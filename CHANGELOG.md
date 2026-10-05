@@ -36,6 +36,10 @@ cameras captured with Wild Sync. This release is breaking.
 - A zone with fewer images than the minimum component size exports
   components holding at least half of its images (at least 2 cameras),
   instead of requiring every image to register.
+- Before calibration sidecars are written, an existing sidecar beside an
+  image that the pipeline did not write (a pose prior, an edited
+  calibration) is moved to `aligned_components/<zone>/pre_existing_sidecars/`
+  instead of being overwritten.
 - `packaging` is declared as a test dependency.
 - The test suite moved from `testing/` to `tests/`.
 

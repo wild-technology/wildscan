@@ -181,10 +181,18 @@ RealityScan Alignment stage (`modules/realityscan_interface/realityscan_interfac
 reads the per-camera modes from the intake manifest. When at least one camera's
 mode is `prior` or `groups`, for every zone it aligns it:
 
-1. writes the decided sidecar beside every image of that camera in the zone;
+1. moves any existing sidecar beside an image of that camera that is not byte
+   for byte one of the pipeline's own calibration sidecars (a pose prior, an
+   edited calibration, a file from another tool) into
+   `aligned_components/<zone>/pre_existing_sidecars/`, keeping its path
+   relative to the zone and never replacing a file already there (a
+   numbered name `<stem>.<n>.xmp` instead), and logs one warning with the
+   count and the folder; the pipeline's own sidecars of either mode are
+   replaced in place;
+2. writes the decided sidecar beside every image of that camera in the zone;
    the sidecar is the image name without its last extension plus `.xmp`
    (`Cam1_20260820_192542.42.card.JPG` -> `Cam1_20260820_192542.42.card.xmp`);
-2. writes `<zone>.rscmd` into the zone's output folder
+3. writes `<zone>.rscmd` into the zone's output folder
    (`aligned_components/<zone>/`): one line per image, sorted by path, absolute
    quoted paths, CRLF line endings,
 
@@ -194,7 +202,7 @@ mode is `prior` or `groups`, for every zone it aligns it:
    ```
 
    (the second form for an image without a sidecar);
-3. passes the `.rscmd` path to `AlignZone.bat` as its seventh argument.
+4. passes the `.rscmd` path to `AlignZone.bat` as its seventh argument.
    `AlignZone.bat` then adds the images with `-execRSCMD <file>` instead of
    `-addFolder`.
 
@@ -204,6 +212,16 @@ no sidecar or `.rscmd` is written and `AlignZone.bat` adds the zone with
 Sync Intake is part of the same run, fails the stage before anything is
 aligned. Calibration delivery cannot be combined with the pool zone layout
 (`RS_ALIGN_POOL_DIR`); the stage refuses that combination.
+
+A previous run's zone output folder that holds a `pre_existing_sidecars`
+folder is moved to `superseded/` with its projects and components, never
+cleared.
+
+Pose-bearing sidecars beside images that get no calibration sidecar (every
+image when calibration is `off`) are not moved: RealityScan imports them as
+pose priors, its pose export overwrites them and the hygiene below rewrites
+or deletes what remains. The stage warns before the run that their content is
+not preserved.
 
 After each run, the sidecar hygiene (`sanitize_and_census`,
 `ensure_calibration_sidecars`) rewrites any pose-bearing sidecar left beside

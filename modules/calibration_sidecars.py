@@ -338,6 +338,63 @@ def _check_modes(modes: Mapping[str, str]) -> None:
                              f'{DECIDED_MODES}, got {mode!r}')
 
 
+def is_own_sidecar(content: bytes, camera: Camera) -> bool:
+    """True when ``content`` is byte for byte a sidecar this module writes
+    for ``camera`` (:func:`sidecar_xmp` in any sidecar-writing mode)."""
+    return any(content == sidecar_xmp(camera, mode).encode('utf-8')
+               for mode in SIDECAR_MODES)
+
+
+def _free_path(path: str) -> str:
+    """``path``, or ``<stem>.<n>.xmp`` with the lowest ``n`` not in use."""
+    if not os.path.lexists(path):
+        return path
+    stem, ext = os.path.splitext(path)
+    n = 1
+    while os.path.lexists(f'{stem}.{n}{ext}'):
+        n += 1
+    return f'{stem}.{n}{ext}'
+
+
+def move_foreign_sidecars(image_paths: Iterable[str],
+                          modes: Mapping[str, str], image_root: str,
+                          destination: str) -> list[tuple[str, str]]:
+    """Move every existing sidecar that :func:`write_sidecars` would
+    replace and that this module did not write into ``destination``.
+
+    Only images whose camera mode writes a sidecar are considered. A
+    ``<stem>.xmp`` beside such an image whose bytes are not one of
+    :func:`sidecar_xmp`'s outputs for that camera (a pose prior, an edited
+    calibration, a file from another tool) is moved to the same path
+    relative to ``image_root`` under ``destination``; an existing file
+    there is never replaced (``<stem>.<n>.xmp`` instead). The pipeline's
+    own sidecars, of any mode, stay and are overwritten by
+    :func:`write_sidecars`. Returns ``(source, moved to)`` pairs.
+    """
+    _check_modes(modes)
+    image_root = os.path.abspath(image_root)
+    moved: list[tuple[str, str]] = []
+    for image in sorted(os.path.abspath(p) for p in image_paths):
+        camera = camera_registry.identify(os.path.basename(image))
+        if camera is None or modes.get(camera.key) not in SIDECAR_MODES:
+            continue
+        xmp = sidecar_path(image)
+        if not os.path.isfile(xmp):
+            continue
+        with open(xmp, 'rb') as f:
+            content = f.read()
+        if is_own_sidecar(content, camera):
+            continue
+        relative = os.path.relpath(xmp, image_root)
+        if relative.startswith(os.pardir):
+            raise ValueError(f'{xmp} is not under {image_root}')
+        target = _free_path(os.path.join(destination, relative))
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        os.rename(xmp, target)
+        moved.append((xmp, target))
+    return moved
+
+
 def write_sidecars(image_paths: Iterable[str],
                    modes: Mapping[str, str]) -> list[tuple[str, str | None]]:
     """Write the decided sidecar beside each image.
