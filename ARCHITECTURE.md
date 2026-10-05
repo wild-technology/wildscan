@@ -167,8 +167,7 @@ project status and decisions. The distilled, self-contained counterpart is
 
 Python files, functions and variables use `snake_case`; class names retain
 their established `PascalCase`. Names describe the operation:
-`georeference_survey.py`, `decimate_images.py`, `poses_to_flight_log.py`,
-`run_calibration_ladder.py`, and `score_yellow_pixels.py`.
+`georeference_survey.py`, `decimate_images.py` and `poses_to_flight_log.py`.
 
 Preserve existing native commands, workflow filenames, public framework
 methods, environment variables, and serialized/settings keys. The former
@@ -192,11 +191,8 @@ Exceptions that must NOT be renamed:
 **Entry points**
 
 - `tests/` — offline pytest tests and fixtures; no campaign launchers.
-- `scripts/campaigns/` — ON2026 run2/run3/union, workbench-night, and
-  calibration-ladder drivers. These are dataset-specific workflows.
 - `scripts/validation/` — explicit manual validations and their
   preprocessing variant grid.
-- `scripts/analysis/` — reusable image-analysis commands.
 - `docs/validation/` — historical experiment plans;
   `docs/validation/results/` preserves their result evidence. Dated plans
   retain their original command paths; use the current script locations above.
@@ -246,9 +242,7 @@ Exceptions that must NOT be renamed:
     FBX-by-parts + ultra-dense colored PLY), `SaveProjectCopy`.
   - Boot/env: `startRealityScan`, `SetVariables`. Boot honors
     `RS_HEADLESS=0` for a GUI-visible instance.
-  - Supporting/testing: `GrowZone`, `NightGrow` (attach-only seed growth;
-    `%1` = target instance), `GuiWorkbench`, `ComputeModel`,
-    `CalibCellAlign`, `FlushCache` (sets retention 0 during the clear —
+  - Supporting/testing: `GrowZone`, `FlushCache` (sets retention 0 during the clear —
     the 7-day default kept 918 GB), and `AlignImagesFromFolder`
     (DEPRECATED; kept only because `scripts/validation/run_zone9_validation.py` drives it).
     The one-off investigation probes and the superseded workflows were
@@ -311,8 +305,6 @@ Exceptions that must NOT be renamed:
 - `modules/workspace_census.py` — workspace-level census: what components,
   models and exports exist on disk for a project, and the name mapping
   persisted at capture time.
-- `modules/feature_merge.py` — 3D extents, feature-box assignment, and
-  merge planning that reports what it can and cannot glue.
 - `modules/align_fingerprint.py` — alignment and model input fingerprints,
   with saved-project state for safe retries, resumes and census checks.
 - `modules/publish_fingerprint.py` — selected publication payload hashes

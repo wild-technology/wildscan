@@ -182,9 +182,7 @@ working copies or the pipeline's prepared zone tree.
 | `modules/realityscan_interface/` | Everything that talks to RealityScan — see below |
 | `modules/extract_images/`, `modules/georeference/`, `modules/preprocess_images/`, `modules/image_batcher/` | Pipeline modules used by `main.py` |
 | `tests/` | Offline pytest regression tests and fixtures |
-| `scripts/campaigns/` | Dataset-specific ON2026 drivers, the calibration ladder, and the overnight workbench campaign |
 | `scripts/validation/` | Explicit manual checks: zone_9 native validation, preprocessing checks, and the Cesium depth probe |
-| `scripts/analysis/score_yellow_pixels.py` | Image analysis for yellow-pixel contamination; writes scores without changing images |
 | `docs/validation/`, `docs/validation/results/` | Dated experiment plans and preserved result evidence |
 | `flightlogs.xml`, `sensorsdb.xml` | RealityScan reference data |
 | `docs/code-review-2026-07.md` | What the first-machine validation changed and why (read before trusting older assumptions about the CLI layer) |
@@ -205,8 +203,7 @@ The supplied work directory must be empty and separate from the source;
 omitting it uses a temporary directory. The native zone_9 runner is
 `scripts/validation/run_zone9_validation.bat` (or the adjacent `.py` file).
 It runs RealityScan alignment; `probe_cesium_depth.py` creates a real Cesium
-probe asset. Campaign drivers live under `scripts/campaigns/` and retain their
-campaign-specific paths and settings.
+probe asset.
 
 Retired scripts are excluded from the published tree. Their
 [original archive snapshot](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive)
