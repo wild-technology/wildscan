@@ -39,8 +39,6 @@ class BatchDirectory(RSModule):
         # Last-entered run-time answers (zone sizes etc.) persist as the
         # next run's defaults, like every other prompt in the pipeline
         self.settings = SettingsStore()
-        self._unknown_camera_example: str | None = None
-        self._unknown_camera_count = 0
         # First flight-log filename that matched nothing on disk - named in
         # the copy-accounting error so the operator sees the actual string.
         self._missing_example: str | None = None
@@ -160,20 +158,6 @@ class BatchDirectory(RSModule):
                          'per-stratum components (ON2026 diagnosis '
                          '2026-07-30: zone_2 = 7 components in disjoint Z '
                          'bands over one 6x4 m footprint).'),
-            prompt_user=False
-        )
-
-        additional_params['batch_xmp_priors'] = Parameter(
-            name='Write XMP Calibration Priors',
-            cli_short='b_x',
-            cli_long='b_xmp_priors',
-            type=bool,
-            default_value=False,
-            description=('Write per-camera XMP calibration priors into the zones. '
-                         'Off by default: a naming bug meant historical runs never '
-                         'actually loaded them, and the NA167 zone_13 A/B showed the '
-                         'current prior content REDUCING registration (96.3% -> 89.6%). '
-                         'Validate per-rig before enabling.'),
             prompt_user=False
         )
 
@@ -951,54 +935,7 @@ class BatchDirectory(RSModule):
             else:
                 shutil.copy(file_path, output_path)
 
-            # Optionally generate XMP sidecar with camera calibration priors
-            # (self.params is None until the orchestrator injects it - treat
-            # that the same as the parameter being absent/off)
-            prior_param = (self.params or {}).get('batch_xmp_priors')
-            if prior_param is not None and prior_param.get_value():
-                self.__generate_xmp_sidecar(name, camera_dir, camera_subfolder)
-
         return copied, missing
-
-    def __generate_xmp_sidecar(self, image_filename: str, output_path: str, camera_type: str) -> None:
-        """
-        Generate XMP sidecar file for RealityScan camera calibration.
-
-        Args:
-            image_filename: Name of the image file
-            output_path: Full path where the image is located
-            camera_type: Camera type (zeuss, cammid, camupper, camlower, other)
-        """
-        # RealityScan's sidecar convention is <stem>.xmp (image.jpg ->
-        # image.xmp). The previous f"{image_filename}.xmp" produced
-        # image.jpg.xmp, which RealityScan silently ignores - every
-        # calibration prior written that way was never loaded.
-        xmp_path = os.path.join(output_path, f"{os.path.splitext(image_filename)[0]}.xmp")
-
-        # Camera-specific calibration values come from the shared registry
-        # (one entry per PHYSICAL camera; groups separate the EXIF-identical
-        # WCA units, focals/models are confirmed 2026-07-23).
-        camera = camera_registry.identify(image_filename)
-        if camera is None:
-            # Unknown camera type - no calibration priors to write. Warn
-            # once; per-image warnings would flood the log on a dataset
-            # with an unrecognized naming scheme.
-            self._unknown_camera_count += 1
-            if self._unknown_camera_example is None:
-                self._unknown_camera_example = image_filename
-                self.logger.warning(
-                    f"Unknown camera type '{camera_type}' (e.g. {image_filename}) - "
-                    "skipping XMP calibration sidecars for these images. "
-                    "Further warnings suppressed; total reported in summary.")
-            return
-
-        # Write XMP file (content shared with the post-align sidecar
-        # sanitizer via camera_registry.calibration_xmp)
-        try:
-            with open(xmp_path, 'w', encoding='utf-8') as f:
-                f.write(camera_registry.calibration_xmp(camera))
-        except Exception as e:
-            self.logger.error(f"Failed to write XMP file {xmp_path}: {e}")
 
     def __create_batch_folders(self, output_dir, zones, input_dir, flight_log_path=None):
         """
@@ -1025,15 +962,7 @@ class BatchDirectory(RSModule):
         if layout not in ('copy', 'pool'):
             raise ValueError(f"batch_zone_layout must be 'copy' or 'pool', "
                              f"got {layout!r}")
-        if layout == 'pool':
-            prior_param = (self.params or {}).get('batch_xmp_priors')
-            if prior_param is not None and prior_param.get_value():
-                # No zone tree exists to hold sidecars, and the operator
-                # directive that created pool mode also retires them.
-                raise ValueError('batch_xmp_priors is incompatible with '
-                                 "batch_zone_layout='pool' (no zone image "
-                                 'tree to hold XMP sidecars)')
-        elif flight_log_df is not None and any(
+        if layout == 'copy' and flight_log_df is not None and any(
                 ntpath.isabs(str(n)) for n in flight_log_df.index):
             # A full-path master log zoned into COPY mode would write zone
             # logs whose rows name the POOL files while the scenes add the
@@ -1378,9 +1307,6 @@ class BatchDirectory(RSModule):
                 'Output Directory': output_dir,
                 'UTM Zone': self.utm_zone_suffix or 'N/A'
             }
-            if self._unknown_camera_count:
-                output['Images Without Calibration XMP'] = (
-                    f"{self._unknown_camera_count} (e.g. {self._unknown_camera_example})")
             return output
         except ValueError as e:
             self.logger.error(e)
