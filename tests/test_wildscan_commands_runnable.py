@@ -295,7 +295,7 @@ def test_publish_carries_the_workspace_crs(tmp_path, tag, epsg):
     assert f'flight_log_{tag}_UTM.txt' in argv[argv.index('--flight-log') + 1]
 
 
-def test_publish_omits_the_crs_for_a_local_frame_run(tmp_path):
+def test_publish_omits_the_crs_for_an_untagged_flight_log(tmp_path):
     ws = tmp_path / 'ws'
     (ws / 'raw_images').mkdir(parents=True)
     (ws / 'raw_images' / 'flight_log_UTM.txt').write_text(

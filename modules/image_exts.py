@@ -1,11 +1,9 @@
 """ONE inventory of image file extensions for the whole pipeline.
 
-Five different literal sets used to be spelled out across
-workspace_census, wildscan/session, georeference, batch_directory,
-camera_registry, realityscan_interface, merge_zones and grow_zone - so a
-.tif or .heif dataset was "present" to some stages and invisible to
-others: the census reported two images extracted while the georeferencer
-silently produced priors for one.
+Every stage that decides whether a file is an image (the census, the app,
+the batcher, the camera registry, the RealityScan interface, merge and grow)
+imports its extension set from here, so a format cannot be visible to one
+stage and invisible to another.
 
 Two names, both explicit about what they mean:
 
