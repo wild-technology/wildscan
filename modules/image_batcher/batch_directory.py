@@ -1368,7 +1368,7 @@ class BatchDirectory(RSModule):
                 'Images Copied': copied,
                 'Images Missing': missing,
                 'Output Directory': output_dir,
-                'UTM Zone': self.utm_zone_suffix or 'N/A'
+                'UTM Zone': (self.utm_zone_suffix or '').lstrip('_') or 'N/A'
             }
             return output
         except ValueError as e:

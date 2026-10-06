@@ -906,7 +906,7 @@ case-insensitive and are applied to the **basename**, not the path.
 The Zeuss token is **delimiter-bounded on purpose**: an unanchored `'herc' in name` test
 used to run first and would beat an anchored WCA prefix. Any regexp handed to
 `-selectImage` inherits that hazard — a bare `herc` substring test is not a safe family
-discriminator. [VERIFIED-by-inspection: the comment on `_ZEUSS_TOKEN`]
+discriminator. [HISTORICAL: that family and its token are no longer in this repository; the camera families are now the Wild Sync `Cam1_`/`Cam2_` prefixes defined in `modules/cameras.json`]
 
 **Documented-syntax forms** (would select a whole camera family in one call — **[OPEN] per
 §13.1: no `g/…/` form has been shown to select anything in this build**). Note every
