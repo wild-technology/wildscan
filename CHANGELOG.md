@@ -67,7 +67,7 @@ cameras captured with Wild Sync. This release is breaking.
 - Vehicle-navigation georeferencing, the standalone survey georeferencer and
   the filename timestamp parser.
 - The local-frame flight-log path and its parameter template.
-- Campaign scripts, per-campaign test runners, the zone-9 validation runner and\n  the Cesium depth probe.
+- Campaign scripts, per-campaign test runners, the zone-9 validation runner and the Cesium depth probe.
 - The sensor database file (`sensorsdb.xml`); `flightlogs.xml` keeps only the
   pipeline's flight-log format.
 - The batch-time XMP calibration option, the align-script override and unused

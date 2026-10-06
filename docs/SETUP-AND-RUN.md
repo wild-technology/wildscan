@@ -171,7 +171,7 @@ Set these only when needed. In PowerShell: `$env:NAME = "value"`.
 | `RS_HEADLESS` | `0` starts a visible instance, `1` a headless one. Python drivers default to visible; workflows run by hand default to headless. |
 | `RS_ALIGN_PARAMS` | An alignment parameter XML to apply instead of `Metadata/AlignmentParams.xml`; recorded in each alignment fingerprint. It changes the result: record it with the run. |
 | `RS_MODULES` | Comma-separated module names `main.py` runs without asking. |
-| `RS_NO_INTERACTIVE` | `1`: `main.py` does not ask which modules to run. |
+| `RS_NO_INTERACTIVE` | `1` (also `true`, `yes`, `y`): `main.py` never prompts. It does not ask which modules to run, unset parameters take their stored or default value, and a missing required value (`--output_dir`, `--w_input`) ends the run with exit status 2 and an error naming the flag. |
 | `CESIUM_ION_TOKEN` | Cesium ion access token for publishing. |
 | `NIRACLIENT_DIR` | Path to the `niraclient` checkout for Nira publishing. |
 
