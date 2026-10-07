@@ -245,3 +245,35 @@ def test_outputs_written_before_exif_was_kept_are_not_reused(tmp_path,
     assert result['Success'] and result['Processed'] == 1
     output = Path(result['Output Directory']) / 'Cam1_a.card.JPG'
     assert _tags(output)[(EXIF_IFD, 0x920A)] == 29.0
+
+
+def test_source_exif_accepts_the_mpo_format_sony_cards_write(tmp_path, monkeypatch):
+    """Pillow reports a Sony ILX-LR1 card JPEG as ``MPO`` (it carries a
+    Multi-Picture extension). The EXIF reader must treat it as a JPEG, or every
+    card frame would lose its focal length in preprocessing."""
+    from PIL import Image
+    import modules.preprocess_images.preprocess_images as mod
+    src = tmp_path / 'Cam1_20260820_192542.42.card.JPG'
+    image = Image.new('RGB', (48, 32), (90, 120, 150))
+    exif = Image.Exif()
+    exif[0x010F] = 'SONY'
+    exif.get_ifd(0x8769)[0xA405] = 29
+    image.save(src, 'JPEG', exif=exif.tobytes())
+    real_open = Image.open
+
+    class _Mpo:
+        def __init__(self, inner):
+            self._inner = inner
+            self.info = inner.info
+            self.format = 'MPO'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self._inner.close()
+
+    monkeypatch.setattr(mod.Image, 'open', lambda path: _Mpo(real_open(path)))
+    payload = mod.source_exif(str(src))
+    assert payload is not None and payload.startswith(b'Exif')
+

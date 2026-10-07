@@ -52,6 +52,9 @@ MANIFEST_NAME = 'preprocessed_images.manifest.json'
 EXIF_POLICY = 'original APP1 EXIF kept, Orientation set to 1'
 
 _EXIF_HEADER = b'Exif\x00\x00'
+# Pillow's format names for a JPEG file: plain JPEG, or JPEG with Sony's
+# Multi-Picture (MPO) extension, which every ILX-LR1 card JPEG carries.
+_JPEG_FORMATS = frozenset({'JPEG', 'MPO'})
 _SOI = b'\xff\xd8'
 _APP0 = b'\xff\xe0'
 _APP1 = b'\xff\xe1'
@@ -61,9 +64,10 @@ _TIFF_SHORT = 3
 
 def source_exif(path: str) -> bytes | None:
     """The EXIF payload of a JPEG's APP1 segment (``Exif\\0\\0`` + TIFF), read
-    with Pillow; None for a JPEG without EXIF or another format."""
+    with Pillow; None for a JPEG without EXIF or another format. Sony card
+    JPEGs are reported by Pillow as ``MPO``; they are accepted."""
     with Image.open(path) as image:
-        if image.format != 'JPEG':
+        if image.format not in _JPEG_FORMATS:
             return None
         exif = image.info.get('exif')
     if not exif or not exif.startswith(_EXIF_HEADER):
