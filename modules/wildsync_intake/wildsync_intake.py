@@ -14,9 +14,6 @@ from .. import camera_registry
 from ..calibration_sidecars import MODES as CALIBRATION_MODES
 from .intake import (
     DEFAULT_MIN_MATCH_PCT,
-    DEFAULT_STATIC_POSITION_ACCURACY_M,
-    DEFAULT_SURFACE_ALTITUDE_ACCURACY_M,
-    DEFAULT_SURFACE_ALTITUDE_M,
     DEFAULT_TIME_ERR_WARN_MS,
     HEADING_SOURCES,
     VARIANTS,
@@ -136,22 +133,11 @@ class WildSyncIntake(RSModule):
             cli_short='w_pa',
             cli_long='w_pos_accuracy',
             type=float,
-            default_value=_PRIOR.x_m,
-            description=('X/Y position accuracy written for every image, in '
-                         'metres (end-to-end uncertainty, not the receiver '
-                         'specification)'),
-            prompt_user=False
-        )
-
-        additional_params['ws_static_pos_accuracy_m'] = Parameter(
-            name='Static-Fix Position Accuracy (m)',
-            cli_short='w_spa',
-            cli_long='w_static_pos_accuracy',
-            type=float,
-            default_value=DEFAULT_STATIC_POSITION_ACCURACY_M,
-            description=('X/Y accuracy written instead when every row of a run '
-                         'carries the same position (a static fix), so it '
-                         'cannot constrain the solve'),
+            default_value=_PRIOR.position_m,
+            description=('X/Y position accuracy written for every image of a '
+                         'run with a GPS track, in metres (the receiver '
+                         'accuracy); a run whose position never moves (a '
+                         'static fix) gets no position at all'),
             prompt_user=False
         )
 
@@ -160,32 +146,10 @@ class WildSyncIntake(RSModule):
             cli_short='w_aa',
             cli_long='w_alt_accuracy',
             type=float,
-            default_value=_PRIOR.alt_m,
-            description='Altitude accuracy written for every image, in metres',
-            prompt_user=False
-        )
-
-        additional_params['ws_surface_alt_m'] = Parameter(
-            name='Surface Altitude (m)',
-            cli_short='w_sa',
-            cli_long='w_surface_altitude',
-            type=float,
-            default_value=DEFAULT_SURFACE_ALTITUDE_M,
-            description=('Altitude written when the depth cell is empty '
-                         '(0.0 = camera at the sea surface)'),
-            prompt_user=False
-        )
-
-        additional_params['ws_surface_alt_accuracy_m'] = Parameter(
-            name='Surface Altitude Accuracy (m)',
-            cli_short='w_saa',
-            cli_long='w_surface_alt_accuracy',
-            type=float,
-            default_value=DEFAULT_SURFACE_ALTITUDE_ACCURACY_M,
-            description=('Altitude accuracy written instead of the altitude '
-                         'accuracy for images whose depth cell is empty (their '
-                         'altitude is the surface altitude), so the fallback '
-                         'cannot pin a submerged camera to the surface'),
+            default_value=_PRIOR.altitude_m,
+            description=('Altitude accuracy written for every image with a '
+                         'depth, in metres; an image without depth gets no '
+                         'altitude'),
             prompt_user=False
         )
 
@@ -194,10 +158,11 @@ class WildSyncIntake(RSModule):
             cli_short='w_oa',
             cli_long='w_orientation_accuracy',
             type=float,
-            default_value=_PRIOR.yaw_deg,
+            default_value=_PRIOR.orientation_deg,
             description=('Yaw and roll accuracy written for every image, in '
                          'degrees; pitch accuracy comes from the camera mount '
-                         'in modules/cameras.json'),
+                         'in modules/cameras.json (the same value by '
+                         'default)'),
             prompt_user=False
         )
 
@@ -258,14 +223,6 @@ class WildSyncIntake(RSModule):
                 'ws_heading_source', defaults.heading_source)).strip().lower(),
             declination_deg=number('ws_declination_deg',
                                    defaults.declination_deg),
-            surface_altitude_m=number('ws_surface_alt_m',
-                                      defaults.surface_altitude_m),
-            surface_altitude_accuracy_m=number(
-                'ws_surface_alt_accuracy_m',
-                defaults.surface_altitude_accuracy_m),
-            static_position_accuracy_m=number(
-                'ws_static_pos_accuracy_m',
-                defaults.static_position_accuracy_m),
             min_match_pct=number('ws_min_match_pct', defaults.min_match_pct),
             time_err_warn_ms=number('ws_time_err_warn_ms',
                                     defaults.time_err_warn_ms),

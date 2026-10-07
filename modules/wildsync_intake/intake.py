@@ -113,17 +113,13 @@ VARIANTS = ('card', 'review')
 HEADING_SOURCES = ('auto', 'heading_imu', 'yaw', 'heading_mag_xplore')
 
 # A run whose positions all lie within this distance of each other (bounding
-# box diagonal, metres) carries one static fix, not a track.
+# box diagonal, metres) carries one static fix, not a track. Its images get
+# no position prior at all (owner decision 2026-10-07): one repeated
+# position says nothing about where each camera was.
 STATIC_FIX_SPREAD_M = 1.0
 
-DEFAULT_STATIC_POSITION_ACCURACY_M = 1000.0
 DEFAULT_MIN_MATCH_PCT = 80.0
 DEFAULT_TIME_ERR_WARN_MS = 50.0
-DEFAULT_SURFACE_ALTITUDE_M = 0.0
-# Altitude accuracy written for a row whose altitude is the surface-altitude
-# fallback (no depth): wide, like the static-fix position accuracy, so the
-# fallback cannot pin a submerged camera to the surface.
-DEFAULT_SURFACE_ALTITUDE_ACCURACY_M = 1000.0
 
 _FRAME_SUFFIX = re.compile(r'(\.card)?\.(jpe?g|arw|xmp)$', re.IGNORECASE)
 _ZONE_TAG = re.compile(r'^(\d{1,2})([A-Za-z])$')
@@ -171,14 +167,12 @@ def image_variant(name: str) -> str | None:
 class IntakeOptions:
     """Everything the intake can be told, with the pipeline defaults."""
     variant: str = 'card'
-    position_accuracy_m: float = camera_registry.PRIOR_ACCURACY.x_m
-    altitude_accuracy_m: float = camera_registry.PRIOR_ACCURACY.alt_m
-    orientation_accuracy_deg: float = camera_registry.PRIOR_ACCURACY.yaw_deg
+    position_accuracy_m: float = camera_registry.PRIOR_ACCURACY.position_m
+    altitude_accuracy_m: float = camera_registry.PRIOR_ACCURACY.altitude_m
+    orientation_accuracy_deg: float = \
+        camera_registry.PRIOR_ACCURACY.orientation_deg
     heading_source: str = 'auto'
     declination_deg: float = 0.0
-    surface_altitude_m: float = DEFAULT_SURFACE_ALTITUDE_M
-    surface_altitude_accuracy_m: float = DEFAULT_SURFACE_ALTITUDE_ACCURACY_M
-    static_position_accuracy_m: float = DEFAULT_STATIC_POSITION_ACCURACY_M
     min_match_pct: float = DEFAULT_MIN_MATCH_PCT
     time_err_warn_ms: float = DEFAULT_TIME_ERR_WARN_MS
     calibration: str = 'auto'
@@ -226,16 +220,10 @@ class IntakeOptions:
                 ('altitude accuracy (m)', self.altitude_accuracy_m, 0.0, True),
                 ('orientation accuracy (deg)', self.orientation_accuracy_deg,
                  0.0, True),
-                ('static-fix position accuracy (m)',
-                 self.static_position_accuracy_m, 0.0, True),
-                ('surface altitude accuracy (m)',
-                 self.surface_altitude_accuracy_m, 0.0, True),
                 ('time error warning threshold (ms)', self.time_err_warn_ms,
                  0.0, False),
                 ('minimum match rate (%)', self.min_match_pct, 0.0, False),
                 ('magnetic declination (deg)', self.declination_deg, None,
-                 False),
-                ('surface altitude (m)', self.surface_altitude_m, None,
                  False)):
             if isinstance(value, bool) or not isinstance(value, (int, float)) \
                     or not math.isfinite(value):
@@ -622,13 +610,13 @@ def orientation_prior(heading_deg, pitch_deg, roll_deg, mount: Mount,
     return yaw, pitch, roll
 
 
-def altitude_prior(depth_m: float | None, surface_altitude_m: float,
-                   lever_arm_down_m: float = 0.0) -> float:
+def altitude_prior(depth_m: float | None, lever_arm_down_m: float = 0.0
+                   ) -> float | None:
     """Flight-log altitude: ``-abs(depth) - lever arm down`` when the depth
-    is known, else the configured surface altitude (0.0 = camera at the sea
-    surface)."""
+    is known, else None (an empty cell, no altitude prior; owner decision
+    2026-10-07, until the boat records its depth)."""
     if depth_m is None:
-        return float(surface_altitude_m)
+        return None
     return -abs(depth_m) - lever_arm_down_m
 
 
@@ -679,10 +667,9 @@ class RowPrior:
 def flight_log_prior(frame: Frame, options: IntakeOptions,
                      static_fix: bool) -> RowPrior:
     """The 13-column row for one image (see :func:`orientation_prior` and
-    :func:`altitude_prior`). A static-fix run gets the static position
-    accuracy; an image without depth gets the surface-altitude accuracy for
-    its fallback altitude; an image without heading, pitch or roll gets no
-    orientation cells; one without a UTM position gets no position cells."""
+    :func:`altitude_prior`). An image of a static-fix run, or one without a
+    UTM position, gets no position cells; one without depth gets no altitude
+    cells; one without heading, pitch or roll gets no orientation cells."""
     row = frame.row
     mount = frame.mount
     heading, column = select_heading(row, options.heading_source)
@@ -699,17 +686,15 @@ def flight_log_prior(frame: Frame, options: IntakeOptions,
     if offset is None:
         offset = (0.0, 0.0)
 
-    position = _position(row)
+    position = None if static_fix else _position(row)
     if position is None:
         x = y = x_acc = y_acc = None
     else:
         x, y = position[0] + offset[0], position[1] + offset[1]
-        x_acc = y_acc = (options.static_position_accuracy_m if static_fix
-                         else options.position_accuracy_m)
+        x_acc = y_acc = options.position_accuracy_m
     depth = row.number('depth_from_xplore9')
-    alt = altitude_prior(depth, options.surface_altitude_m, lever[2])
-    alt_acc = (options.altitude_accuracy_m if depth is not None
-               else options.surface_altitude_accuracy_m)
+    alt = altitude_prior(depth, lever[2])
+    alt_acc = options.altitude_accuracy_m if alt is not None else None
 
     accuracy = options.orientation_accuracy_deg
     log_row = FlightLogRow(
@@ -1000,28 +985,26 @@ def run_intake(run_paths: Sequence[str], workspace: str,
             spread = plan.position_spread_m()
             warn(f'{plan.run_id}: every row carries the same position '
                  f'(spread {spread:.3f} m over {len(plan.positions)} rows): '
-                 'a static fix, not a track. Position accuracy '
-                 f'{options.static_position_accuracy_m:g} m is written for '
-                 f'its images instead of {options.position_accuracy_m:g} m, '
-                 'so the fix cannot constrain the solve.')
+                 'a static fix, not a track. No position is written for its '
+                 'images: RealityScan gets no position prior and Batch '
+                 'Directory puts them in one zone. Check the GPS feed.')
     total = len(priors)
     no_depth = sum(1 for p in priors if not p.has_depth)
     if no_depth:
-        warn(f'{no_depth} of {total} images have no depth: altitude written '
-             f'as the surface altitude {options.surface_altitude_m:g} m '
-             '(camera at the sea surface); altitude accuracy '
-             f'{options.surface_altitude_accuracy_m:g} m is written for them '
-             f'instead of {options.altitude_accuracy_m:g} m, so the fallback '
-             'cannot pin the cameras to the surface')
+        warn(f'{no_depth} of {total} images have no depth: no altitude prior '
+             'is written for them')
     no_orientation = sum(1 for p in priors if not p.has_orientation)
     if no_orientation:
         warn(f'{no_orientation} of {total} images lack heading, pitch or '
              'roll: no orientation prior is written for them')
     no_position = sum(1 for p in priors if not p.has_position)
-    if no_position:
-        warn(f'{no_position} of {total} images carry no UTM position: '
-             'written without a position prior (Batch Directory zones only '
-             'images with a position)')
+    # a static-fix run has its own warning above
+    no_utm = sum(1 for f, p in zip(frames, priors)
+                 if not p.has_position and not static_runs[f.run_dir])
+    if no_utm:
+        warn(f'{no_utm} of {total} images carry no UTM position: written '
+             'without a position prior (Batch Directory keeps them only under '
+             'the single-zone rule; zones are built from positions)')
     lever_skipped = sum(1 for p in priors if p.lever_arm_skipped)
     if lever_skipped:
         warn(f'{lever_skipped} image(s) have no heading, so the horizontal '
@@ -1117,17 +1100,13 @@ def run_intake(run_paths: Sequence[str], workspace: str,
         'static_fix': any(static_runs.values()),
         'position': {
             'accuracy_m': options.position_accuracy_m,
-            'static_fix_accuracy_m': options.static_position_accuracy_m,
             'static_fix_spread_m': STATIC_FIX_SPREAD_M,
             'images_without_position': no_position,
         },
         'altitude': {
             'accuracy_m': options.altitude_accuracy_m,
-            'surface_altitude_m': options.surface_altitude_m,
             'images_from_depth': total - no_depth,
-            'images_at_surface_altitude': no_depth,
-            'surface_altitude_accuracy_m': options.surface_altitude_accuracy_m,
-            'images_with_surface_altitude_accuracy': no_depth,
+            'images_without_altitude': no_depth,
         },
         'orientation': {
             'heading_source': options.heading_source,

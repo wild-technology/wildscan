@@ -1932,14 +1932,15 @@ filename;X (East);Y (North);Alt;X Accuracy;Y Accuracy;Alt Accuracy;Yaw;Pitch;Rol
 
 | Column | Source (Wild Sync `flight_log.csv`) | Default accuracy |
 |---|---|---|
-| X, Y | `xutm`, `yutm` (+ horizontal lever arm, zero while unmeasured) | 10 m; **1000 m** when the whole run carries one static fix (positions within 1 m) |
-| Alt | `-abs(depth_from_xplore9)` − downward lever arm; 0.0 (camera at the sea surface) when depth is empty | 1 m |
-| Yaw, Pitch, Roll | §10.6 | yaw and roll 15°; pitch 15° from the mount |
+| X, Y | `xutm`, `yutm` (+ horizontal lever arm, zero while unmeasured); **empty** when the whole run carries one static fix (positions within 1 m) | 0.1 m (the GPS receiver's accuracy) |
+| Alt | `-abs(depth_from_xplore9)` − downward lever arm; **empty** when depth is empty | 1 m |
+| Yaw, Pitch, Roll | §10.6 | yaw and roll 10°; pitch 10° from the mount |
 
-The accuracies are end-to-end per-image uncertainties, not sensor specifications (§7.5). A
+The accuracies come from the rig entry in `modules/cameras.json` (`rigs.ilx_lr1_stereo.prior_accuracy`;
+the `sfmCameraPriorAccuracyYaw/Pitch/Roll` fallback in `AlignmentParams.xml` carries the same 10°). A
 missing value is an empty cell, never 0. The August 2026 field runs carry the same static fix on
-every row and empty depth, so their position priors (1000 m) cannot constrain the solve and their
-altitude is 0.
+every row and empty depth, so their images get orientation priors only: no position and no altitude
+cells, hence no metric constraint from navigation.
 
 ### 10.6 Orientation priors — what is and is not established
 
@@ -2020,8 +2021,9 @@ RealityScan.exe -delegateTo RS1 -exportXMP
 ```
 
 When every camera's mode is `off`, step 2 is `-set "appIncSubdirs=true"` followed by
-`-addFolder` on the zone folder. The alignment stage lowers the export gate to the zone's image
-count (at least 2) when a zone has fewer images than the configured minimum.
+`-addFolder` on the zone folder. When a zone has fewer images than the configured minimum
+component size, the alignment stage lowers the export gate to half the zone's image count,
+rounded up, never below 2 (`small_scene_min_component_size`).
 
 Every delegated command in production runs through the shared `:run` subroutine (delegate →
 grace → `-waitCompleted` → grace → `-waitCompleted` → abort if the errors marker is non-empty).

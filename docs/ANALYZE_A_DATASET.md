@@ -127,9 +127,8 @@ returns to the plan when no command is running; **Escape** opens the status.
 
 After the intake, read its warnings in the log or in
 `raw_images/wildsync_intake.json`. For the August 2026 field runs, expect a
-static-fix warning (every row carries the same position, so position accuracy
-1000 m is written), an empty-depth warning (altitude 0 is written, with
-altitude accuracy 1000 m) and
+static-fix warning (every row carries the same position, so no position is
+written for the images), an empty-depth warning (no altitude is written) and
 `calibration groups only` for both cameras.
 
 Alignment writes calibration sidecars beside the images it aligns. A sidecar

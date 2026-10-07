@@ -341,12 +341,9 @@ Wild Sync Intake flags (defaults in brackets):
 | `--w_focal_override` | Lens focal length in mm used for every image of both cameras instead of the EXIF focal length; RealityScan starts from it and refines it. Needed when the EXIF focal is missing or changes within a camera; not with `--w_assert_focal` or `--w_calibration off` [unset: the EXIF focal] |
 | `--w_declination` | Magnetic declination in degrees, east positive, added to the heading [`0`] |
 | `--w_heading_source` | `auto` (`heading_imu`, else `yaw`), `heading_imu`, `yaw` or `heading_mag_xplore` [`auto`] |
-| `--w_pos_accuracy` | X/Y position accuracy in metres [`10`] |
-| `--w_static_pos_accuracy` | X/Y accuracy when a run carries one static fix [`1000`] |
-| `--w_alt_accuracy` | Altitude accuracy in metres [`1`] |
-| `--w_surface_altitude` | Altitude written when depth is empty [`0.0`, camera at the sea surface] |
-| `--w_surface_alt_accuracy` | Altitude accuracy in metres written instead of `--w_alt_accuracy` when depth is empty [`1000`] |
-| `--w_orientation_accuracy` | Yaw and roll accuracy in degrees; pitch accuracy comes from the mount [`15`] |
+| `--w_pos_accuracy` | X/Y position accuracy in metres for a run with a GPS track (the receiver's accuracy); a run whose position never moves gets no position at all [`0.1`] |
+| `--w_alt_accuracy` | Altitude accuracy in metres for images with a depth; an image without depth gets no altitude [`1`] |
+| `--w_orientation_accuracy` | Yaw and roll accuracy in degrees; pitch accuracy comes from the mount, the same value by default [`10`] |
 | `--w_min_match_rate` | Fail below this percentage of matched frames; `0` disables [`80`] |
 | `--w_time_err_warn` | Warn when `time_err_ms` exceeds this [`50`] |
 
