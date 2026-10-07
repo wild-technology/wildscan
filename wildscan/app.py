@@ -1,4 +1,4 @@
-"""WildScan - the Wild Technology user interaction portal.
+"""WildScan - the Wild Technologies user interaction portal.
 
 RC_Main's flow, kept faithfully, as screens:
 

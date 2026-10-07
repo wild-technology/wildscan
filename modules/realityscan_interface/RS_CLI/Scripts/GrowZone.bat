@@ -76,7 +76,7 @@ if errorlevel 1 exit /b 1
 set "AlignmentParams=%Metadata%\AlignmentParams.xml"
 :: Alignment-parameter override, same contract as AlignZone.bat: without
 :: this, grow re-aligns would apply the REPO template's settings
-:: (Division/Ultra/50k) to a dataset that aligned with different
+:: (Brown3/Ultra/50k) to a dataset that aligned with different
 :: science parameters.
 if defined RS_ALIGN_PARAMS if not "%RS_ALIGN_PARAMS%" == "" set "AlignmentParams=%RS_ALIGN_PARAMS%"
 

@@ -38,7 +38,7 @@ Contents:
 | Component | Notes |
 |---|---|
 | RealityScan 2.2 (Epic Games) | A separate installation with its own licence, not a pip package. Default location `C:\Program Files\Epic Games\RealityScan_2.2\`. |
-| 64-bit Python 3.12 or newer | From [python.org](https://www.python.org/downloads/windows/), with the `py` launcher. |
+| 64-bit Python 3.13 (3.12 is the declared floor) | From [python.org](https://www.python.org/downloads/windows/), with the `py` launcher. |
 | Git for Windows | [git-scm.com](https://git-scm.com/download/win) |
 
 **Accounts, only for publishing**
@@ -72,8 +72,8 @@ read; the pipeline copies what it needs into the workspace.
    git --version
    ```
 
-   `py --list` shows the installed interpreters. The examples use `py -3.13`;
-   substitute your version (3.12 or newer).
+   `py --list` shows the installed interpreters. The examples use `py -3.13`,
+   the standard version; 3.12 is the declared floor and is tested in CI.
 
 ---
 

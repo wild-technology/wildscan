@@ -1,4 +1,4 @@
-"""WildScan - Wild Technology's interactive console for the two-camera ILX-LR1
+"""WildScan - Wild Technologies' interactive console for the two-camera ILX-LR1
 RealityScan pipeline.
 
 A Textual interface over the repository's canonical pipeline drivers:
@@ -13,5 +13,5 @@ from __future__ import annotations
 
 __version__ = "2.0.0"
 APP_NAME = "WildScan"
-ORG = "Wild Technology"
+ORG = "Wild Technologies"
 TAGLINE = "Subsea Photogrammetry Pipeline"
