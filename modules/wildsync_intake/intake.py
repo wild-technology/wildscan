@@ -1211,3 +1211,25 @@ def starting_focals(manifest: Mapping) -> dict[str, float]:
                              f'{focal!r}); re-run Wild Sync Intake')
         out[key] = float(focal)
     return out
+
+
+def workspace_calibration(images_root: str
+                          ) -> tuple[dict[str, str], dict[str, float]] | None:
+    """({camera key: decided calibration mode}, {camera key: starting
+    35 mm-equivalent focal}) of the Wild Sync workspace whose batched image
+    tree holds ``images_root``, or None when no workspace does.
+
+    ``images_root`` is ``<workspace>/batched_images_by_zone`` (the merge
+    driver) or one zone directory under it (the growth driver); the manifest
+    is ``<workspace>/raw_images/wildsync_intake.json``, so only those two
+    parents are tried. Read, never recomputed, like
+    :func:`calibration_modes` and :func:`starting_focals`; ValueError as
+    :func:`load_manifest` when a manifest exists but is unusable.
+    """
+    root = os.path.abspath(images_root)
+    for _level in range(2):
+        root = os.path.dirname(root)
+        manifest = load_manifest(os.path.join(root, RAW_IMAGES))
+        if manifest is not None:
+            return calibration_modes(manifest), starting_focals(manifest)
+    return None

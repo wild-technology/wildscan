@@ -63,6 +63,7 @@ from modules import calibration_sidecars
 from modules.flight_logs import require_utm_zone, write_flight_log_params
 from modules.realityscan_interface.realityscan_cli import (
     METADATA_DIR, RealityScanCLI, set_project_save_env)
+from modules.wildsync_intake.intake import workspace_calibration
 
 # Parallel-developed bookkeeping modules (manifest contract schema 1;
 # twin/orphan analysis). Import-guarded so this driver runs - degraded
@@ -128,12 +129,33 @@ def registered_basenames(images_root: str, stem_index: dict[str, str],
     return names
 
 
-def take_census(images_root: str, stem_index: dict[str, str], logger) -> set[str]:
+def take_census(images_root: str, stem_index: dict[str, str], logger,
+                calibration: tuple[dict[str, str], dict[str, float]] | None = None
+                ) -> set[str]:
+    """Registration census, then sidecar hygiene over the zone tree.
+
+    ``calibration`` is the workspace's (modes, starting focals) from the
+    intake manifest (modules.wildsync_intake.intake.workspace_calibration).
+    With it every pose sidecar of a prior/groups camera is rewritten to the
+    calibration sidecar the alignment stage wrote, and any image the
+    harvest left without one gets it back - a growth pass must never leave
+    the tree without the sidecars a later -add relies on. Without it
+    (no Wild Sync workspace) pose sidecars are deleted, as before.
+    """
     names = registered_basenames(images_root, stem_index, logger)
-    pose_count, _restored, removed = calibration_sidecars.sanitize_and_census(
-        images_root)
+    modes, focals = calibration if calibration else (None, None)
+    pose_count, restored, removed = calibration_sidecars.sanitize_and_census(
+        images_root, modes, focals)
     if removed:
         logger.warning('%d pose sidecars of unknown cameras deleted', removed)
+    if restored:
+        logger.info('census: %d pose sidecars rewritten to their calibration '
+                    'sidecar', restored)
+    created, _unknown = calibration_sidecars.ensure_calibration_sidecars(
+        images_root, modes, focals)
+    if created:
+        logger.info('census: %d calibration sidecar(s) restored under %s',
+                    created, images_root)
     if pose_count != len(names):
         logger.info('census: %d pose sidecars, %d mapped to images',
                     pose_count, len(names))
@@ -380,6 +402,18 @@ def main() -> int:
     if not os.path.isdir(images_root):
         logger.error('images root not found: %s', images_root)
         return 1
+    try:
+        calibration = workspace_calibration(images_root)
+    except ValueError as exc:
+        logger.error('%s', exc)
+        return 1
+    if calibration:
+        logger.info('calibration sidecars kept through every census: %s',
+                    calibration[0])
+    else:
+        logger.info('no Wild Sync intake manifest above %s: pose sidecars '
+                    'are deleted at each census, no calibration sidecar is '
+                    'written', images_root)
 
     zone = os.path.splitext(os.path.basename(scene))[0]
     os.makedirs(output_dir, exist_ok=True)
@@ -514,7 +548,7 @@ def main() -> int:
                 'workflow_success': False, 'errors': result.errors})
         return 1
     note_exports(baseline_export)
-    baseline = take_census(images_root, stem_index, logger)
+    baseline = take_census(images_root, stem_index, logger, calibration)
     if not baseline:
         logger.error('checkpoint census found no registered cameras - is '
                      '%s an aligned zone scene?', scene)
@@ -592,7 +626,7 @@ def main() -> int:
         checkpoint_scene(scene, checkpoints_dir, tag, logger)
         logger.info('--- stage 2: global re-align (all images enabled) ---')
         result = run_pass(tag, 'global', export_dir=export_dir)
-        after = take_census(images_root, stem_index, logger)
+        after = take_census(images_root, stem_index, logger, calibration)
         accepted, lost = evaluate(tag, baseline, after, result.success)
         entry = {'tag': tag, 'mode': 'global',
                  'workflow_success': result.success, 'errors': result.errors,
@@ -708,7 +742,7 @@ def main() -> int:
             # produced phantom gains (observed: "sweep gain 1856" on a
             # 976-image zone). The invariant and the gain are therefore
             # evaluated against the zone baseline census.
-            after = take_census(images_root, stem_index, logger)
+            after = take_census(images_root, stem_index, logger, calibration)
             before = set(baseline)
             accepted, lost = evaluate(tag, before, after, result.success)
             gain = len(after) - len(before)
@@ -768,7 +802,7 @@ def main() -> int:
                    'duration_seconds': round(result.duration_seconds, 1)}
     if result.success:
         note_exports(final_dir)
-        final_census = take_census(images_root, stem_index, logger)
+        final_census = take_census(images_root, stem_index, logger, calibration)
         if final_census:
             final_entry['registered'] = len(final_census)
             baseline |= final_census
