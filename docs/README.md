@@ -12,9 +12,14 @@ rig into aligned, georeferenced and textured RealityScan 2.2 models.
 | [Project overview](../README.md) | What Wild Scan does, validation status, repository layout |
 | [Architecture](../ARCHITECTURE.md) | Data flow, code structure, RealityScan execution layer, hard rules |
 | [Contributing](../CONTRIBUTING.md) | Development setup and change rules |
+| [RealityScan CLI reference](rs-reference/README.md) | RealityScan 2.2 commands, settings, parameter files and failure modes, from RealityScan's documentation extended by this project's testing |
 | [Calibration record](../calibration/README.md) | The ILX-LR1 stereo calibration file |
 
 No live RealityScan alignment has yet been run with this version; the
 first-run validation checklist is the place to start on a new installation.
 A passing offline test suite establishes the tested software behaviour, not
 native acceptance or the accuracy of a reconstruction.
+
+Much of the RealityScan reference's empirical evidence comes from earlier
+datasets taken with other cameras; its [README](rs-reference/README.md)
+explains the provenance tags and the scope of that evidence.

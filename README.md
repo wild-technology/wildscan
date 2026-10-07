@@ -123,7 +123,13 @@ camera. Details: [The ILX-LR1 stereo rig](docs/ILX-LR1.md).
 | Understand the rig, its calibration and conventions | [The ILX-LR1 stereo rig](docs/ILX-LR1.md) |
 | Validate a new installation on real data | [First-run validation checklist](docs/validation/ILX-LR1_first_run_checklist.md) |
 | Understand the code and the native execution rules | [Architecture](ARCHITECTURE.md) |
+| Look up a RealityScan command, setting or failure mode | [RealityScan CLI reference](docs/rs-reference/README.md) |
 | Contribute a change | [Contributing](CONTRIBUTING.md) |
+
+The [RealityScan CLI reference](docs/rs-reference/README.md) is a factual
+reference for driving RealityScan 2.2 from the command line. It is based on
+this project's testing and extends RealityScan's own documentation; it is not
+Epic Games' documentation.
 
 ## Repository layout
 
@@ -143,6 +149,7 @@ camera. Details: [The ILX-LR1 stereo rig](docs/ILX-LR1.md).
 | `publish_batch.py`, `publish_cesium.py`, `publish_nira.py` | Publishing to Cesium ion and Nira |
 | `poses_to_flight_log.py`, `decimate_images.py` | Refined flight log from aligned poses; dataset thinning |
 | `flightlogs.xml` | The 13-column flight-log format to install into RealityScan |
+| `docs/rs-reference/` | RealityScan 2.2 CLI reference: commands, settings, parameter files, failure modes and the project testing behind them |
 | `module_base/` | `RSModule`, `Parameter`, `SettingsStore` |
 | `scripts/validation/` | Manual preprocessing check |
 | `tests/` | Offline test suite |

@@ -66,3 +66,14 @@ These files are in the repository and are in RealityScan's own formats.
 
 Wild Scan makes no statement here about the terms under which these files may
 be redistributed; they remain subject to Epic Games' terms for RealityScan.
+
+## Documentation derived from RealityScan
+
+- `docs/rs-reference/` - a reference for RealityScan 2.2's command line
+  written for this project. It paraphrases and cites RealityScan 2.2's
+  documentation and command-line help (Epic Games, Inc.) and reproduces
+  command names, setting keys, option names and short excerpts of
+  RealityScan's shipped schema and sample files where they define the
+  interface. It contains no RealityScan binaries or copied program files.
+  It is not Epic Games' documentation; this file makes no statement about
+  redistribution rights in Epic Games' material beyond the above.
