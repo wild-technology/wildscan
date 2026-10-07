@@ -37,8 +37,8 @@ CAMERAS_JSON = os.path.join(
     os.path.dirname(os.path.realpath(__file__)), 'cameras.json')
 
 # The pipeline aligns with RealityScan's global Brown3 model
-# (sfmDistortionModel is global and all-or-nothing, docs/rs-reference/13
-# section 5.4), so a camera may only declare that model.
+# (sfmDistortionModel is global and all-or-nothing, verified on an earlier
+# dataset), so a camera may only declare that model.
 DISTORTION_MODELS = frozenset({'brown3'})
 
 # 'approximate' = a starting value that alignment adjusts. The calibration

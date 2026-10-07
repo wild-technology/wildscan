@@ -20,7 +20,7 @@
       "sensor specification. Orientation accuracy stays wide until the",
       "mount and the attitude convention are checked on a real run.",
       "Tighter claimed position and orientation accuracies fragmented",
-      "solves on earlier datasets (docs/rs-reference/13 section 7.5).",
+      "solves on earlier datasets.",
       "Pitch accuracy is per mount (families[].mount.pitch_accuracy_deg)."
     ],
     "position_accuracy_m": {
@@ -160,7 +160,7 @@
     "_comment": [
       "RealityScan has no usable stereo-rig input: rig sidecars (xcr:Rig)",
       "require a .rcrx rig file that no install provides",
-      "(docs/rs-reference/13 section 3.5). Nothing in this repository writes",
+      "(verified on an earlier dataset). Nothing in this repository writes",
       "rig XMP or turns these values into solver constraints; the baseline",
       "and extrinsics are kept as data."
     ],
@@ -177,7 +177,7 @@
         }
       },
       "stereo_baseline_m": 0.225425,
-      "_stereo_baseline_comment": "MEASURED on the rig: 225.425 mm (docs/rs-reference/13 section 3.5). The checkerboard solve did not estimate it and was not given it: the square size is unknown, so the solve is in square units (|T|=19.38 squares) and this measured baseline sets the scale afterwards; implied square 11.63 mm.",
+      "_stereo_baseline_comment": "MEASURED on the rig: 225.425 mm. The checkerboard solve did not estimate it and was not given it: the square size is unknown, so the solve is in square units (|T|=19.38 squares) and this measured baseline sets the scale afterwards; implied square 11.63 mm.",
       "extrinsics_left_to_right": {
         "_convention": "OpenCV: X_right = R * X_left + T, camera frames x right, y down, z forward, T in metres.",
         "R": [
