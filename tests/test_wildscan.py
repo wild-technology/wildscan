@@ -744,24 +744,35 @@ def test_stage_picker_reuses_only_the_current_transition_census(tmp_path, store,
 
     monkeypatch.setattr(Workspace, 'detect', detect)
 
+    async def picker_after_mount(app, pilot):
+        # The picker applies the session's selection in on_mount, which runs
+        # a message cycle after the screen is pushed; wait for it rather
+        # than assert against a not-yet-populated widget.
+        for _ in range(50):
+            await pilot.pause()
+            if isinstance(app.screen, app_mod.StagePickScreen):
+                picker = app.screen.query_one('#stage-pick')
+                if len(picker.selected) == len(app.session.enabled):
+                    return picker
+        raise AssertionError('stage picker never reflected the session selection')
+
     async def drive():
         app = app_mod.WildScanApp()
         async with app.run_test(size=(120, 50)) as pilot:
             await pilot.pause()
             app.screen.query_one('#s-results').value = str(tmp_path / 'results')
             app.screen.query_one('#s-continue').press()
-            await pilot.pause()
-            assert isinstance(app.screen, app_mod.StagePickScreen)
+            picker = await picker_after_mount(app, pilot)
             assert len(calls) == 1
             assert 'align' not in app.session.enabled
-            assert 'align' not in app.screen.query_one('#stage-pick').selected
+            assert 'align' not in picker.selected
             app.screen.action_back()
             await pilot.pause()
             app.screen.query_one('#s-continue').press()
-            await pilot.pause()
+            picker = await picker_after_mount(app, pilot)
             assert len(calls) == 2
             assert 'align' in app.session.enabled
-            assert 'align' in app.screen.query_one('#stage-pick').selected
+            assert 'align' in picker.selected
     asyncio.run(drive())
 
 
