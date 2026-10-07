@@ -222,6 +222,16 @@ def _family(data, name):
     return next(f for f in data['families'] if f['family'] == name)
 
 
+def test_the_registry_loads_the_full_frame_sensor_size():
+    """The ILX-LR1's full-frame sensor, 35.7 x 23.8 mm, typed as floats:
+    the starting 35 mm-equivalent focal is computed from its width when an
+    image carries no EXIF FocalLengthIn35mmFilm."""
+    for key in ('ilx_left', 'ilx_right'):
+        size = camera_registry.CAMERAS[key].sensor_size_mm
+        assert size == (35.7, 23.8)
+        assert all(type(v) is float for v in size)
+
+
 @pytest.mark.parametrize('mutate,match', [
     (lambda d: _family(d, 'cam1').update(camera='ilx_missing'),
      r"names camera 'ilx_missing'"),
@@ -231,6 +241,12 @@ def _family(data, name):
      r"calibration_focal_mm"),
     (lambda d: d['cameras']['ilx_left'].update(resolution='4096x3000'),
      r"resolution"),
+    (lambda d: d['cameras']['ilx_left'].pop('sensor_size_mm'),
+     r"sensor_size_mm"),
+    (lambda d: d['cameras']['ilx_left'].update(sensor_size_mm=[35.7]),
+     r"sensor_size_mm"),
+    (lambda d: d['cameras']['ilx_left'].update(sensor_size_mm=[35.7, 0]),
+     r"sensor_size_mm.*positive"),
     (lambda d: d['cameras']['ilx_left'].update(focal_length_35mm=True),
      r"focal_length_35mm"),
     (lambda d: d['cameras']['ilx_left'].update(calibration_prior='exact'),

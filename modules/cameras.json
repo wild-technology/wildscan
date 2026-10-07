@@ -46,7 +46,11 @@
       "images with the calibration's aspect ratio and focal length, which",
       "modules/calibration_sidecars.py checks before writing them.",
       "calibration_prior and lens_distortion_prior 'approximate': written",
-      "as an initial prior that alignment adjusts, never as a fixed one."
+      "as an initial prior that alignment adjusts, never as a fixed one.",
+      "sensor_size_mm is the full-frame sensor of the Sony ILX-LR1",
+      "(35.7 x 23.8 mm, width x height): the starting 35 mm-equivalent",
+      "focal is FocalLength x 36 / sensor width when an image carries no",
+      "EXIF FocalLengthIn35mmFilm (calibration_sidecars.observe_focal)."
     ],
     "ilx_left": {
       "_provenance": "Checkerboard solve 2026-09-30 from Stereo_Calibration/dive_001 (pool, 2026-05-18): 60 of 61 detected boards used, reprojection RMS 1.15 px. Focal FIXED at the stated 16 mm (fx=fy=2016.8 px, assuming the 3000 px image height spans the 23.8 mm sensor height); a free-focal solve gave fx=1985+/-49 px at the same RMS. Principal point 1-sigma +/-14/15 px. UNVALIDATED as a RealityScan prior.",
@@ -57,6 +61,10 @@
         3000
       ],
       "calibration_focal_mm": 16.0,
+      "sensor_size_mm": [
+        35.7,
+        23.8
+      ],
       "focal_length_35mm": 17.72584,
       "principal_point_u": 0.01871054,
       "principal_point_v": -0.02501735,
@@ -98,6 +106,10 @@
         3000
       ],
       "calibration_focal_mm": 16.0,
+      "sensor_size_mm": [
+        35.7,
+        23.8
+      ],
       "focal_length_35mm": 17.72584,
       "principal_point_u": 0.06111425,
       "principal_point_v": -0.07754206,

@@ -5,8 +5,8 @@
 - the two physical cameras (``ilx_left``, ``ilx_right``) and their
   calibration: calibration image size, the focal length the calibration was
   solved at, the 35 mm-equivalent focal, the normalised principal point, the
-  distortion model and its measured coefficients, and one calibration group
-  and one lens-distortion group per camera;
+  distortion model and its measured coefficients, the sensor size, and one
+  calibration group and one lens-distortion group per camera;
 - the Wild Sync filename families (``Cam1_...`` and ``Cam2_...``), which say
   which node is which eye, and the mount of each;
 - the stereo rig, including ``node_assignment_confirmed``;
@@ -64,6 +64,7 @@ class Camera:
     distortion_model: str                     # 'brown3'
     calibration_image_size: tuple[int, int]   # (width, height) in pixels
     calibration_focal_mm: float               # lens focal length at calibration
+    sensor_size_mm: tuple[float, float]       # (width, height) of the sensor
     focal_length_35mm: float                  # RealityScan normalised focal
     principal_point_u: float                  # RealityScan normalised offsets
     principal_point_v: float
@@ -226,6 +227,14 @@ class _Loader:
                       f'must be a list of {count} finite numbers, got {value!r}')
         return tuple(float(v) for v in value)
 
+    def sensor_size(self, spec: dict, where: str) -> tuple[float, float]:
+        width, height = self.numbers(spec, 'sensor_size_mm', where, 2)
+        if width <= 0 or height <= 0:
+            self.fail(f'{where}.sensor_size_mm',
+                      f'must be [width, height] in positive millimetres, got '
+                      f'{spec["sensor_size_mm"]!r}')
+        return width, height
+
     def camera(self, key: str, spec) -> Camera:
         where = f'cameras[{key!r}]'
         if not _KEY_RE.match(key):
@@ -254,6 +263,7 @@ class _Loader:
             calibration_image_size=(size[0], size[1]),
             calibration_focal_mm=self.number(spec, 'calibration_focal_mm', where,
                                              positive=True),
+            sensor_size_mm=self.sensor_size(spec, where),
             focal_length_35mm=self.number(spec, 'focal_length_35mm', where,
                                           positive=True),
             principal_point_u=self.number(spec, 'principal_point_u', where),
