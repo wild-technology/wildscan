@@ -775,7 +775,8 @@ class RealityScanAlignment(RSModule):
                 flight_log_path or None, members)
             if flight_log_path and bbox is None:
                 self.logger.warning(
-                    'No flight-log rows matched the %d member(s) of %s - '
+                    'No flight-log position for the %d member(s) of %s (rows '
+                    'missing, or present without X/Y as for a static fix) - '
                     'manifest bbox_utm will be null', len(members), component_name)
 
             manifest = component_manifest.build_manifest(
