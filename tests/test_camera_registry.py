@@ -17,6 +17,7 @@ import copy
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -144,20 +145,38 @@ def test_mounts_are_loaded_from_cameras_json():
             lever_arm_m=None if spec['lever_arm_m'] is None
             else tuple(spec['lever_arm_m']))
     # Nominal nadir mount, image top along the heading, lever arm unmeasured.
-    assert camera_registry.mount_for('Cam1_x.jpg') == Mount(90.0, 15.0, 0.0, None)
-    assert camera_registry.mount_for('Cam2_x.jpg') == Mount(90.0, 15.0, 0.0, None)
+    assert camera_registry.mount_for('Cam1_x.jpg') == Mount(90.0, 10.0, 0.0, None)
+    assert camera_registry.mount_for('Cam2_x.jpg') == Mount(90.0, 10.0, 0.0, None)
 
 
-def test_default_prior_accuracies_are_loaded():
-    data = _load(CAMERAS_JSON)['defaults']
-    assert camera_registry.PRIOR_ACCURACY == PriorAccuracy(
-        x_m=data['position_accuracy_m']['x'],
-        y_m=data['position_accuracy_m']['y'],
-        alt_m=data['position_accuracy_m']['alt'],
-        yaw_deg=data['orientation_accuracy_deg']['yaw'],
-        roll_deg=data['orientation_accuracy_deg']['roll'])
-    assert camera_registry.PRIOR_ACCURACY == PriorAccuracy(10.0, 10.0, 1.0,
-                                                           15.0, 15.0)
+def test_prior_accuracies_come_from_the_rig():
+    data = _load(CAMERAS_JSON)['rigs']['ilx_lr1_stereo']['prior_accuracy']
+    rig = camera_registry.RIGS['ilx_lr1_stereo']
+    assert rig.prior_accuracy == PriorAccuracy(
+        position_m=data['position_m'], altitude_m=data['altitude_m'],
+        orientation_deg=data['orientation_deg'])
+    assert camera_registry.PRIOR_ACCURACY == rig.prior_accuracy
+    # Owner, 2026-10-07: 10 cm GPS, 1 m depth, 10 deg attitude. The mount
+    # pitch accuracy and the AlignmentParams.xml fallback carry the same
+    # 10 deg, so one number describes the attitude prior.
+    assert camera_registry.PRIOR_ACCURACY == PriorAccuracy(0.1, 1.0, 10.0)
+    for family in camera_registry.FAMILIES.values():
+        assert family.mount.pitch_accuracy_deg == \
+            camera_registry.PRIOR_ACCURACY.orientation_deg
+    assert 'defaults' not in _load(CAMERAS_JSON)
+
+
+def test_alignment_params_orientation_fallback_matches_the_rig():
+    xml = os.path.join(REPO_ROOT, 'modules', 'realityscan_interface', 'RS_CLI',
+                       'Metadata', 'AlignmentParams.xml')
+    with open(xml, encoding='utf-8') as f:
+        text = f.read()
+    for axis in ('Yaw', 'Pitch', 'Roll'):
+        match = re.search(r'key="sfmCameraPriorAccuracy' + axis
+                          + r'" value="([^"]+)"', text)
+        assert match, axis
+        assert float(match.group(1)) == \
+            camera_registry.PRIOR_ACCURACY.orientation_deg
 
 
 # ------------------------------------------ agreement with the record
@@ -284,8 +303,12 @@ def test_the_registry_loads_the_full_frame_sensor_size():
      r"exactly one rig"),
     (lambda d: d['rigs']['ilx_lr1_stereo']['eyes']['R'].update(
         camera='ilx_missing'), r"ilx_missing"),
-    (lambda d: d['defaults']['position_accuracy_m'].update(x=-1),
-     r"position_accuracy_m"),
+    (lambda d: d['rigs']['ilx_lr1_stereo']['prior_accuracy'].update(position_m=-1),
+     r"prior_accuracy"),
+    (lambda d: d['rigs']['ilx_lr1_stereo'].pop('prior_accuracy'),
+     r"prior_accuracy"),
+    (lambda d: d['rigs'].update(second=dict(d['rigs']['ilx_lr1_stereo'])),
+     r"one rig"),
     (lambda d: d.update(schema_version=1), r"schema_version"),
 ])
 def test_a_malformed_registry_is_refused_with_a_named_entry(tmp_path, mutate,
