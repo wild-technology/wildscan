@@ -355,8 +355,10 @@ What these mean and how they are applied is in
 `--b_overlap_percent` [`20`], `--b_single_zone_below` [`4000`; a dataset with
 fewer images is one zone, without clustering or overlap copies] and others
 listed by `--help`. RealityScan
-Alignment takes `--r_min_component_size` [`50`; a zone with fewer images
-exports components holding at least half of its images, at least 2],
+Alignment takes `--r_min_component_size` [`10`; every component is captured
+and the smaller ones are set aside and listed in
+`components_below_min_size.json`; a zone with fewer images exports
+components holding at least half of its images, at least 2],
 `--r_display_output` and `--r_project_label`.
 
 **Merge the per-zone components, then model the merged result:**

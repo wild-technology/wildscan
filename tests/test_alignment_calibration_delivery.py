@@ -902,8 +902,10 @@ def test_a_small_scene_exports_components_of_half_its_images(tmp_path,
     frames = tuple(f'20260820_1925{n:02d}.42' for n in range(10, 16))
     ws = _workspace(tmp_path, None, frames=frames)
     assert len(_images(ws)) == 12
+    # configured 50 (the 1.0.0 default) so the half rule applies to 12 images
     module, calls = _module(tmp_path, monkeypatch, ws,
-                            logging.getLogger('align-calibration-test'))
+                            logging.getLogger('align-calibration-test'),
+                            min_size=50)
     module.run()
     assert calls[0][1][5] == '6'
     assert any('>= 6 cameras' in m and 'configured 50' in m
@@ -936,8 +938,52 @@ def test_no_exported_component_is_explained(tmp_path, monkeypatch, logs):
     assert 'RealityScan finished' in message
     assert '(2 image(s) in the scene)' in message
     assert 'no component of >= 2 cameras' in message
-    assert 'threshold used for this scene; configured 50' in message
+    assert 'threshold used for this scene; configured 10' in message
+    assert 'no component identity was captured' in message
     assert '--r_min_component_size' in message
+
+
+def test_components_below_the_minimum_size_are_set_aside_and_reported(
+        tmp_path, monkeypatch, logs):
+    """The identity loop captures every component; the orchestrator keeps
+    the ones of at least the minimum size, removes the rest from the zone
+    output and records their sizes (owner decision D6, 2026-10-07)."""
+    modes = {'ilx_left': 'groups', 'ilx_right': 'groups'}
+    ws = _workspace(tmp_path, modes)
+    images = _images(ws)
+    assert len(images) >= 3
+
+    def on_run(args):
+        out = Path(args[1])
+        # lap 0 harvests every registered camera, lap 1 the one left after
+        # the maximal component was peeled, lap 2 is the empty terminal
+        for lap, members in ((0, images), (1, images[-1:]), (2, [])):
+            harvest = out / f'identity_r{lap}'
+            harvest.mkdir()
+            for image in members:
+                (harvest / (image.name[:-len('.JPG')] + '.xmp')).write_text(
+                    POSE_SIDECAR, encoding='utf-8')
+        (out / f'{args[4]}_c1.rsalign').write_bytes(b'small component')
+
+    module, _calls = _module(tmp_path, monkeypatch, ws,
+                             logging.getLogger('align-calibration-test'),
+                             on_run=on_run, min_size=2)
+    output = module.run()
+    assert output['Success'] is True, output
+    out = ws / 'aligned_components' / 'zone_1'
+    assert (out / 'zone_1_c0.rsalign').is_file()
+    assert (out / 'zone_1_c0.rsalign.manifest.json').is_file()
+    assert not (out / 'zone_1_c1.rsalign').exists()
+    assert not (out / 'zone_1_c1.rsalign.manifest.json').exists()
+    record = json.loads((out / 'components_below_min_size.json')
+                        .read_text(encoding='utf-8'))
+    assert record == {'zone': 'zone_1', 'min_component_size': 2,
+                      'components': {'zone_1_c1': 1}}
+    zone, = output['Components'].values()
+    assert zone['Component Count'] == 1
+    assert zone['Registered Cameras'] == len(images) - 1
+    assert any('1 component(s) below 2 cameras set aside' in m
+               for m in logs.messages), logs.messages
 
 
 # ------------------------------------------------------- AlignZone.bat text

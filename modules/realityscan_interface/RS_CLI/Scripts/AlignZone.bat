@@ -15,7 +15,8 @@ setlocal
 ::   %3 flight log path (or "" to align without georeferencing priors)
 ::   %4 flight log params xml (or "")
 ::   %5 scene name (used for the saved .rsproj)
-::   %6 minimum component size in cameras (e.g. 50)
+::   %6 minimum component size in cameras (e.g. 10); applied by the
+::      orchestrator after the identity loop, which captures every component
 ::
 :: Argument (optional):
 ::   %7 calibration command file (.rscmd). When given, images are added by
@@ -48,7 +49,7 @@ set "flight_log_dir=%~3"
 set "flight_log_params_dir=%~4"
 set "scene_name=%~5"
 set "min_component_size=%~6"
-if "%min_component_size%" == "" set "min_component_size=50"
+if "%min_component_size%" == "" set "min_component_size=10"
 set "calibration_rscmd=%~7"
 
 if not exist "%input_dir%" ( echo ERROR: input directory not found: %input_dir% & exit /b 1 )
@@ -142,7 +143,11 @@ call :run -align || goto :fail
 :: before every export step.
 call :run -deselectAllImages || goto :fail
 
-call :run -setMinComponentSize %min_component_size% || goto :fail
+:: Every component is captured whatever its size: the identity loop runs
+:: at min size 1 and the Python orchestrator applies %min_component_size%
+:: afterwards, so a zone whose components are all too small still reports
+:: how many there were and how large.
+call :run -setMinComponentSize 1 || goto :fail
 
 echo Saving project BEFORE the destructive identity loop
 call :run -save "%output_dir%\%scene_name%.rsproj" || goto :fail
@@ -165,17 +170,17 @@ if defined RS_PROJECTS_DIR if defined RS_PROJECT_LABEL (
 :: Membership by SUCCESSIVE DIFFERENCE: only
 :: -exportXMP writes stem-named sidecars; -exportXMPForSelectedComponent
 :: is ALWAYS ordinal. So each lap exports the stems of ALL
-:: remaining components (>= min size, still gated by the earlier
-:: setMinComponentSize), harvests them to identity_r<K>, then exports +
+:: remaining components (every component: min size 1 above), harvests
+:: them to identity_r<K>, then exports +
 :: deletes the maximal component. members(c<K>) = stems(r<K>) minus
 :: stems(r<K+1>), computed by the Python orchestrator. An EMPTY harvest
-:: is the exhaustion terminal (also fires when only sub-min components
-:: remain) - selectMaximalComponent/rename/delete silently no-op on an
+:: is the exhaustion terminal -
+:: selectMaximalComponent/rename/delete silently no-op on an
 :: empty scene, so file-existence checks, not errors, drive the loop.
 echo Capturing per-component identity (destructive in-memory loop)
 set /a comp_index=0
 :identityLoop
-if %comp_index% GEQ 20 goto :identityDone
+if %comp_index% GEQ 100 goto :identityDone
 if not exist "%output_dir%\identity_r%comp_index%" mkdir "%output_dir%\identity_r%comp_index%"
 call :run -deselectAllImages || goto :fail
 call :run -exportXMP || goto :fail
