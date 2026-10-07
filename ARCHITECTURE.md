@@ -58,6 +58,9 @@ require Windows. Passing tests do not establish native RealityScan behaviour.
 `modules/camera_registry.py` and `modules/calibration_sidecars.py` import with
 the standard library alone (the latter needs Pillow only to read images).
 
+For any RealityScan command-line question, start at
+[docs/rs-reference/README.md](docs/rs-reference/README.md).
+
 ## Components
 
 **Entry points**
@@ -159,14 +162,15 @@ the standard library alone (the latter needs Pillow only to read images).
   hook RealityScan calls (`appProcessAction=ExecuteProgram`); completions go to
   `results_<instance>.log`, failures to `errors_<instance>.txt`.
 - `RS_CLI/Metadata/*.xml`: RealityScan parameter files (setting keys and
-  values) passed to RealityScan commands on its command line.
+  values) passed to RealityScan commands on its command line, documented in
+  [docs/rs-reference/09-xml-parameter-files.md](docs/rs-reference/09-xml-parameter-files.md).
   `AlignmentParams.xml` sets `sfmDistortionModel=Brown3`, which is global for
   all cameras.
 
 ## RealityScan facts the code depends on
 
 Each comes from the RealityScan 2.2 CLI help or was verified on an earlier
-dataset.
+dataset. Details and evidence are in [docs/rs-reference/](docs/rs-reference/README.md).
 
 - Delegated commands (`-delegateTo <instance> <cmd>`) are queued; the
   delegating process returns at hand-over, not at completion.
@@ -223,6 +227,7 @@ dataset.
    `RealityScanCLI` rejects shell metacharacters in workflow arguments.
 9. Never pass a calibration prior as locked or exact: its conversion to
    RealityScan's conventions is not verified.
+10. Consult `docs/rs-reference/` before writing a new workflow.
 
 ## Naming
 

@@ -73,8 +73,6 @@ cameras captured with Wild Sync. This release is breaking.
 - The batch-time XMP calibration option, the align-script override and unused
   model flags.
 - Image analysis, feature merge and legacy utility scripts.
-- The RealityScan CLI reference notes are no longer distributed with the
-  repository.
 
 ## [1.0.0] - 2026-08-31
 
