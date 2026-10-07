@@ -210,7 +210,7 @@ def test_orientation_prior_for_the_nadir_mount(heading, pitch, roll,
 
 def test_orientation_prior_composes_mount_tilt_and_yaw_offset():
     oblique = camera_registry.Mount(down_tilt_deg=60.0, yaw_offset_deg=90.0,
-                                    pitch_accuracy_deg=15.0, lever_arm_m=None)
+                                    pitch_accuracy_deg=10.0, lever_arm_m=None)
     # pitch = 90 + (imu pitch - tilt): a camera 60 deg below the forward
     # axis is 30 deg from nadir; the image top is turned 90 deg right.
     assert intake.orientation_prior(10.0, 5.0, 1.0, oblique, 2.0) == \
@@ -225,15 +225,16 @@ def test_any_missing_angle_gives_no_orientation_prior(heading, pitch, roll):
         (None, None, None)
 
 
-@pytest.mark.parametrize('depth,surface,down,expected', [
-    (12.5, 0.0, 0.0, -12.5),
-    (-12.5, 0.0, 0.0, -12.5),       # sign of the depth cell does not matter
-    (12.5, 0.0, 0.3, -12.8),        # lever arm down
-    (None, 0.0, 0.3, 0.0),          # camera at the sea surface
-    (None, -2.0, 0.0, -2.0),
+@pytest.mark.parametrize('depth,down,expected', [
+    (12.5, 0.0, -12.5),
+    (-12.5, 0.0, -12.5),           # a negative depth is still a depth
+    (12.5, 0.3, -12.8),            # lever arm down lowers the camera
+    (None, 0.3, None),             # no depth: no altitude prior
 ])
-def test_altitude_prior(depth, surface, down, expected):
-    assert intake.altitude_prior(depth, surface, down) == pytest.approx(expected)
+def test_altitude_prior(depth, down, expected):
+    value = intake.altitude_prior(depth, down)
+    assert value == (expected if expected is None
+                     else pytest.approx(expected))
 
 
 def test_auto_heading_takes_heading_imu_then_yaw():
@@ -250,26 +251,22 @@ def test_auto_heading_takes_heading_imu_then_yaw():
 
 # ------------------------------------------------------ the golden intake
 
-# Rows without depth carry the surface altitude with the wide surface-altitude
-# accuracy (1000 m); only the row with a depth gets the normal 1 m.
+# The fixture run is a static fix (every row the same position), so no
+# position cells are written; rows without depth get no altitude cells;
+# only the row with a depth gets an altitude with the 1 m accuracy. Yaw,
+# pitch and roll carry the rig's 10 deg (owner decisions 2026-10-07).
 GOLDEN_ROWS = (
-    ('Cam1_20260820_192542.42.card.JPG;294952.550000;4588707.830000;0.000000;'
-     '1000.000000;1000.000000;1000.000000;95.000000;2.000000;-1.000000;'
-     '15.000000;15.000000;15.000000'),
-    ('Cam1_20260820_192542.92.card.JPG;294952.550000;4588707.830000;0.000000;'
-     '1000.000000;1000.000000;1000.000000;100.000000;2.000000;-1.000000;'
-     '15.000000;15.000000;15.000000'),
-    ('Cam1_20260820_192543.42.card.JPG;294952.550000;4588707.830000;0.000000;'
-     '1000.000000;1000.000000;1000.000000;;;;;;'),
-    ('Cam2_20260820_192542.42.card.JPG;294952.550000;4588707.830000;0.000000;'
-     '1000.000000;1000.000000;1000.000000;95.000000;2.000000;-1.000000;'
-     '15.000000;15.000000;15.000000'),
-    ('Cam2_20260820_192542.92.card.JPG;294952.550000;4588707.830000;-12.500000;'
-     '1000.000000;1000.000000;1.000000;95.000000;2.000000;-1.000000;'
-     '15.000000;15.000000;15.000000'),
-    ('Cam2_20260820_192543.42.card.JPG;294952.550000;4588707.830000;0.000000;'
-     '1000.000000;1000.000000;1000.000000;95.000000;2.000000;-1.000000;'
-     '15.000000;15.000000;15.000000'),
+    ('Cam1_20260820_192542.42.card.JPG;;;;;;;95.000000;2.000000;-1.000000;'
+     '10.000000;10.000000;10.000000'),
+    ('Cam1_20260820_192542.92.card.JPG;;;;;;;100.000000;2.000000;-1.000000;'
+     '10.000000;10.000000;10.000000'),
+    'Cam1_20260820_192543.42.card.JPG;;;;;;;;;;;;',
+    ('Cam2_20260820_192542.42.card.JPG;;;;;;;95.000000;2.000000;-1.000000;'
+     '10.000000;10.000000;10.000000'),
+    ('Cam2_20260820_192542.92.card.JPG;;;-12.500000;;;1.000000;95.000000;'
+     '2.000000;-1.000000;10.000000;10.000000;10.000000'),
+    ('Cam2_20260820_192543.42.card.JPG;;;;;;;95.000000;2.000000;-1.000000;'
+     '10.000000;10.000000;10.000000'),
 )
 GOLDEN_LOG = ''.join(line + '\n' for line in (FLIGHT_LOG_HEADER, *GOLDEN_ROWS))
 
@@ -319,12 +316,15 @@ def test_golden_intake_of_the_card_variant(run_dir, workspace):
     assert [n['node'] for n in source['nodes']] == ['cam1', 'cam2']
     assert [n['camera'] for n in source['nodes']] == ['ilx_left', 'ilx_right']
     assert manifest['static_fix'] is True
-    assert manifest['position']['images_without_position'] == 0
-    assert manifest['altitude']['images_from_depth'] == 1
-    assert manifest['altitude']['images_at_surface_altitude'] == 5
-    assert manifest['altitude']['accuracy_m'] == 1.0
-    assert manifest['altitude']['surface_altitude_accuracy_m'] == 1000.0
-    assert manifest['altitude']['images_with_surface_altitude_accuracy'] == 5
+    assert manifest['position'] == {
+        'accuracy_m': 0.1, 'static_fix_spread_m': 1.0,
+        'images_without_position': 6}
+    assert manifest['altitude'] == {
+        'accuracy_m': 1.0, 'images_from_depth': 1,
+        'images_without_altitude': 5}
+    assert manifest['orientation']['yaw_roll_accuracy_deg'] == 10.0
+    assert manifest['orientation']['pitch_accuracy_deg'] == {
+        'ilx_left': 10.0, 'ilx_right': 10.0}
     assert manifest['orientation']['heading_source'] == 'auto'
     assert manifest['orientation']['heading_columns_used'] == {
         'heading_imu': 4, 'none': 1, 'yaw': 1}
@@ -363,8 +363,7 @@ def test_every_warn_only_case_is_warned_and_recorded(run_dir, workspace):
     warnings = result.manifest['warnings']
     expected = [
         f'{RUN_ID}: every row carries the same position',
-        ('5 of 6 images have no depth: altitude written as the surface '
-         'altitude 0 m'),
+        '5 of 6 images have no depth: no altitude prior is written',
         '1 of 6 images lack heading, pitch or roll',
         '1 image(s) carry time_err_ms above 50 ms (largest 120 ms)',
         'ilx_left: calibration groups only - image 48x32',
@@ -373,29 +372,21 @@ def test_every_warn_only_case_is_warned_and_recorded(run_dir, workspace):
     for text in expected:
         assert sum(text in w for w in warnings) == 1, (text, warnings)
     assert len(warnings) == len(expected), warnings
-    depth_warning, = (w for w in warnings if 'have no depth' in w)
-    assert ('altitude accuracy 1000 m is written for them instead of 1 m'
-            in depth_warning), depth_warning
+    static_warning, = (w for w in warnings if 'same position' in w)
+    assert 'No position is written' in static_warning, static_warning
 
 
-def test_the_surface_altitude_accuracy_applies_only_without_depth(run_dir,
-                                                                 workspace):
+def test_altitude_cells_are_empty_without_depth(run_dir, workspace):
     result = run_intake([str(run_dir)], str(workspace),
-                        IntakeOptions(surface_altitude_accuracy_m=250.0,
-                                      altitude_accuracy_m=2.0), log=QUIET)
+                        IntakeOptions(altitude_accuracy_m=2.0), log=QUIET)
     rows = {line.split(';')[0]: line.split(';')
             for line in Path(result.flight_log_path).read_text(
                 'utf-8').splitlines()[1:]}
-    assert rows['Cam2_20260820_192542.92.card.JPG'][6] == '2.000000'
-    assert {r[6] for name, r in rows.items()
-            if name != 'Cam2_20260820_192542.92.card.JPG'} == {'250.000000'}
-    assert result.manifest['altitude']['surface_altitude_accuracy_m'] == 250.0
-
-
-@pytest.mark.parametrize('value', [0.0, -1.0, float('nan'), 'wide'])
-def test_the_surface_altitude_accuracy_must_be_positive(value):
-    problems = IntakeOptions(surface_altitude_accuracy_m=value).problems()
-    assert any('surface altitude accuracy (m)' in p for p in problems), problems
+    with_depth = rows['Cam2_20260820_192542.92.card.JPG']
+    assert with_depth[3] == '-12.500000' and with_depth[6] == '2.000000'
+    assert {(r[3], r[6]) for name, r in rows.items()
+            if name != 'Cam2_20260820_192542.92.card.JPG'} == {('', '')}
+    assert result.manifest['altitude']['accuracy_m'] == 2.0
 
 
 def test_a_moving_track_is_not_a_static_fix(tmp_path, workspace):
@@ -406,8 +397,10 @@ def test_a_moving_track_is_not_a_static_fix(tmp_path, workspace):
     assert result.manifest['static_fix'] is False
     assert not any('same position' in w for w in result.manifest['warnings'])
     lines = Path(result.flight_log_path).read_text('utf-8').splitlines()
-    assert lines[3].split(';')[1:5] == [
-        '294962.550000', '4588711.830000', '0.000000', '10.000000']
+    # a real track: positions and the 10 cm accuracy are written; no depth,
+    # so no altitude
+    assert lines[3].split(';')[1:7] == [
+        '294962.550000', '4588711.830000', '', '0.100000', '0.100000', '']
 
 
 def test_the_review_variant_takes_the_review_jpegs(run_dir, workspace):
@@ -887,12 +880,9 @@ def test_module_parameters_follow_the_conventions():
         'ws_focal_override_mm': ('w_fo', None),
         'ws_declination_deg': ('w_d', 0.0),
         'ws_heading_source': ('w_hs', 'auto'),
-        'ws_pos_accuracy_m': ('w_pa', 10.0),
-        'ws_static_pos_accuracy_m': ('w_spa', 1000.0),
+        'ws_pos_accuracy_m': ('w_pa', 0.1),
         'ws_alt_accuracy_m': ('w_aa', 1.0),
-        'ws_surface_alt_m': ('w_sa', 0.0),
-        'ws_surface_alt_accuracy_m': ('w_saa', 1000.0),
-        'ws_orientation_accuracy_deg': ('w_oa', 15.0),
+        'ws_orientation_accuracy_deg': ('w_oa', 10.0),
         'ws_min_match_pct': ('w_mr', 80.0),
         'ws_time_err_warn_ms': ('w_te', 50.0),
     }

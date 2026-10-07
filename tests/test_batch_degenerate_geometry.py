@@ -67,7 +67,10 @@ def _run(tmp_path, monkeypatch, positions, extra=None, files=True):
     for name, (x, y) in zip(names, positions):
         if files:
             (source / name).write_bytes(b'j')
-        rows.append(f'{name};{x:.6f};{y:.6f};0;1000;1000;1;15;1;-10;15;15;15')
+        if x is None:   # no position prior, as the intake writes a static fix
+            rows.append(f'{name};;;;;;;15;1;-10;10;10;10')
+        else:
+            rows.append(f'{name};{x:.6f};{y:.6f};0;1000;1000;1;15;1;-10;15;15;15')
     log = source / 'flight_log_19T_UTM.txt'
     log.write_text('\n'.join(rows) + '\n', encoding='utf-8')
 
@@ -131,6 +134,45 @@ def test_a_static_position_gives_one_zone_and_no_hull_error(tmp_path,
                 if 'expected to work well' not in r.getMessage()]
     assert len(warnings) == 1, warnings
     assert 'one position' in warnings[0]
+
+
+def test_images_without_any_position_form_one_zone(tmp_path, monkeypatch,
+                                                  caplog):
+    """A run without a GPS track: the intake writes no position for any
+    image, so every X/Y cell is empty. Nothing can be zoned; one zone holds
+    every image instead of the stage failing on an empty frame."""
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
+    result, batched = _run(tmp_path, monkeypatch, [(None, None)] * 12,
+                           extra={'batch_single_zone_below': 1})
+    assert result['Success'] is True, result
+    zones = _zones(batched)
+    assert [z.name for z in zones] == ['zone_1']
+    assert len(_images(zones[0])) == 12
+    assert result['Number of Zones'] == 1
+    log, = zones[0].rglob('flight_log*_UTM.txt')
+    lines = log.read_text('utf-8').splitlines()
+    assert len(lines) == 13
+    assert all(line.split(';')[1] == '' for line in lines[1:])
+    assert not _records(caplog, logging.ERROR)
+    warnings = [r.getMessage() for r in _records(caplog, logging.WARNING)
+                if 'expected to work well' not in r.getMessage()]
+    assert len(warnings) == 1 and 'has a position' in warnings[0], warnings
+
+
+def test_images_without_a_position_join_the_single_zone(tmp_path,
+                                                       monkeypatch, caplog):
+    """Under the single-zone rule nothing is zoned, so images without a
+    position are not left out."""
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
+    positions = [(294952.55 + i, 4588707.83 + i) for i in range(8)] \
+        + [(None, None)] * 4
+    result, batched = _run(tmp_path, monkeypatch, positions,
+                           extra={'batch_single_zone_below': 100})
+    assert result['Success'] is True, result
+    zones = _zones(batched)
+    assert [z.name for z in zones] == ['zone_1']
+    assert len(_images(zones[0])) == 12
+    assert not _records(caplog, logging.ERROR)
 
 
 def test_collinear_positions_zone_without_a_hull_error(tmp_path,

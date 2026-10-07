@@ -57,6 +57,8 @@ class BatchDirectory(RSModule):
         super().__init__("Batch Directory", logger)
         self.logger.info(f"Matplotlib {matplotlib.__version__}, Seaborn {sns.__version__}")
         self.utm_zone_suffix = None
+        # flight-log rows without X/Y, by name (set by __read_flight_log_gdf)
+        self._unpositioned_names = []
         # Last-entered run-time answers (zone sizes etc.) persist as the
         # next run's defaults, like every other prompt in the pipeline
         self.settings = SettingsStore()
@@ -419,6 +421,11 @@ class BatchDirectory(RSModule):
             return None
 
     def __read_flight_log_gdf(self, flight_log_path):
+        """Positioned rows as a GeoDataFrame; rows without X/Y are kept
+        by name in ``self._unpositioned_names`` (the intake writes no
+        position for a static-fix run, so a whole log can be like that).
+        None when the log cannot be used at all."""
+        self._unpositioned_names = []
         if flight_log_path is None:
             return None
 
@@ -457,7 +464,11 @@ class BatchDirectory(RSModule):
                 self.logger.error("Flight log missing X (East) and Y (North) columns")
                 return None
 
-            df = df.dropna(subset=['x', 'y'])
+            positioned = df.dropna(subset=['x', 'y'])
+            self._unpositioned_names = [
+                str(name) for name in
+                df.loc[~df.index.isin(positioned.index), 'filename']]
+            df = positioned
             if not np.isfinite(df[['x', 'y']].to_numpy(dtype=np.float64)).all():
                 self.logger.error('Flight log contains nonfinite X/Y coordinates')
                 return None
@@ -1194,22 +1205,40 @@ class BatchDirectory(RSModule):
         flight_log_path = self.__get_flight_log_path()
 
         gdf = self.__read_flight_log_gdf(flight_log_path)
-        if gdf is None or gdf.empty:
+        if gdf is None:
             self.logger.error("Could not process flight log for geographic batching.")
             return {'Success': False}
+        unpositioned = list(dict.fromkeys(self._unpositioned_names))
+        total_images = len(gdf) + len(unpositioned)
+        if total_images == 0:
+            self.logger.error('Flight log %s names no images.',
+                              os.path.basename(flight_log_path))
+            return {'Success': False}
 
-        self.logger.info(f"Total number of georeferenced points: {len(gdf)}")
+        self.logger.info('Total number of georeferenced points: %d of %d '
+                         'images', len(gdf), total_images)
+        if gdf.empty:
+            self.logger.warning(
+                'None of the %d images has a position (a run without a GPS '
+                'track: the intake writes no position for a static fix). '
+                'There is nothing to zone, so one zone holds them all.',
+                total_images)
 
-        if len(gdf) < MIN_EXPECTED_IMAGES:
+        if total_images < MIN_EXPECTED_IMAGES:
             self.logger.warning(
                 '%d images is below the %d the pipeline is expected to work '
-                'well with; batching continues with one zone.', len(gdf),
+                'well with; batching continues with one zone.', total_images,
                 MIN_EXPECTED_IMAGES)
         single_zone_below = int(
             self.params['batch_single_zone_below'].get_value()
             if 'batch_single_zone_below' in self.params
             else SINGLE_ZONE_BELOW_DEFAULT)
-        single_zone = len(gdf) < single_zone_below
+        single_zone = gdf.empty or total_images < single_zone_below
+        if unpositioned and not gdf.empty and not single_zone:
+            self.logger.warning(
+                '%d of %d images have no position and are left out of every '
+                'zone: zones are built from positions.', len(unpositioned),
+                total_images)
 
         if not single_zone:
             # Prompt for min/max zone size based on total image count; the
@@ -1242,10 +1271,12 @@ class BatchDirectory(RSModule):
 
         if single_zone:
             self.logger.info(
-                '%d images is below %d (b_single_zone_below): one zone holds '
-                'them all - no clustering, no splitting, no overlap copies.',
-                len(gdf), single_zone_below)
-            final_zones = [list(dict.fromkeys(gdf['filename'].tolist()))]
+                '%d images (%s): one zone holds them all - no clustering, no '
+                'splitting, no overlap copies.', total_images,
+                'no image has a position' if gdf.empty else
+                f'below {single_zone_below}, b_single_zone_below')
+            final_zones = [list(dict.fromkeys(
+                gdf['filename'].tolist() + unpositioned))]
             total_in_batches = len(final_zones[0])
             overlap_percent = 0.0
 

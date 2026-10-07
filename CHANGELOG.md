@@ -66,10 +66,21 @@ cameras captured with Wild Sync. This release is breaking.
   partial and refused by alignment instead of reading as "no intake".
 - An intake re-run accepts, and leaves untouched, the pipeline's own
   calibration sidecars beside its images in `raw_images/`.
-- An image without depth gets altitude accuracy 1000 m
-  (`--w_surface_alt_accuracy`) with its surface-altitude fallback, instead of
-  the normal altitude accuracy that pinned it to the surface; the manifest
-  counts these images.
+- Flight-log prior accuracies live on the rig in `modules/cameras.json`
+  (`rigs.ilx_lr1_stereo.prior_accuracy`): position 0.1 m (the GPS receiver's
+  accuracy), altitude 1 m, orientation 10 degrees for yaw, pitch and roll.
+  The `defaults` block is gone and the `AlignmentParams.xml` fallback carries
+  the same 10 degrees. (1.0.0 wrote 10 m and 15 degrees.)
+- A run whose position never moves (a static fix) gets no position prior:
+  its images are written with empty X/Y cells instead of the one repeated
+  position. `--w_static_pos_accuracy` is gone.
+- An image without depth gets no altitude prior (empty Alt cells) instead of
+  altitude 0. `--w_surface_altitude` and `--w_surface_alt_accuracy` are
+  gone. The manifest counts the images written without a position and
+  without an altitude.
+- Batch Directory keeps images that have no position: a workspace where no
+  image has one forms a single zone instead of failing, and under the
+  single-zone rule unpositioned images join the zone.
 - `wildscan` refuses to start, with one message, when the repository-root
   driver scripts are missing (for example from a built wheel); only an
   editable install from a source checkout is supported.
@@ -83,6 +94,8 @@ cameras captured with Wild Sync. This release is breaking.
 - Vehicle-navigation georeferencing, the standalone survey georeferencer and
   the filename timestamp parser.
 - The local-frame flight-log path and its parameter template.
+- The campaign, COLMAP and review documents and the earlier validation plans
+  and results. They remain in the Git history at `ea3ad5d`.
 - Campaign scripts, per-campaign test runners, the zone-9 validation runner and the Cesium depth probe.
 - The sensor database file (`sensorsdb.xml`); `flightlogs.xml` keeps only the
   pipeline's flight-log format.
