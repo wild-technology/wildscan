@@ -49,9 +49,19 @@ August 2026 runs).
 accuracy columns.
 
 1. Open `aligned_components/<zone>/<zone>.rsproj` as text.
-2. Find the camera prior entries.
+2. Find the camera prior entries: the saved project stores each image as an
+   `<input>` element whose attributes carry its priors (`absX`, `absY`, `absZ`
+   for position, `absRX`, `absRY`, `absRZ` for orientation, `absu*` for the
+   accuracies, and `absPrior`). To count them:
 
-**Decision rule** ([RealityScan reference 06, section 2.3](../rs-reference/06-georeferencing-flightlogs-and-scale.md#resolved-2026-08-23--side-a-holds-what-an-unresolvable-format-guid-actually-does)):
+   ```powershell
+   $p = 'aligned_components\<zone>\<zone>.rsproj'
+   (Select-String -LiteralPath $p -Pattern 'absPrior="pose"' -AllMatches).Matches.Count
+   (Select-String -LiteralPath $p -Pattern 'absPrior="registered"' -AllMatches).Matches.Count
+   (Select-String -LiteralPath $p -Pattern '\babsu\w*=' -AllMatches).Matches.Count
+   ```
+
+**Decision rule** (verified on an earlier dataset with RealityScan 2.2):
 
 - `absPrior="pose"` with `absu*` accuracy attributes present: the format
   resolved. Pass.
@@ -64,7 +74,9 @@ accuracy columns.
 
 **Expectation.** Every image of the zone is added once, with its sidecar, and
 each camera ends in its own calibration and lens-distortion group (`7` for
-`ilx_left`, `8` for `ilx_right`).
+`ilx_left`, `8` for `ilx_right` in the sidecars). RealityScan can renumber
+supplied groups (verified on an earlier dataset: groups 1 and 2 came back as
+2 and 3), so judge the grouping, not the numbers.
 
 1. Before alignment output is trusted, confirm in the zone's output folder that
    `<zone>.rscmd` exists, has CRLF line endings, has one line per image in the
@@ -76,21 +88,34 @@ each camera ends in its own calibration and lens-distortion group (`7` for
    without an error.
 3. Count the images in the saved project: it must equal the number of lines in
    the `.rscmd`.
-4. Read the grouping back with `-exportReport` and the `$ExportInputsGrouping`
-   template of
-   [RealityScan reference 13, section 4.4a](../rs-reference/13-camera-rigs-priors-and-orientation.md#44a-reading-grouping-back-out--the-direct-check-nobody-used),
-   on the saved project.
+4. Read the grouping back on the saved project with
+   `-exportReport <out.html> <template>`, where the template is a text file
+   that uses the report function `$ExportInputsGrouping` and, inside it,
+   `$IterateGroups` with the per-group variables `groupIndex`,
+   `calibrationGroup`, `distortionGroup` and `count` (RealityScan 2.2 CLI
+   help, report templates; the shipped templates are in
+   `<install>\Reports`). A minimal template:
+
+   ```text
+   $ExportInputsGrouping(groups=$(groupCount) grouped=$(groupedInputCount) ungrouped=$(ungroupedInputCount)
+   $IterateGroups(g$(groupIndex) calib=$(calibrationGroup) lens=$(distortionGroup) n=$(count)
+   ))
+   ```
+
+   This read-back has not yet been run with this pipeline. If it hangs or
+   writes no report, the check is inconclusive, not failed.
 
 **Oracle check.** Repeat step 4 on the same zone aligned with
 `--w_calibration off` (one variable changed; a fresh workspace). Without
-sidecars the groups `7` and `8` must not appear. If they appear in both runs,
-the read-back cannot distinguish the cases: stop.
+sidecars there must not be one calibration group per camera. If both runs
+show the same per-camera grouping, the read-back cannot distinguish the cases:
+stop.
 
-**Decision rule.** Pass when the sidecar run shows calibration groups `7` and
-`8` (and lens groups `7` and `8`), each holding exactly that camera's images,
-no ungrouped image, and the `off` run does not. Fail when any image is missing
-from the project, when the groups are absent, or when images of both cameras
-share a group.
+**Decision rule.** Pass when the sidecar run shows one calibration group and
+one lens group per camera (`7` and `8` unless renumbered), each holding exactly
+that camera's images, no ungrouped image, and the `off` run does not. Fail
+when any image is missing from the project, when the groups are absent, or
+when images of both cameras share a group.
 
 ## C. Orientation convention
 
@@ -98,11 +123,15 @@ The mapping under test (see
 [The ILX-LR1 stereo rig](../ILX-LR1.md#orientation-convention)):
 `yaw = heading + declination + mount yaw offset`, `pitch = IMU pitch` for the
 nadir mount (RealityScan pitch 0 = looking straight down), `roll = IMU roll`,
-imported as yaw about Z, pitch about Y, roll about X, composed right to left
-([RealityScan reference 13, section 6.3](../rs-reference/13-camera-rigs-priors-and-orientation.md#63-yaw--pitch--roll--the-help-contradicts-itself)).
-`FlightLogParams.xml` does not pin RealityScan's Euler-order and camera-mount
-import settings, so the installation defaults are part of what is tested
-([section 9.4](../rs-reference/13-camera-rigs-priors-and-orientation.md#94-rotation-semantics-on-import)).
+imported as yaw about Z, pitch about Y, roll about X in a North-East-Down
+frame, composed right to left (RealityScan 2.2 CLI help, flight-log import;
+one other help page assigns yaw to Y, pitch to X and roll to Z, which step 5
+tests as an alternative).
+`FlightLogParams.xml` does not pin the flight-log import settings
+**Euler angles order (YPR)** and **Camera mount** (the latter is offered when
+the format carries Yaw/Pitch/Roll), so the installation defaults are part of
+what is tested. Before the run, open RealityScan's flight-log import dialog
+with this format selected and record both values with the environment.
 
 The test must not grade the priors against a solve the same priors produced.
 
@@ -111,14 +140,17 @@ The test must not grade the priors against a solve the same priors produced.
    working copy of the checkout `pitch_accuracy_deg` set to 180 for both mounts
    in `modules/cameras.json`. Everything else unchanged.
 2. **Repeat.** Align the same zone a second time unchanged. RealityScan
-   alignment is not repeatable on marginal geometry
-   ([section 4.4](../rs-reference/13-camera-rigs-priors-and-orientation.md#44-proof-that-xmp-grouping-works-and-how-it-was-measured));
+   alignment is not repeatable on marginal geometry (verified on an earlier
+   dataset: identical reruns registered 26 and 55 images);
    the difference between the two solves is the noise floor for every
    comparison below.
 3. **Read the solved rotations** from the pose sidecars the identity harvest
    moved to `aligned_components/<zone>/identity_r0/`. Match both the attribute
-   and the element form of `xcr:Rotation`
-   ([RealityScan reference 05, section 2.3](../rs-reference/05-metadata-xmp-and-sidecars.md)).
+   and the element form of `xcr:Rotation`: the sample sidecar in the
+   RealityScan 2.2 CLI help uses the attribute (`xcr:Rotation="..."`),
+   while RealityScan 2.2 was seen writing the element
+   (`<xcr:Rotation>...</xcr:Rotation>`) on an earlier dataset. Either holds
+   nine numbers, a 3 x 3 matrix in row order.
 4. **Reader check (known-good case).** For pairs of simultaneous `cam1`/`cam2`
    frames, the angle between the two solved rotations must be close to the
    stereo extrinsics rotation, 1.827 degrees (the cameras are not synchronised,
@@ -128,11 +160,14 @@ The test must not grade the priors against a solve the same priors produced.
    of heading, pitch or roll, compare the solved relative rotation with the one
    predicted from the flight log's Yaw/Pitch/Roll under the documented
    convention, and under at least these wrong alternatives: pitch and roll
-   swapped; roll sign flipped; pitch sign flipped; yaw sign flipped. Relative
+   swapped; roll sign flipped; pitch sign flipped; yaw sign flipped; yaw about
+   Y, pitch about X and roll about Z. Relative
    rotations do not depend on the georeferenced frame, so this part works on a
    static-fix run. Evaluate both readings of `xcr:Rotation` (world-to-camera and
-   its transpose); on near-nadir imagery the two can be hard to separate
-   ([section 6.2](../rs-reference/13-camera-rigs-priors-and-orientation.md#62-which-frames-r-maps-between--inferred-strongly-evidenced)).
+   its transpose); on near-nadir imagery the two can be hard to separate,
+   because a downward-looking camera's rotation is close to a 180-degree
+   rotation, which is its own transpose (three attempts on an earlier dataset
+   were inconclusive for this reason).
 6. **Absolute heading.** Only on a run with live navigation (not a static fix):
    compare the solved heading of the georeferenced component with the logged
    heading. This settles the yaw zero, the image-top direction relative to the
@@ -164,10 +199,13 @@ stays close to them, and a free solve converges near them.
 
 1. Align the zone with `--w_calibration groups` (free intrinsics per camera).
 2. Align the same zone with `--w_calibration prior` (one variable changed).
-3. Export the registration of both in RealityScan's OpenCV-compliant camera
-   parameter format, which writes `f_pix`, `px_pix`, `py_pix` and
-   `k1,k2,t2,t1,k3,k4` in OpenCV ordering
-   ([RealityScan reference 13, section 6.2](../rs-reference/13-camera-rigs-priors-and-orientation.md#62-which-frames-r-maps-between--inferred-strongly-evidenced)).
+3. Export the registration of both with
+   `-exportRegistration <file>.csv <params>.xml` in RealityScan's
+   OpenCV-compliant Internal/External Camera Parameters format, which writes
+   `f_pix`, `px_pix`, `py_pix` and `k1,k2,t2,t1,k3,k4` in OpenCV ordering; its
+   header line names the columns. Save `<params>.xml` once from the Export
+   Registration dialog with that format chosen: without a params file the
+   command blocked indefinitely in a headless run on an earlier dataset.
 
 **Decision rule.**
 
