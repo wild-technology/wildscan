@@ -7,7 +7,7 @@ implementation; these tests pin it.
 The pitch convention is RealityScan's, not a house choice:
 `-renderMeshFromCustomPositionYPR` documents a camera at `(0,0,150)` with
 `yaw=pitch=roll=0` looking **down**, so **pitch 0 is nadir** on a scale where
-90 is horizontal. [OFFICIAL: appbasics/allcommands; docs/rs-reference/13 6.4]
+90 is horizontal (RealityScan 2.2 CLI help).
 
     yaw   = (heading + declination + yaw_offset) mod 360
     pitch = 90 + (vehicle_pitch - mount_down_tilt)

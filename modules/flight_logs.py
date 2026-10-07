@@ -355,10 +355,11 @@ def realityscan_orientation(heading_deg, pitch_deg, roll_deg, *,
         roll  = roll
 
     RealityScan's pitch is 0 for a camera looking straight down and 90 for a
-    horizontal one (docs/rs-reference/13 section 6.4), so a nadir mount
+    horizontal one (RealityScan 2.2 CLI help: a camera with yaw, pitch and
+    roll all 0 renders the model from above), so a nadir mount
     (down tilt 90) gives pitch = vehicle pitch. The yaw origin and the roll
-    sign are not verified against RealityScan (docs/rs-reference/13 section
-    6.6), and whether a given attitude source uses the input conventions
+    sign are not verified against RealityScan, and whether a given attitude
+    source uses the input conventions
     above has to be checked per source; wide orientation accuracies keep an
     error from dominating the solve.
 

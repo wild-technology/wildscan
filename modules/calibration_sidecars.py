@@ -6,8 +6,8 @@ file that adds every image with its sidecar named explicitly
 (``-addImageWithCalibration "<image>" "<xmp>"``); when checked, the
 ``-setPriorCalibrationGroup`` / ``-setPriorLensGroup`` commands returned
 success from the delegated command line without changing the groups.
-Sidecars use the documented ``xcr`` 1.1 attribute form
-(docs/rs-reference/05 sections 2 and 8.4) and never carry a pose, so
+Sidecars use the ``xcr`` 1.1 attribute form of the sample sidecar in the
+RealityScan 2.2 CLI help and never carry a pose, so
 nothing written here can become a pose prior on a later add.
 
 For each camera one of three modes applies (:func:`decide_calibration`):
@@ -30,9 +30,8 @@ The registry values follow the conversion in
 :func:`intrinsics_to_xmp_values`. Two parts of it are not verified against
 RealityScan, which is why the prior is never locked or exact: the radius
 normalisation of the distortion coefficients (the Brown slot order itself is
-documented by RealityScan's shipped export templates, docs/rs-reference/13
-section 5.3), and the normalisation of the principal point for an image that
-is not square (docs/rs-reference/05 section 4.4).
+documented by RealityScan's shipped export templates), and the normalisation
+of the principal point for an image that is not square.
 
 The hygiene functions (:func:`sanitize_and_census`,
 :func:`ensure_calibration_sidecars`, :func:`remove_calibration_sidecars`)
@@ -70,8 +69,8 @@ XCR_NAMESPACE = 'http://www.capturingreality.com/ns/xcr/1.1#'
 # XMP token for each registry prior level. 'approximate' is RealityScan's
 # "Approximate" (adjusted during alignment); its XMP token is inferred to be
 # 'initial', the value RealityScan's own sample sidecar carries, and the
-# documented token set is initial / exact / locked (docs/rs-reference/05
-# sections 4.1-4.2).
+# documented token set is initial / exact / locked (RealityScan 2.2 CLI
+# help, XMP export).
 _PRIOR_TOKEN = {'approximate': 'initial'}
 
 
@@ -253,8 +252,7 @@ def intrinsics_to_xmp_values(intrinsics, resolution) -> dict:
     This is the conversion behind the registry values. It matched
     RealityScan's own exported sidecars for square images only; for a
     non-square image the divisor of PrincipalPointV (height, or the same
-    scale as the focal) is not established (docs/rs-reference/05
-    section 4.4).
+    scale as the focal) is not established.
     """
     fx = float(intrinsics[0][0])
     cx = float(intrinsics[0][2])
@@ -270,7 +268,7 @@ def intrinsics_to_xmp_values(intrinsics, resolution) -> dict:
 def rs_distortion_coefficients(opencv) -> tuple[float, ...]:
     """OpenCV (k1, k2, p1, p2, k3) in RealityScan's six-slot order
     (k1, k2, k3, k4, t1, t2): RealityScan's t1 is OpenCV's p2 and its t2 is
-    p1 (docs/rs-reference/13 section 5.3); k4 has no OpenCV counterpart
+    p1; k4 has no OpenCV counterpart
     here and is 0. The slot order comes from RealityScan's shipped export
     templates; the radius normalisation is inferred, not verified."""
     k1, k2, p1, p2, k3 = (float(v) for v in opencv)

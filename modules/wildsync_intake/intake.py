@@ -578,8 +578,8 @@ def orientation_prior(heading_deg, pitch_deg, roll_deg, mount: Mount,
     heading, pitch or roll gives no orientation prior for the image (three
     empty cells), never zeros: the three angles are one rotation.
 
-    This follows the convention documented in docs/rs-reference/13 section
-    6 (:func:`modules.flight_logs.realityscan_orientation`) and has not been
+    This follows RealityScan's orientation convention as implemented in
+    :func:`modules.flight_logs.realityscan_orientation` and has not been
     validated for the Wild Sync IMU axes; the wide default orientation
     accuracy is what keeps an error in it from dominating the solve.
     """
