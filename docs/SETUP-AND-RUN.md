@@ -218,9 +218,10 @@ orientation and accuracies. Check again after a RealityScan update or repair.
 The ID check alone does not show that the import works: on the first
 alignment, inspect the saved project as described in check A of the
 [first-run validation checklist](validation/ILX-LR1_first_run_checklist.md#a-flight-log-format-installed).
-The project signatures that distinguish a resolved format from an unresolved
-one are in
-[the flight-log reference](rs-reference/06-georeferencing-flightlogs-and-scale.md#resolved-2026-08-23--side-a-holds-what-an-unresolvable-format-guid-actually-does).
+In the saved project, a resolved format gives camera priors with
+`absPrior="pose"` and `absu*` accuracy attributes; an unresolved one gives
+`absPrior="registered"` with no `absu*` attributes (verified on an earlier
+dataset).
 
 ### 5.5 Cesium publishing: the geoid grid
 
@@ -472,7 +473,7 @@ Answers you typed are stored in `rs_settings.json` in the checkout root.
 | Intake warns `calibration groups only` | The images do not match the stored calibration (aspect ratio or EXIF focal length), or the node assignment is not confirmed. Expected for the August 2026 field runs. |
 | Alignment: `Calibration sidecars cannot be delivered with the pool layout` | Batch with the default copy layout, or re-run the intake with `--w_calibration off`. |
 | Alignment: `No flight log for <zone> ... although this workspace has a Wild Sync intake` | The zone folder lacks its `flight_log_<zone><band>_UTM.txt`. Re-run Batch Directory, or the intake, so every zone carries its log. |
-| A stage "succeeds" but produces nothing | RealityScan reports success in several no-op cases. Check the stage's report and census, not the exit code; [failure modes](rs-reference/12-failure-modes-and-race-conditions.md) lists them. |
+| A stage "succeeds" but produces nothing | RealityScan reports success in several no-op cases. Examples are merges that do not fuse and exports that write nothing. Check the stage's report and census, not the exit code. |
 | Orientation or accuracies missing after import | The flight-log format is not installed or its ID does not match ([5.4](#54-flight-log-import-format)). |
 | Publishing fails on the geoid grid | See [5.5](#55-cesium-publishing-the-geoid-grid). |
 | Two runs interfere | Both use the same instance name. Give each its own `RS_INSTANCE` and `RS_GPU_DEVICES`. |

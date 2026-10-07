@@ -67,8 +67,10 @@ The rig `ilx_lr1_stereo` keeps the stereo geometry as data only:
   z forward; metres), a relative rotation of 1.827 degrees.
 
 RealityScan has no usable stereo-rig input: a sidecar that declares `xcr:Rig`
-requires a `.rcrx` rig file that no installation provides
-([RealityScan reference 13, section 3.5](rs-reference/13-camera-rigs-priors-and-orientation.md#35-verified-2026-08-23-xcrrig-requires-a-rcrx-rig-file--and-what-to-do-instead)).
+requires a `.rcrx` rig file that no installation provides. Verified on an
+earlier dataset: adding images with such sidecars failed on the missing rig
+file and registered no images; the `.rcrx` format is not described in the
+RealityScan 2.2 CLI help.
 Nothing in this repository writes rig XMP or turns the baseline or the
 extrinsics into a solver constraint. The two cameras are aligned as two
 independent cameras, each in its own calibration and lens-distortion group.
@@ -274,8 +276,9 @@ locked or exact. `initial` is inferred to be the XMP token for RealityScan's
 `xcr:DistortionCoeficients` (RealityScan's spelling) holds six slots in the
 order k1, k2, k3, k4, t1, t2. The OpenCV coefficients (k1, k2, p1, p2, k3) are
 written as (k1, k2, k3, 0, p2, p1): RealityScan's t1 is OpenCV's p2 and its t2
-is OpenCV's p1. The slot order comes from RealityScan's shipped export templates
-([RealityScan reference 13, section 5.3](rs-reference/13-camera-rigs-priors-and-orientation.md#53-what-xcrdistortioncoeficients-means));
+is OpenCV's p1. The slot order comes from RealityScan's shipped export templates:
+its OpenCV export writes the slots as k1, k2, t2, t1, k3, k4 and labels that
+order as OpenCV's;
 the radius normalisation of the coefficients is inferred, not verified, and so
 is the normalisation of the principal point for an image that is not square.
 This is why the prior is never locked.
@@ -287,8 +290,9 @@ tangential terms). `sfmDistortionModel` is set to `Brown3` in
 `modules/realityscan_interface/RS_CLI/Metadata/AlignmentParams.xml`, which
 `AlignZone.bat` applies with `-set` before every alignment. The setting is
 global and all-or-nothing: a per-image `xcr:DistortionModel` in a sidecar does
-not override it
-([RealityScan reference 13, section 5.4](rs-reference/13-camera-rigs-priors-and-orientation.md#54-contradicted-the-per-image-model-does-not-override-the-global-key)).
+not override it. Verified on an earlier dataset: with the global model set to
+Division, sidecars that declared `brown3` were all exported back as
+`division`.
 The sidecars declare `brown3` to match.
 
 The camera registry accepts only `brown3` and refuses a camera whose stored
@@ -463,8 +467,13 @@ The pitch accuracy comes from the mount (15 degrees); yaw and roll accuracy from
 `--w_orientation_accuracy` (15 degrees). These wide accuracies keep an error in
 the convention from dominating the solve.
 
-This mapping follows the convention documented in
-[RealityScan reference 13, section 6](rs-reference/13-camera-rigs-priors-and-orientation.md#6-rotation-conventions).
+This mapping follows RealityScan's convention. According to the RealityScan
+2.2 CLI help, imported Yaw/Pitch/Roll are rotations about Z, Y and X in a
+North-East-Down frame, evaluated right to left, and a render from a camera
+with all three angles 0 is a view from above (pitch 0 looks straight down).
+One other help page assigns the axes differently; check C of the
+[first-run validation checklist](validation/ILX-LR1_first_run_checklist.md#c-orientation-convention)
+tests that alternative too.
 It has **not** been validated for the Wild Sync IMU axes: the sign and zero of
 the IMU pitch and roll, whether the IMU heading is magnetic or true, and the
 orientation of the image top relative to the heading are all unconfirmed.
