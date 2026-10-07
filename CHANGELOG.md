@@ -24,9 +24,25 @@ cameras captured with Wild Sync. This release is breaking.
 - Wild Sync intake ignores hidden files such as macOS AppleDouble copies in
   camera folders.
 - `sbom.spdx.json` (SPDX 2.3) and `THIRD_PARTY_NOTICES.md`.
+- RealityScan gets a starting focal length for every image in every
+  calibration mode. The intake records each camera's EXIF focal length and
+  its 35 mm equivalent (`FocalLengthIn35mmFilm`, else `FocalLength x 36 /
+  35.7`), and the starting focal and its source, in `wildsync_intake.json`;
+  a `groups` sidecar carries that focal as an `initial`
+  `xcr:FocalLength35mm` with `xcr:Skew="0"`. The intake fails when the EXIF
+  focal changes within one camera (zoom changed mid-run) or is missing.
+- `--w_focal_override` (mm): the operator's focal length for every image of
+  both cameras, in place of the EXIF focal length.
+- Camera registry field `sensor_size_mm` (the ILX-LR1's 35.7 x 23.8 mm
+  full-frame sensor).
 
 ### Changed
 
+- Preprocessed JPEGs keep the original EXIF block (Orientation reset to 1,
+  as OpenCV already rotates the pixels); the pixels are unchanged. Copies
+  written without EXIF by an earlier version are processed again.
+- The intake manifest is schema 2; a schema-1 manifest is refused by every
+  later stage until the intake is re-run.
 - Alignment uses RealityScan's global Brown3 distortion model. The previous
   global setting was Division, with per-camera distortion supplied through XMP
   sidecars.

@@ -20,7 +20,7 @@ Wild Sync run directory (read only)
   wildsync_intake.json               manifest, incl. calibration mode per camera
         |
         v  Preprocess Images                        modules/preprocess_images/
-<workspace>/preprocessed_images/     CLAHE copies, same names, no EXIF
+<workspace>/preprocessed_images/     CLAHE copies, same names, original EXIF
         |
         v  Batch Directory                          modules/image_batcher/
 <workspace>/batched_images_by_zone/zone_<n>/
@@ -40,9 +40,12 @@ code 1. The later stages are separate drivers. The application in `wildscan/`
 runs the chain as one command and each later stage as its own command, with a
 gate between them.
 
-The calibration decision is made once, at intake, from the original images,
-because preprocessing writes images without EXIF. RealityScan Alignment reads
-it from `raw_images/wildsync_intake.json`; it never recomputes it.
+The calibration decision is made once, at intake, from the original images
+the operator handed in, together with the focal length observed on them and
+the starting focal RealityScan gets in every mode. RealityScan Alignment reads
+both from `raw_images/wildsync_intake.json`; it never recomputes them. The
+preprocessed copies keep the original EXIF, so with calibration `off`
+RealityScan reads the focal from them.
 
 ## Getting started as a developer
 
