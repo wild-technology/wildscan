@@ -1,9 +1,9 @@
 # ILX-LR1 first-run validation checklist
 
-Four parts of the ILX-LR1 chain have not been validated against RealityScan
-(see [The ILX-LR1 stereo rig](../ILX-LR1.md#not-validated-against-realityscan)),
-and a fifth, the flight-log format installation, is a per-machine
-prerequisite. This checklist validates them on the first real alignment. Run
+The parts of the ILX-LR1 chain listed in
+[The ILX-LR1 stereo rig](../ILX-LR1.md#not-validated-against-realityscan) have
+not been validated against RealityScan, and the flight-log format
+installation is a per-machine prerequisite. This checklist validates them on the first real alignment. Run
 it once per RealityScan installation and again after a RealityScan update.
 
 Each check changes one variable, states what it expects before it runs, and
@@ -17,6 +17,7 @@ known-bad case is inconclusive: stop and report it instead of interpreting it.
 | [C](#c-orientation-convention) | Does the Wild Sync IMU to RealityScan Yaw/Pitch/Roll mapping hold? | a run with changes of heading and attitude; live navigation for the absolute part |
 | [D](#d-distortion-convention) | Do the stored OpenCV k1, k2 mean the same thing in RealityScan's Brown3 slots? | a capture for which `prior` applies |
 | [E](#e-calibration-applicability) | Does the stored calibration describe this capture? | any capture considered for `prior` |
+| [F](#f-starting-focal-length) | Does RealityScan start each camera at the starting focal it is given and refine it to the in-water focal? | any run with calibration `groups`; a second run for the oracle |
 
 ## Before the run
 
@@ -237,6 +238,64 @@ matches.
 confirms 2, and the solved focal length is within the free-focal uncertainty of
 the calibration (about 2.5 %) and the principal point within a few of its
 stated 1-sigma intervals. Otherwise use `groups` and record why.
+
+## F. Starting focal length
+
+Every camera reaches RealityScan with a starting focal: with `groups` the
+sidecar's `initial` `xcr:FocalLength35mm` (the EXIF focal observed at intake,
+or `--w_focal_override`), with `off` the EXIF the preprocessed copies keep.
+The 2026-08-20 optics are a 29 mm (`cam1`) and a 24 mm (`cam2`) lens behind a
+Nauticam WACP-C corrective port: the in-water focal is not the in-air EXIF
+value, and RealityScan refines the focal from its starting value, unlike a
+fixed pinhole. This check covers items 5 and 6 of the not-validated list.
+
+**Before the run**, write down for each camera: the starting focal,
+`starting_focal_35mm` and `starting_focal_source` in
+`raw_images/wildsync_intake.json`; and the expected in-water 35 mm-equivalent
+focal with its source (for example Nauticam's stated in-water field of view
+for the lens on the WACP-C, converted as `18 / tan(HFOV / 2)` for a 36 mm
+width, or an in-water calibration of that lens and port) and the tolerance
+you will accept. If no expected value can be stated, the "lands near" part of
+this check is open, not passed.
+
+**Expectation.** The solved focal of each camera differs from its starting
+focal by more than the spread between two repeat solves, and lands within the
+stated tolerance of the expected in-water focal.
+
+1. Confirm the start was delivered: one sidecar per camera carries
+   `xcr:CalibrationPrior="initial"` and `xcr:FocalLength35mm` equal to the
+   manifest's `starting_focal_35mm`, and the alignment log shows
+   `ilx_left=groups (initial focal <value> mm 35mm-eq.)` (and likewise for
+   `ilx_right`).
+2. Export the registration as in check D step 3 and convert each camera's
+   solved focal to a 35 mm equivalent: `f_pix / image width in pixels x 36`.
+3. Record, per camera: starting focal, solved focal, expected in-water focal.
+
+**Oracle check.** Align the same zone again in a fresh workspace with
+`--w_focal_override` set about 15 % away from the EXIF focal (one variable
+changed: the start). If RealityScan honours the start and refines the focal,
+the two solves converge to the same focal within the repeat spread, away from
+both starting values.
+
+**Decision rule.**
+
+- Pass: in both runs the solved focal moved away from its start, the two
+  solves agree within the repeat spread, and the solved focal is within the
+  stated tolerance of the expected in-water focal.
+- Fail, not refined: a solved focal equals its starting focal to the exported
+  precision. The focal was held fixed; confirm no sidecar says `exact` or
+  `locked` and record the finding.
+- Fail, lands elsewhere: the two solves agree but outside the tolerance of the
+  expected in-water focal. Record the solved value; the expected value or the
+  port model needs revisiting before the starting focal is changed.
+- Inconclusive: the two solves differ by about the difference of their starting
+  values (the solve stays near wherever it starts), or the two runs' solves are
+  identical although their sidecars differ (the sidecar focal may be ignored).
+  Stop and report; do not tune the starting focal on this result.
+
+With calibration `off`, repeat steps 2 and 3 once to see where RealityScan
+starts from the EXIF of the preprocessed copies; a solved focal equal to the
+in-air EXIF focal there is the same "not refined" failure.
 
 ## Record the result
 

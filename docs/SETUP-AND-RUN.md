@@ -338,6 +338,7 @@ Wild Sync Intake flags (defaults in brackets):
 | `--w_variant` | `card` or `review` [`card`] |
 | `--w_calibration` | `auto`, `prior`, `groups` or `off` [`auto`] |
 | `--w_assert_focal` | `true` asserts the lenses were at the calibration focal length when EXIF is missing or differs [`false`] |
+| `--w_focal_override` | Lens focal length in mm used for every image of both cameras instead of the EXIF focal length; RealityScan starts from it and refines it. Needed when the EXIF focal is missing or changes within a camera; not with `--w_assert_focal` or `--w_calibration off` [unset: the EXIF focal] |
 | `--w_declination` | Magnetic declination in degrees, east positive, added to the heading [`0`] |
 | `--w_heading_source` | `auto` (`heading_imu`, else `yaw`), `heading_imu`, `yaw` or `heading_mag_xplore` [`auto`] |
 | `--w_pos_accuracy` | X/Y position accuracy in metres [`10`] |
@@ -470,7 +471,10 @@ Answers you typed are stored in `rs_settings.json` in the checkout root.
 | Intake: `not a Wild Sync flight_log.csv header` | The header must be exactly the 23 columns in [The ILX-LR1 stereo rig](ILX-LR1.md#flight_logcsv). |
 | Intake: `only N of M frames ... below the 80% floor` | Many rows have no image of the chosen variant, or images have no row. Check `--w_variant` and that the images were copied off the cards; lower `--w_min_match_rate` only deliberately. |
 | Intake: a file `already exists with different content`, or files `this intake did not plan` | The workspace holds another dataset. Use a fresh workspace. |
-| Intake warns `calibration groups only` | The images do not match the stored calibration (aspect ratio or EXIF focal length), or the node assignment is not confirmed. Expected for the August 2026 field runs. |
+| Intake warns `calibration groups only` | The images do not match the stored calibration (aspect ratio or EXIF focal length), or the node assignment is not confirmed. Expected for the August 2026 field runs; each camera's groups sidecar still carries its observed focal as RealityScan's starting focal. |
+| Intake: `the EXIF focal length differs between images of one camera` | The zoom changed during the run. Take the runs in separately, or give the focal with `--w_focal_override <mm>`. |
+| Intake: `image(s) carry no EXIF focal length` | RealityScan would get no starting focal for those images. Give it with `--w_focal_override <mm>`. |
+| Alignment: `a schema-1 Wild Sync intake manifest` | The workspace was taken in by an earlier version, which did not record the observed focal. Re-run Wild Sync Intake on the same workspace (the copied images are reused). |
 | Alignment: `Calibration sidecars cannot be delivered with the pool layout` | Batch with the default copy layout, or re-run the intake with `--w_calibration off`. |
 | Alignment: `No flight log for <zone> ... although this workspace has a Wild Sync intake` | The zone folder lacks its `flight_log_<zone><band>_UTM.txt`. Re-run Batch Directory, or the intake, so every zone carries its log. |
 | A stage "succeeds" but produces nothing | RealityScan reports success in several no-op cases. Examples are merges that do not fuse and exports that write nothing. Check the stage's report and census, not the exit code. |
