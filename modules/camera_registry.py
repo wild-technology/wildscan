@@ -112,6 +112,7 @@ class Rig:
     key: str
     eyes: tuple[tuple[str, str], ...]         # ((eye, camera key), ...)
     node_assignment_confirmed: bool
+    prior_accuracy: 'PriorAccuracy'
 
     @property
     def cameras(self) -> tuple[str, ...]:
@@ -120,12 +121,13 @@ class Rig:
 
 @dataclass(frozen=True)
 class PriorAccuracy:
-    """Default flight-log prior accuracies (metres, degrees)."""
-    x_m: float
-    y_m: float
-    alt_m: float
-    yaw_deg: float
-    roll_deg: float
+    """Flight-log prior accuracies of a rig (metres, degrees): X and Y
+    share ``position_m`` (a real track only; a static fix gets no position
+    prior), ``altitude_m`` applies when a depth is recorded, and yaw, pitch
+    and roll share ``orientation_deg``."""
+    position_m: float
+    altitude_m: float
+    orientation_deg: float
 
 
 @dataclass(frozen=True)
@@ -319,22 +321,17 @@ class _Loader:
                 self.fail(f'{where}.eyes[{eye!r}].camera',
                           f'names camera {camera!r}, which is not in cameras')
             pairs.append((eye, camera))
-        return Rig(key, tuple(pairs), confirmed)
+        accuracy = self.accuracy(self.require(spec, 'prior_accuracy', where),
+                                 f'{where}.prior_accuracy')
+        return Rig(key, tuple(pairs), confirmed, accuracy)
 
-    def accuracy(self, defaults) -> PriorAccuracy:
-        defaults = self.obj(defaults, 'defaults')
-        pos = self.obj(self.require(defaults, 'position_accuracy_m', 'defaults'),
-                       'defaults.position_accuracy_m')
-        ori = self.obj(self.require(defaults, 'orientation_accuracy_deg', 'defaults'),
-                       'defaults.orientation_accuracy_deg')
+    def accuracy(self, spec, where: str) -> PriorAccuracy:
+        spec = self.obj(spec, where)
         return PriorAccuracy(
-            x_m=self.number(pos, 'x', 'defaults.position_accuracy_m', positive=True),
-            y_m=self.number(pos, 'y', 'defaults.position_accuracy_m', positive=True),
-            alt_m=self.number(pos, 'alt', 'defaults.position_accuracy_m', positive=True),
-            yaw_deg=self.number(ori, 'yaw', 'defaults.orientation_accuracy_deg',
-                                positive=True),
-            roll_deg=self.number(ori, 'roll', 'defaults.orientation_accuracy_deg',
-                                 positive=True),
+            position_m=self.number(spec, 'position_m', where, positive=True),
+            altitude_m=self.number(spec, 'altitude_m', where, positive=True),
+            orientation_deg=self.number(spec, 'orientation_deg', where,
+                                        positive=True),
         )
 
     def load(self, data) -> Registry:
@@ -376,7 +373,10 @@ class _Loader:
                 self.fail(f'cameras[{camera!r}]',
                           f'must belong to exactly one rig, found {owners or "none"}')
 
-        accuracy = self.accuracy(self.require(data, 'defaults', 'top level'))
+        if len(rigs) != 1:
+            self.fail('rigs', 'the pipeline runs one rig and takes its flight-log '
+                      f'prior accuracies from it; found {sorted(rigs) or "none"}')
+        accuracy = next(iter(rigs.values())).prior_accuracy
         matchers = tuple((re.compile(f.pattern, re.IGNORECASE), f) for f in families)
         return Registry(MappingProxyType(cameras), families,
                         MappingProxyType(rigs), accuracy, matchers)

@@ -11,28 +11,8 @@
     "tests/test_camera_registry.py asserts that both files agree.",
     "families: Wild Sync filename families, searched in order",
     "(case-insensitive); the first match wins.",
-    "rigs: the stereo pair, kept as data (see rigs._comment)."
+    "rigs: the stereo pair, kept as data, and the flight-log prior accuracies (rigs.<rig>.prior_accuracy)."
   ],
-  "defaults": {
-    "_comment": [
-      "Flight-log prior accuracies used when no other value is given.",
-      "Position accuracy is the end-to-end per-image uncertainty, not the",
-      "sensor specification. Orientation accuracy stays wide until the",
-      "mount and the attitude convention are checked on a real run.",
-      "Tighter claimed position and orientation accuracies fragmented",
-      "solves on earlier datasets.",
-      "Pitch accuracy is per mount (families[].mount.pitch_accuracy_deg)."
-    ],
-    "position_accuracy_m": {
-      "x": 10.0,
-      "y": 10.0,
-      "alt": 1.0
-    },
-    "orientation_accuracy_deg": {
-      "yaw": 15.0,
-      "roll": 15.0
-    }
-  },
   "cameras": {
     "_comment": [
       "One calibration group and one lens-distortion group per physical",
@@ -145,14 +125,14 @@
   },
   "families": [
     {
-      "_comment": "Wild Sync node cam1 is the left camera (ilx_left) and node cam2 the right camera (ilx_right). The maintainer confirmed this assignment on 2026-10-05; no file in this repository or in Wild Sync records it. These two rows are the only place it is encoded (see rigs.ilx_lr1_stereo.node_assignment_confirmed). Patterns match every Wild Sync file of the camera (.jpg, .card.JPG, .ARW, .xmp). mount: down_tilt_deg is the camera's tilt below the vehicle's forward axis (90 = looking straight down); yaw_offset_deg is the direction of the image top relative to the heading; pitch_accuracy_deg is the accuracy claimed for the pitch prior; lever_arm_m is the [forward, right, down] offset in metres from the navigation reference, or null when not measured (zero offset is used and a notice is logged). None of these mount values is measured: both cameras are nominally downward-looking with the image top along the heading, and the pitch accuracy is the default 15 deg orientation accuracy.",
+      "_comment": "Wild Sync node cam1 is the left camera (ilx_left) and node cam2 the right camera (ilx_right). The maintainer confirmed this assignment on 2026-10-05; no file in this repository or in Wild Sync records it. These two rows are the only place it is encoded (see rigs.ilx_lr1_stereo.node_assignment_confirmed). Patterns match every Wild Sync file of the camera (.jpg, .card.JPG, .ARW, .xmp). mount: down_tilt_deg is the camera's tilt below the vehicle's forward axis (90 = looking straight down); yaw_offset_deg is the direction of the image top relative to the heading; pitch_accuracy_deg is the accuracy claimed for the pitch prior; lever_arm_m is the [forward, right, down] offset in metres from the navigation reference, or null when not measured (zero offset is used and a notice is logged). None of these mount values is measured: both cameras are nominally downward-looking with the image top along the heading, and the pitch accuracy equals the rig's orientation accuracy (rigs.ilx_lr1_stereo.prior_accuracy.orientation_deg, 10 deg) so one number describes the attitude prior.",
       "family": "cam1",
       "pattern": "^cam1_",
       "camera": "ilx_left",
       "mount": {
         "down_tilt_deg": 90.0,
         "yaw_offset_deg": 0.0,
-        "pitch_accuracy_deg": 15.0,
+        "pitch_accuracy_deg": 10.0,
         "lever_arm_m": null
       }
     },
@@ -163,7 +143,7 @@
       "mount": {
         "down_tilt_deg": 90.0,
         "yaw_offset_deg": 0.0,
-        "pitch_accuracy_deg": 15.0,
+        "pitch_accuracy_deg": 10.0,
         "lever_arm_m": null
       }
     }
@@ -180,6 +160,12 @@
       "_comment": "Calibration record, solve quality and calibration image pairs: calibration/ilx_lr1_stereo_dive_001.json.",
       "node_assignment_confirmed": true,
       "_node_assignment_comment": "true: the families' cam1 -> ilx_left, cam2 -> ilx_right assignment is confirmed. Set it to false if the cameras are ever swapped between nodes or housings. While it is false, calibration that depends on the eye (principal point, distortion) is never applied; each camera still gets its own calibration and distortion group.",
+      "prior_accuracy": {
+        "position_m": 0.1,
+        "altitude_m": 1.0,
+        "orientation_deg": 10.0
+      },
+      "_prior_accuracy_comment": "Flight-log prior accuracies the intake writes for this rig's images when no other value is given (owner, 2026-10-07). position_m is the GPS receiver's accuracy (10 cm) and applies only to a real track: a run whose positions never move (a static fix) gets no position prior at all. altitude_m applies when a depth is recorded; an empty depth gives no altitude prior. orientation_deg is written for yaw and roll and is the families' mount pitch_accuracy_deg; it is also the fallback RS_CLI/Metadata/AlignmentParams.xml sfmCameraPriorAccuracyYaw/Pitch/Roll carry, and stays at 10 deg until the IMU convention is validated on a live run.",
       "eyes": {
         "L": {
           "camera": "ilx_left"
