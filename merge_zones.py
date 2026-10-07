@@ -74,6 +74,7 @@ from modules.flight_logs import (assert_one_zone,
 from modules.harvest_guard import assert_harvestable
 from modules.realityscan_interface.realityscan_cli import (
     RealityScanCLI, METADATA_DIR, set_project_save_env)
+from modules.wildsync_intake.intake import workspace_calibration
 
 COMPONENT_EXTENSIONS = ('.rsalign', '.rcalign')
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.heif')
@@ -756,10 +757,40 @@ def peel_counts_from(out_dir: str) -> list[int]:
 # Cluster merge loop
 # ----------------------------------------------------------------------
 
+def sidecar_hygiene(images_root: str,
+                    calibration: tuple[dict[str, str], dict[str, float]] | None,
+                    logger) -> int:
+    """Remove every pose from the sidecars under ``images_root`` and put
+    the calibration sidecars back; returns the pose sidecars found.
+
+    ``calibration`` is the workspace's (modes, starting focals) from the
+    intake manifest (modules.wildsync_intake.intake.workspace_calibration):
+    a pose sidecar of a prior/groups camera is rewritten to the calibration
+    sidecar the alignment stage wrote, and an image the harvest left
+    without one gets it back. Without it (no Wild Sync workspace) pose
+    sidecars are deleted, as before.
+    """
+    modes, focals = calibration if calibration else (None, None)
+    found, restored, removed = calibration_sidecars.sanitize_and_census(
+        images_root, modes, focals)
+    if removed:
+        logger.warning('%d pose sidecar(s) of unknown cameras deleted', removed)
+    if restored:
+        logger.info('%d pose sidecar(s) rewritten to their calibration '
+                    'sidecar', restored)
+    created, _unknown = calibration_sidecars.ensure_calibration_sidecars(
+        images_root, modes, focals)
+    if created:
+        logger.info('%d calibration sidecar(s) restored under %s',
+                    created, images_root)
+    return found
+
+
 def merge_cluster(cli: RealityScanCLI, cluster: list[dict], cluster_idx: int,
                   output_dir: str, images_root: str, ladder: list[dict],
                   min_size: int, logs_dir: str, logger,
                   merge_scope: str = 'neighbour',
+                  calibration: tuple[dict[str, str], dict[str, float]] | None = None,
                   # POLICY: the 0.0 default and the drivers' explicit 0.0025
                   # are the TWO HALVES of one decision: bounded loss at 0.25%
                   # of input cameras; the default remains 0 (exact only) and
@@ -935,7 +966,7 @@ def merge_cluster(cli: RealityScanCLI, cluster: list[dict], cluster_idx: int,
                 log_path, params_path, images_root, logs_dir, harvest=True,
                 logger=logger)
             snapshot_rs_log(os.path.join(adir, 'rslog.txt'), logger)
-            registered, _r, _d = calibration_sidecars.sanitize_and_census(images_root)
+            registered = sidecar_hygiene(images_root, calibration, logger)
 
             sizes = peel_counts_from(adir)
             # INSTRUMENT INVARIANT: an empty peel next to a non-empty export is
@@ -1255,6 +1286,18 @@ def main() -> int:
     except RuntimeError as exc:
         logger.error('%s The peel harvest cannot cross a directory junction.', exc)
         return 1
+    try:
+        calibration = workspace_calibration(images_root)
+    except ValueError as exc:
+        logger.error('%s', exc)
+        return 1
+    if calibration:
+        logger.info('calibration sidecars kept through every attempt: %s',
+                    calibration[0])
+    else:
+        logger.info('no Wild Sync intake manifest above %s: pose sidecars '
+                    'are deleted after each attempt, no calibration sidecar '
+                    'is written', images_root)
 
     try:
         inputs = load_inputs(components_root, args.complist, logger)
@@ -1334,6 +1377,7 @@ def main() -> int:
             record = merge_cluster(cli, cluster, i, output_dir, images_root,
                                    ladder, min_size, logs_dir, logger,
                                    merge_scope=merge_scope,
+                                   calibration=calibration,
                                    loss_tolerance_frac=loss_tolerance_frac,
                                    pair_gate=pair_gate,
                                    max_scene_cameras=args.max_scene_cameras)
@@ -1364,7 +1408,7 @@ def main() -> int:
     # observe the assembly - it reads leftovers from whatever ran last,
     # and can report 0 for a sound assembly.
     # The assembly's camera count is the manifest sum, tagged as such.
-    calibration_sidecars.sanitize_and_census(images_root)
+    sidecar_hygiene(images_root, calibration, logger)
 
     report['assembly'] = {
         'workflow_success': result.success,
