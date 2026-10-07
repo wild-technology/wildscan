@@ -18,6 +18,7 @@ known-bad case is inconclusive: stop and report it instead of interpreting it.
 | [D](#d-distortion-convention) | Do the stored OpenCV k1, k2 mean the same thing in RealityScan's Brown3 slots? | a capture for which `prior` applies |
 | [E](#e-calibration-applicability) | Does the stored calibration describe this capture? | any capture considered for `prior` |
 | [F](#f-starting-focal-length) | Does RealityScan start each camera at the starting focal it is given and refine it to the in-water focal? | any run with calibration `groups`; a second run for the oracle |
+| [G](#g-flight-log-import-keys) | Do the `FlightLogParams.xml` import keys leave the sidecar calibration groups and the per-image accuracies as written? | any run with calibration `groups` and a flight log with orientation priors |
 
 ## Before the run
 
@@ -183,7 +184,7 @@ The test must not grade the priors against a solve the same priors produced.
   attitude change. Use a run with turns and attitude variation; do not tighten
   orientation accuracies on an inconclusive result.
 - Fail: an alternative fits better. Do not use orientation priors at tighter
-  than the default 15 degrees until the mapping is corrected and this check
+  than the default 10 degrees until the mapping is corrected and this check
   passes.
 - The absolute part (step 6) stays open until a run with live navigation is
   available. Record it as open, not as passed.
@@ -296,6 +297,50 @@ both starting values.
 With calibration `off`, repeat steps 2 and 3 once to see where RealityScan
 starts from the EXIF of the preprocessed copies; a solved focal equal to the
 in-air EXIF focal there is the same "not refined" failure.
+
+## G. Flight-log import keys
+
+**Question.** `FlightLogParams.xml` carries `ifKGrp=2`, `ifKmode=0x0`,
+`ifuuInh=0` and `ifuuInhEn=true`, whose meaning is not documented, and
+`ifUsePosAcc` / `ifUseOriAcc`, which the reference records as absent from the
+2.2 binary (inert). Does the flight-log import change the calibration grouping
+the sidecars set, or replace the per-image accuracies the log carries?
+
+**Expectation before the run.** After alignment the project holds two
+calibration groups and two lens-distortion groups (one per camera, as the
+`groups` sidecars set them), and every image with an orientation prior shows
+the log's own accuracies (10 degrees by default) rather than the global
+`sfmCameraPriorAccuracy*` fallback. Past problems came from stale sidecars and
+from several writers touching the same `.xmp`, so this check also confirms the
+tree holds exactly one sidecar per image, in the decided form, before the run.
+
+**Procedure.**
+
+1. Before aligning, count the `.xmp` files in the zone folder and confirm each
+   image has exactly one, with the `xcr:CalibrationGroup` /
+   `xcr:LensDistortionGroup` and `xcr:FocalLength35mm` the intake manifest
+   records for its camera, and no `xcr:Position` element (a pose left by an
+   earlier export). Any other file is a finding: record it and let the stage
+   move it aside, do not delete it by hand.
+2. Align once with the shipped `FlightLogParams.xml`. In the GUI, open the
+   image list with the calibration-group and prior columns shown: record the
+   number of distinct calibration and lens-distortion groups and, for three
+   images of each camera, the yaw/pitch/roll accuracies.
+3. One variable: copy `FlightLogParams.xml`, set `ifKGrp` to `0`, and re-import
+   the same flight log into a copy of the project (`-importFlightLog` with the
+   copied params file). Record the same two readings. Repeat for `ifuuInh=1`.
+
+**Decision rule.**
+
+- Pass: two groups of each kind and the log's accuracies in every reading;
+  the key values changed nothing observable. Record that the keys are inert for
+  this import.
+- Fail: a reading changes with a key value (groups merge or split, or the
+  accuracies become the global fallback). Record which key and which reading;
+  the shipped value must then be chosen deliberately and documented in
+  reference document 06, section 2.8.
+- Inconclusive: the GUI columns cannot be read for the images in question.
+  Stop and report.
 
 ## Record the result
 

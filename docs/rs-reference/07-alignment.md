@@ -394,10 +394,11 @@ Two properties of this loop that matter:
    bounded the trust envelope. [VERIFIED: code reading of `AlignZone.bat` +
    `AlignmentParams.xml`] Fix: emit the documented names explicitly, e.g.
    `-set "sfmCameraPriorAccuracyZ=0.5"`.
-   *Caveat:* per-image accuracies imported from the flight log (`ifUsePosAcc=true`,
-   `ifUseOriAcc=true`) set `inpPriorAccuracyInh=1` ("Edit custom values") per image, which
-   overrides the global keys for those images. So the miss is scoped to images with no
-   per-image accuracy. [INFERRED from `appbasics/camerasettings_priors` +
+   *Caveat:* per-image accuracies imported from the flight log (the 13-column format carries
+   its own accuracy columns; `ifUsePosAcc` / `ifUseOriAcc` in `FlightLogParams.xml` are absent
+   from the 2.2 binary and inert, see 06 §2.8) set `inpPriorAccuracyInh=1` ("Edit custom
+   values") per image, which overrides the global keys for those images. So the miss is
+   scoped to images with no per-image accuracy. [INFERRED from `appbasics/camerasettings_priors` +
    `tutorials/editselectioncommand`; not isolated by a cell.]
 2. **Keys absent from the file keep whatever the instance last had**, and swept `-set`
    values persist across instance restarts [VERIFIED: project test records, 2026-07-23].
@@ -984,8 +985,8 @@ georeferencing document's subject. Two facts from there are load-bearing here:
 
 ### 6.2 Where accuracies actually come from
 
-With `ifUsePosAcc=true` / `ifUseOriAcc=true` in `FlightLogParams.xml`, the log's accuracy
-columns become per-image values. The global `sfmCameraPriorAccuracy*` keys are the
+The log's accuracy columns become per-image values on import because the 13-column format
+carries them (`ifUsePosAcc` / `ifUseOriAcc` in `FlightLogParams.xml` are inert, 06 §2.8). The global `sfmCameraPriorAccuracy*` keys are the
 fallback for images that have none — and in this pipeline they were never applied anyway
 (§2.6). So **when the PD cells say "1/1/0.1" or "10/10/1", those are flight-log column
 values, not `-set` values.** [VERIFIED-by-inspection: `FlightLogParams.xml` + the A/B
