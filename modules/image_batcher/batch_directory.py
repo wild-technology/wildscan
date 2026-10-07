@@ -918,7 +918,9 @@ class BatchDirectory(RSModule):
         return matches[0] if matches else None
 
     def __copy_files(self, input_dir, batch_folder_dir, files, file_index=None):
-        """Copy files to camera-specific subfolders and generate XMP sidecars.
+        """Copy files to camera-specific subfolders. No sidecar is written
+        here: calibration sidecars are the alignment stage's
+        (modules.calibration_sidecars, before each zone's add).
 
         Returns (copied, missing). Both used to be discarded: a missing
         file emitted one warning and `continue`d, and run() reported its
