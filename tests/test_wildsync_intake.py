@@ -1001,11 +1001,15 @@ def test_preprocessing_keeps_the_card_names(run_dir, workspace, monkeypatch):
     result = module.run()
     assert result['Success'] and result['Processed'] == 6, result
     out = workspace / 'preprocessed_images'
-    for cam, key in (('cam1', 'ilx_left'), ('cam2', 'ilx_right')):
+    for (cam, key), focal in zip((('cam1', 'ilx_left'), ('cam2', 'ilx_right')),
+                                 (29.0, 24.0)):
         assert sorted(os.listdir(out / key)) == sorted(_names(FRAMES, cam))
         for name in _names(FRAMES, cam):
             with Image.open(out / key / name) as image:
                 assert image.format == 'JPEG'
+                # The copy RealityScan aligns keeps the EXIF focal.
+                exif = image.getexif().get_ifd(0x8769)
+                assert (exif[0x920A], exif[0xA405]) == (focal, int(focal))
 
 
 def test_batching_matches_and_keeps_the_card_names(run_dir, workspace):

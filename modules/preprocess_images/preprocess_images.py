@@ -14,6 +14,14 @@ Originals are never modified: processed copies are written to
 <output_dir>/preprocessed_images with the input's folder structure and the
 same filenames (flight-log matching relies on the names). The current
 pipeline aligns and textures the processed copies; originals are retained.
+
+A JPEG copy keeps the original's EXIF block (focal length, camera make and
+model, capture time), so RealityScan can read the focal length from the
+copy when no calibration sidecar is written. The pixels are encoded by
+OpenCV exactly as before; the original APP1 EXIF segment is then inserted
+into the encoded file unchanged (:func:`with_exif`), except that the
+Orientation tag is set to 1 because OpenCV has already applied it to the
+pixels (:func:`upright_exif`).
 """
 
 from __future__ import annotations
@@ -21,20 +29,88 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import struct
 import tempfile
 from concurrent.futures import ProcessPoolExecutor
 
 import cv2
 import numpy as np
+from PIL import Image
 
-from module_base.rs_module import RSModule
 from module_base.parameter import Parameter
+from module_base.rs_module import RSModule
+
 from ..harvest_guard import assert_harvestable
 from ..image_exts import ALL_IMAGE_EXTS
 
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png')
+JPEG_EXTENSIONS = ('.jpg', '.jpeg')
 JPEG_QUALITY = 95
 MANIFEST_NAME = 'preprocessed_images.manifest.json'
+# Recorded in the manifest settings: outputs written before the EXIF was
+# kept carry none, so they are never reused as if they did.
+EXIF_POLICY = 'original APP1 EXIF kept, Orientation set to 1'
+
+_EXIF_HEADER = b'Exif\x00\x00'
+_SOI = b'\xff\xd8'
+_APP0 = b'\xff\xe0'
+_APP1 = b'\xff\xe1'
+_ORIENTATION = 0x0112
+_TIFF_SHORT = 3
+
+
+def source_exif(path: str) -> bytes | None:
+    """The EXIF payload of a JPEG's APP1 segment (``Exif\\0\\0`` + TIFF), read
+    with Pillow; None for a JPEG without EXIF or another format."""
+    with Image.open(path) as image:
+        if image.format != 'JPEG':
+            return None
+        exif = image.info.get('exif')
+    if not exif or not exif.startswith(_EXIF_HEADER):
+        return None
+    return exif
+
+
+def upright_exif(exif: bytes) -> bytes:
+    """``exif`` with an IFD0 Orientation tag set to 1 (no rotation): OpenCV
+    applies the orientation to the pixels when it reads the image, so a
+    copied tag would rotate the copy a second time. Every other byte is
+    kept. ValueError for an EXIF block whose TIFF header or IFD0 is
+    malformed."""
+    tiff = len(_EXIF_HEADER)
+    try:
+        endian = {b'II': '<', b'MM': '>'}[exif[tiff:tiff + 2]]
+        ifd0 = tiff + struct.unpack_from(endian + 'I', exif, tiff + 4)[0]
+        (count,) = struct.unpack_from(endian + 'H', exif, ifd0)
+        for index in range(count):
+            entry = ifd0 + 2 + 12 * index
+            tag, kind, values = struct.unpack_from(endian + 'HHI', exif, entry)
+            if tag == _ORIENTATION and kind == _TIFF_SHORT and values == 1:
+                if struct.unpack_from(endian + 'H', exif, entry + 8)[0] == 1:
+                    return exif
+                out = bytearray(exif)
+                struct.pack_into(endian + 'H', out, entry + 8, 1)
+                return bytes(out)
+    except (KeyError, struct.error) as exc:
+        raise ValueError(f'malformed EXIF block: {exc!r}') from exc
+    return exif
+
+
+def with_exif(jpeg: bytes, exif: bytes) -> bytes:
+    """``jpeg`` with ``exif`` inserted as an APP1 segment right after the
+    start-of-image marker and the JFIF APP0 segment, if there is one; the
+    encoded image data is not touched."""
+    if not jpeg.startswith(_SOI):
+        raise ValueError('not a JPEG stream (no start-of-image marker)')
+    if len(exif) + 2 > 0xFFFF:
+        raise ValueError(f'EXIF block of {len(exif)} bytes does not fit one '
+                         'APP1 segment')
+    position = len(_SOI)
+    if jpeg[position:position + 2] == _APP0:
+        (length,) = struct.unpack_from('>H', jpeg, position + 2)
+        position += 2 + length
+    segment = _APP1 + struct.pack('>H', len(exif) + 2) + exif
+    return jpeg[:position] + segment + jpeg[position:]
 
 
 def _file_signature(path: str) -> dict:
@@ -102,15 +178,22 @@ def build_transform(params: dict):
 
 
 def _process_one(job: tuple[str, str, float, int, bool]) -> str | None:
-    """Worker: read src, apply the transform, write dst. Returns the source
-    path on failure so the parent can log it (module methods are not
-    picklable, so this is a top-level function rebuilding the transform)."""
+    """Worker: read src, apply the transform, write dst - a JPEG with the
+    source's EXIF (:func:`with_exif`). Returns the source path on failure so
+    the parent can log it (module methods are not picklable, so this is a
+    top-level function rebuilding the transform). A source whose EXIF
+    cannot be carried over is a failure, never a copy without it."""
     src, dst, clahe_clip, clahe_tile, white_balance = job
     transform = build_transform({'clahe_clip': clahe_clip,
                                  'clahe_tile': clahe_tile,
                                  'white_balance': white_balance})
     temp_path = None
     try:
+        exif = None
+        if os.path.splitext(dst)[1].lower() in JPEG_EXTENSIONS:
+            exif = source_exif(src)
+            if exif is not None:
+                exif = upright_exif(exif)
         image = cv2.imread(src, cv2.IMREAD_COLOR)
         if image is None:
             return src
@@ -122,8 +205,15 @@ def _process_one(job: tuple[str, str, float, int, bool]) -> str | None:
             temp_path = stream.name
         if not cv2.imwrite(temp_path, image, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]):
             return src
+        if exif is not None:
+            with open(temp_path, 'rb') as stream:
+                encoded = stream.read()
+            with open(temp_path, 'wb') as stream:
+                stream.write(with_exif(encoded, exif))
         os.replace(temp_path, dst)
-    except (OSError, cv2.error):
+    except (OSError, ValueError, cv2.error):
+        # OSError includes Pillow's UnidentifiedImageError; ValueError is
+        # an EXIF block that cannot be carried over.
         return src
     finally:
         if temp_path and os.path.exists(temp_path):
@@ -224,10 +314,10 @@ class PreprocessImages(RSModule):
                 record = records.get(key, {})
                 if not isinstance(record, dict):
                     record = {}
-                if record.get('source') == signature and os.path.isfile(dst):
-                    if record.get('output') == _file_signature(dst):
-                        skipped += 1
-                        continue
+                if (record.get('source') == signature and os.path.isfile(dst)
+                        and record.get('output') == _file_signature(dst)):
+                    skipped += 1
+                    continue
                 os.makedirs(dest_root, exist_ok=True)
                 jobs.append((src, dst, clip, tile, wb))
         return jobs, skipped, signatures
@@ -264,7 +354,8 @@ class PreprocessImages(RSModule):
         manifest_path = os.path.join(os.path.dirname(output_dir), MANIFEST_NAME)
         settings = {'input_dir': source_root, 'clahe_clip': clip,
                     'clahe_tile': tile, 'white_balance': wb,
-                    'jpeg_quality': JPEG_QUALITY, 'opencv': cv2.__version__}
+                    'jpeg_quality': JPEG_QUALITY, 'opencv': cv2.__version__,
+                    'exif': EXIF_POLICY}
         manifest = {'schema': 1, 'status': 'in_progress', 'settings': settings, 'images': {}}
         try:
             with open(manifest_path, encoding='utf-8') as stream:
