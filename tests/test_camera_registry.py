@@ -26,10 +26,14 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from modules import camera_registry  # noqa: E402
-from modules.calibration_sidecars import intrinsics_to_xmp_values  # noqa: E402
-from modules.camera_registry import (Mount, PriorAccuracy,  # noqa: E402
-                                     RegistryError, load_registry)
+from modules import camera_registry
+from modules.calibration_sidecars import intrinsics_to_xmp_values
+from modules.camera_registry import (
+    Mount,
+    PriorAccuracy,
+    RegistryError,
+    load_registry,
+)
 
 CAMERAS_JSON = os.path.join(REPO_ROOT, 'modules', 'cameras.json')
 CALIBRATION_JSON = os.path.join(REPO_ROOT, 'calibration',
@@ -329,5 +333,6 @@ def test_registry_modules_import_with_the_standard_library_only():
     # __pycache__ into the source tree.
     result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', code,
                              REPO_ROOT],
-                            capture_output=True, text=True, timeout=60)
+                            capture_output=True, text=True, timeout=60,
+                            check=False)
     assert result.returncode == 0, result.stderr

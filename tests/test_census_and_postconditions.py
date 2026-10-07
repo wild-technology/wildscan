@@ -38,9 +38,9 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-import finish_model  # noqa: E402
-from modules import export_deliverables  # noqa: E402
-from modules.workspace_census import (  # noqa: E402
+import finish_model
+from modules import export_deliverables
+from modules.workspace_census import (
     MODEL_REPORT_NAMES,
     STAGE_ORDER,
     STAGE_TITLES,
@@ -129,7 +129,7 @@ def test_intake_without_a_manifest_is_pending(tmp_path):
 def test_a_complete_intake_manifest_is_done(tmp_path):
     ws = tmp_path / 'workspace'
     _intake_manifest(ws, {
-        'schema': 1, 'status': 'complete', 'variant': 'card',
+        'schema': 2, 'status': 'complete', 'variant': 'card',
         'sources': [{'run_id': '260820_1925_transect-01'}],
         'images': {'matched': 12}})
     status = Workspace(ws).detect()['intake']
@@ -139,11 +139,14 @@ def test_a_complete_intake_manifest_is_done(tmp_path):
 
 @pytest.mark.parametrize('payload', [
     '{',
-    {'schema': 1, 'status': 'running', 'variant': 'card',
+    {'schema': 2, 'status': 'running', 'variant': 'card',
      'sources': [], 'images': {'matched': 0}},
     {'schema': 99, 'status': 'complete', 'variant': 'card',
      'sources': [], 'images': {'matched': 0}},
-    {'schema': 1, 'status': 'complete', 'variant': 'card'},
+    # schema 1 predates the per-camera observed focal
+    {'schema': 1, 'status': 'complete', 'variant': 'card',
+     'sources': [], 'images': {'matched': 0}},
+    {'schema': 2, 'status': 'complete', 'variant': 'card'},
 ])
 def test_an_intake_manifest_that_fails_to_load_is_not_done(tmp_path, payload):
     ws = tmp_path / 'workspace'
@@ -155,7 +158,7 @@ def test_an_intake_manifest_that_fails_to_load_is_not_done(tmp_path, payload):
 def test_an_interrupted_intake_needs_a_retry(tmp_path):
     ws = tmp_path / 'workspace'
     _intake_manifest(ws, {
-        'schema': 1, 'status': 'complete', 'variant': 'card',
+        'schema': 2, 'status': 'complete', 'variant': 'card',
         'sources': [{'run_id': '260820_1925_transect-01'}],
         'images': {'matched': 12}})
     (ws / 'interrupted_stage.json').write_text(json.dumps(
@@ -316,7 +319,9 @@ def _finish_model_run(tmp_path, monkeypatch, produce):
     current branch's entire purpose, and run_attach_script has no
     post-condition of its own)."""
     from modules.realityscan_interface.realityscan_cli import (
-        RealityScanCLI, WorkflowResult)
+        RealityScanCLI,
+        WorkflowResult,
+    )
 
     outdir = tmp_path / 'final'
     outdir.mkdir()
@@ -379,7 +384,7 @@ def test_export_postcondition_rejects_an_empty_file(tmp_path):
 
 def test_read_component_names_is_bom_tolerant(tmp_path):
     path = tmp_path / 'components.names'
-    path.write_bytes('﻿zone_1_c0\r\n\r\nzone_2_c0\r\n'.encode('utf-8'))
+    path.write_bytes('﻿zone_1_c0\r\n\r\nzone_2_c0\r\n'.encode())
     assert export_deliverables.read_component_names(str(path)) == \
         ['zone_1_c0', 'zone_2_c0']
 
@@ -436,7 +441,7 @@ def test_export_driver_refuses_an_empty_name_list(tmp_path, content):
          '--project', str(project), '--exports', str(tmp_path / 'exports'),
          '--names', str(names)],
         capture_output=True, text=True, stdin=subprocess.DEVNULL,
-        cwd=REPO_ROOT)
+        cwd=REPO_ROOT, check=False)
     assert proc.returncode == 1
     assert 'names NOTHING' in (proc.stderr + proc.stdout)
 
@@ -457,7 +462,7 @@ def test_run_models_workspace_is_validated_before_logging(tmp_path, kind):
         [sys.executable, os.path.join(REPO_ROOT, 'run_models.py'),
          '--workspace', str(target)],
         capture_output=True, text=True, stdin=subprocess.DEVNULL,
-        cwd=REPO_ROOT)
+        cwd=REPO_ROOT, check=False)
     assert proc.returncode == 1
     assert 'Traceback' not in proc.stderr, proc.stderr
     assert 'workspace not found' in proc.stderr
@@ -466,8 +471,9 @@ def test_run_models_workspace_is_validated_before_logging(tmp_path, kind):
 def test_run_models_disk_floor_uses_the_workspace_path():
     """Path('ws').drive is '' for a relative --workspace, so `drive+'\\\\'`
     became '\\\\' and the 50 GB floor measured the SYSTEM drive."""
-    source = open(os.path.join(REPO_ROOT, 'run_models.py'),
-                  encoding='utf-8').read()
+    with open(os.path.join(REPO_ROOT, 'run_models.py'),
+              encoding='utf-8') as stream:
+        source = stream.read()
     assert "shutil.disk_usage(ws.root)" in source
     assert "ws.root.drive + '\\\\'" not in source
 
@@ -489,7 +495,7 @@ def test_run_models_refuses_a_merge_report_with_no_final_components(tmp_path):
         [sys.executable, os.path.join(REPO_ROOT, 'run_models.py'),
          '--workspace', str(tmp_path)],
         capture_output=True, text=True, stdin=subprocess.DEVNULL,
-        cwd=REPO_ROOT)
+        cwd=REPO_ROOT, check=False)
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert 'declares no final components' in (proc.stdout + proc.stderr)
     # No RealityScan was booted and no report was written.
@@ -500,7 +506,7 @@ def test_run_models_refuses_a_merge_report_with_no_final_components(tmp_path):
 
 def _publish_ws(tmp_path, log_names):
     """A workspace with exported deliverables and the given flight logs."""
-    import publish_batch                                    # noqa: PLC0415
+    import publish_batch
     exports = tmp_path / 'exports' / 'zone_1_c0' / 'obj'
     exports.mkdir(parents=True)
     (exports / 'zone_1_c0.obj').write_text('v 0 0 0\n', encoding='utf-8')
@@ -557,7 +563,7 @@ def test_the_publish_driver_passes_the_georeferencing_downstream(tmp_path):
         [sys.executable, os.path.join(REPO_ROOT, 'publish_batch.py'),
          '--workspace', str(tmp_path), '--prefix', 'transect-01', '--dry-run'],
         capture_output=True, text=True, stdin=subprocess.DEVNULL,
-        cwd=REPO_ROOT)
+        cwd=REPO_ROOT, check=False)
     combined = proc.stdout + proc.stderr
     assert proc.returncode == 0, combined
     assert '--flight-log' in combined, combined[-800:]

@@ -24,10 +24,17 @@ already lost its extension.
    ``raw_images/flight_log_<zone><band>_UTM.txt``
    (:func:`modules.flight_logs.write_flight_log`);
 4. decides the calibration delivery per camera from the original images
-   (:func:`modules.calibration_sidecars.decide_calibration`; preprocessing
-   writes images without EXIF, so this cannot be decided later);
+   (:func:`modules.calibration_sidecars.decide_calibration`), and records
+   the focal length observed on them and the starting focal RealityScan
+   gets (:func:`modules.calibration_sidecars.observe_focal`); a focal that
+   differs between images of one camera, or is missing, fails the intake
+   unless the operator gives the focal length (``focal_override_mm``). The
+   decision is made here, on the originals the operator handed in, and
+   recorded once; later stages read it rather than re-deciding it on the
+   preprocessed copies (which keep the EXIF);
 5. records all of it in ``raw_images/wildsync_intake.json``, which later
-   stages read (:func:`load_manifest`, :func:`calibration_modes`).
+   stages read (:func:`load_manifest`, :func:`calibration_modes`,
+   :func:`starting_focals`).
 
 The run directories are only read. Wild Sync's own ``.xmp`` sidecars are
 never copied: the calibration sidecar of a review JPEG has the same name
@@ -57,9 +64,13 @@ from dataclasses import dataclass
 from .. import camera_registry
 from ..calibration_sidecars import (
     DECIDED_MODES,
+    CalibrationDecision,
     CalibrationRefused,
+    FocalRefused,
+    ObservedFocal,
     decide_calibration,
     is_own_sidecar,
+    observe_focal,
     read_image_geometry,
     sidecar_path,
 )
@@ -91,7 +102,10 @@ NUMERIC_COLUMNS = tuple(c for c in FLIGHT_LOG_CSV_HEADER
 
 RAW_IMAGES = 'raw_images'
 MANIFEST_NAME = 'wildsync_intake.json'
-MANIFEST_SCHEMA = 1
+# 2: every camera's calibration entry carries the observed EXIF focal and
+# the starting focal RealityScan gets (starting_focals). A schema-1
+# manifest has neither and is refused, never read as if it had them.
+MANIFEST_SCHEMA = 2
 # Manifest status while an intake is copying; only 'complete' is usable.
 STATUS_IN_PROGRESS = 'in_progress'
 
@@ -169,6 +183,7 @@ class IntakeOptions:
     time_err_warn_ms: float = DEFAULT_TIME_ERR_WARN_MS
     calibration: str = 'auto'
     focal_asserted: bool = False
+    focal_override_mm: float | None = None
 
     def problems(self) -> list[str]:
         """Every invalid option, as a message; empty when all are valid."""
@@ -191,6 +206,21 @@ class IntakeOptions:
                        f'{self.calibration!r}')
         if not isinstance(self.focal_asserted, bool):
             out.append('the focal-length assertion must be true or false')
+        override = self.focal_override_mm
+        if override is not None:
+            if isinstance(override, bool) \
+                    or not isinstance(override, (int, float)) \
+                    or not (math.isfinite(override) and override > 0):
+                out.append('focal override (mm) must be a positive number, '
+                           f'got {override!r}')
+            if self.focal_asserted is True:
+                out.append('give either the focal override or the '
+                           'calibration focal-length assertion, not both')
+            if self.calibration == 'off':
+                out.append('a focal override reaches RealityScan only '
+                           'through a calibration sidecar, and calibration '
+                           'off writes none; choose auto, groups or prior, '
+                           'or drop the override')
         for label, value, lowest, strict in (
                 ('position accuracy (m)', self.position_accuracy_m, 0.0, True),
                 ('altitude accuracy (m)', self.altitude_accuracy_m, 0.0, True),
@@ -796,6 +826,24 @@ def _examples(names: Sequence[str], limit: int = 3) -> str:
                     else '')
 
 
+def _calibration_record(camera: Camera, decision: CalibrationDecision,
+                        observed: ObservedFocal) -> dict:
+    """The manifest entry of one camera: the calibration decision, the
+    focal observed on its original images, and the 35 mm-equivalent focal
+    RealityScan starts from in the decided mode - the observed (or
+    override) focal in a ``groups`` sidecar, the calibration's focal in a
+    ``prior`` sidecar, and with ``off`` the images' own EXIF focal, which
+    RealityScan reads from the (preprocessed) images."""
+    record = {**decision.as_dict(), **observed.as_dict()}
+    if decision.mode == 'prior':
+        record['starting_focal_35mm'] = camera.focal_length_35mm
+        record['starting_focal_source'] = 'calibration'
+    elif decision.mode == 'off':
+        record['starting_focal_35mm'] = observed.exif_focal_35mm
+        record['starting_focal_source'] = 'exif'
+    return record
+
+
 def run_intake(run_paths: Sequence[str], workspace: str,
                options: IntakeOptions | None = None,
                log: logging.Logger | None = None,
@@ -806,7 +854,9 @@ def run_intake(run_paths: Sequence[str], workspace: str,
     matched image, a match rate below ``options.min_match_pct``, a duplicate
     image name, mixed UTM zones (or a zone whose hemisphere contradicts the
     rows' latitude), no UTM position at all, an explicitly requested
-    calibration prior that cannot apply, files in ``raw_images`` that this
+    calibration prior that cannot apply, an EXIF focal length that differs
+    between images of one camera or is missing (without a focal
+    override), files in ``raw_images`` that this
     intake did not plan or that differ from their source. Warns, and records in the manifest, on: a static
     fix, empty depth, images without an orientation prior or a position,
     ``time_err_ms`` above the threshold, unmatched rows or images, and a
@@ -916,26 +966,28 @@ def run_intake(run_paths: Sequence[str], workspace: str,
         camera = registry.cameras[key]
         geometries = []
         unreadable = []
-        if options.calibration != 'off':
-            for frame in frames:
-                if frame.camera != key:
-                    continue
-                try:
-                    geometries.append(read_image_geometry(frame.source))
-                except (OSError, ValueError, SyntaxError) as exc:
-                    # Pillow: OSError (incl. UnidentifiedImageError) for an
-                    # unreadable file, ValueError/SyntaxError for a corrupt one.
-                    unreadable.append(f'{frame.name} ({exc})')
+        for frame in frames:
+            if frame.camera != key:
+                continue
+            try:
+                geometries.append(read_image_geometry(frame.source))
+            except (OSError, ValueError, SyntaxError) as exc:
+                # Pillow: OSError (incl. UnidentifiedImageError) for an
+                # unreadable file, ValueError/SyntaxError for a corrupt one.
+                unreadable.append(f'{frame.name} ({exc})')
         if unreadable:
             warn(f'{key}: {len(unreadable)} image(s) could not be read for '
                  'the calibration decision: ' + _examples(unreadable))
         try:
+            observed = observe_focal(camera, geometries,
+                                     options.focal_override_mm)
             decision = decide_calibration(
                 camera, registry.rig_for(key), geometries,
-                options.calibration, options.focal_asserted)
-        except CalibrationRefused as exc:
+                options.calibration, options.focal_asserted,
+                options.focal_override_mm)
+        except (CalibrationRefused, FocalRefused) as exc:
             raise IntakeError(str(exc)) from None
-        decisions[key] = decision
+        decisions[key] = _calibration_record(camera, decision, observed)
         for message in decision.warnings:
             warn(message)
 
@@ -1099,8 +1151,7 @@ def run_intake(run_paths: Sequence[str], workspace: str,
             'time_source': dict(sorted(Counter(
                 f.row.time_source or 'none' for f in frames).items())),
         },
-        'calibration': {key: decisions[key].as_dict()
-                        for key in cameras_in_use},
+        'calibration': {key: decisions[key] for key in cameras_in_use},
         'notices': notices,
         'warnings': warnings,
     }
@@ -1136,6 +1187,13 @@ def load_manifest(raw_images_dir: str) -> dict | None:
             f'(started {data.get("started_utc", "at an unknown time")}); '
             'raw_images may hold only part of the images and no final flight '
             'log. Re-run Wild Sync Intake on the same workspace')
+    if isinstance(data, dict) and data.get('schema') == 1:
+        raise ValueError(
+            f'{path}: a schema-1 Wild Sync intake manifest, written before '
+            'the intake recorded the focal length observed on each camera; '
+            f'this version reads schema {MANIFEST_SCHEMA} only, so '
+            'RealityScan would get no starting focal. Re-run Wild Sync '
+            'Intake on the same workspace (the copied images are reused)')
     if not isinstance(data, dict) or data.get('schema') != MANIFEST_SCHEMA \
             or data.get('status') != 'complete':
         raise ValueError(f'{path}: not a complete schema-{MANIFEST_SCHEMA} '
@@ -1152,4 +1210,25 @@ def calibration_modes(manifest: Mapping) -> dict[str, str]:
             raise ValueError(f'intake manifest: invalid calibration entry '
                              f'{key!r}: {decision!r}')
         out[key] = mode
+    return out
+
+
+def starting_focals(manifest: Mapping) -> dict[str, float]:
+    """{camera key: starting 35 mm-equivalent focal} from an intake
+    manifest - the focal a ``groups`` sidecar gives RealityScan.
+
+    ValueError when a camera's entry has no positive finite
+    ``starting_focal_35mm``: no camera may reach RealityScan without one.
+    """
+    out: dict[str, float] = {}
+    for key, decision in (manifest.get('calibration') or {}).items():
+        focal = (decision.get('starting_focal_35mm')
+                 if isinstance(decision, Mapping) else None)
+        if key not in camera_registry.CAMERAS or isinstance(focal, bool) \
+                or not isinstance(focal, (int, float)) \
+                or not (math.isfinite(focal) and focal > 0):
+            raise ValueError(f'intake manifest: camera {key!r} has no usable '
+                             f'starting focal (starting_focal_35mm '
+                             f'{focal!r}); re-run Wild Sync Intake')
+        out[key] = float(focal)
     return out

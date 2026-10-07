@@ -79,7 +79,7 @@ def make_workspace(tmp_path, *, stage: str) -> Workspace:
             + "".join(f"img_{i:03d}.jpg;1;2;3\n" for i in range(4)),
             encoding="utf-8")
         (ws / "raw_images" / "wildsync_intake.json").write_text(json.dumps({
-            "schema": 1, "status": "complete", "variant": "card",
+            "schema": 2, "status": "complete", "variant": "card",
             "sources": [{"run_id": RUN_ID}], "images": {"matched": 4}}),
             encoding="utf-8")
     if upto >= 3:
