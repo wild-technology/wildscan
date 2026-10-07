@@ -33,6 +33,9 @@ cameras captured with Wild Sync. This release is breaking.
   focal changes within one camera (zoom changed mid-run) or is missing.
 - `--w_focal_override` (mm): the operator's focal length for every image of
   both cameras, in place of the EXIF focal length.
+- `--w_assert_focal`: asserts the lenses were at the calibration focal
+  length when the EXIF focal is missing or differs, so an explicit `prior`
+  can pass the focal check.
 - Camera registry field `sensor_size_mm` (the ILX-LR1's 35.7 x 23.8 mm
   full-frame sensor).
 
@@ -86,6 +89,15 @@ cameras captured with Wild Sync. This release is breaking.
   editable install from a source checkout is supported.
 - `packaging` is declared as a test dependency.
 - The test suite moved from `testing/` to `tests/`.
+- Datasets under 4000 images are one zone (`--b_single_zone_below`); under
+  100 images the batcher warns and continues.
+- Positions without spatial extent (every image at one point) form one
+  zone, and no empty zone is kept.
+- Under `RS_NO_INTERACTIVE=1` the pipeline never prompts and exits 2 naming
+  every missing required flag; `--output_dir` and `--w_input` are required.
+- `scripts/validation/check_preprocessing.py` requires `--dataset`; the
+  stored campaign path is gone.
+- CI runs on every push and pull request, on Python 3.12 and 3.13.
 
 ### Removed
 
@@ -94,6 +106,7 @@ cameras captured with Wild Sync. This release is breaking.
 - Vehicle-navigation georeferencing, the standalone survey georeferencer and
   the filename timestamp parser.
 - The local-frame flight-log path and its parameter template.
+- The `utm` dependency.
 - The campaign, COLMAP and review documents and the earlier validation plans
   and results. They remain in the Git history at `ea3ad5d`.
 - Campaign scripts, per-campaign test runners, the zone-9 validation runner and the Cesium depth probe.
@@ -103,7 +116,7 @@ cameras captured with Wild Sync. This release is breaking.
   model flags.
 - Image analysis, feature merge and legacy utility scripts.
 
-## [1.0.0] - 2026-08-31
+## [1.0.0] - 2026-09-23
 
 Initial release: a RealityScan 2.2 photogrammetry pipeline with a Textual
 console, zone-based alignment and merge, and Cesium publishing.

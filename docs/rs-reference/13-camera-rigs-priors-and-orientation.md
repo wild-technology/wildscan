@@ -1893,7 +1893,8 @@ lever arm. The repo's params XML sets no `ifOfs*` key, so nothing is double-appl
 ### 10.4 Calibration delivery: `prior`, `groups` or `off`
 
 `modules/calibration_sidecars.py` decides one mode per camera at intake, from the original images
-(preprocessing writes images without EXIF), and the intake records it in
+(the preprocessed copies keep the original EXIF, but the decision is made once so every later
+stage reads the same answer), and the intake records it in
 `raw_images/wildsync_intake.json`:
 
 - `prior` — groups, model, `FocalLength35mm`, principal point and the measured coefficients in
@@ -1901,8 +1902,10 @@ lever arm. The repo's params XML sets no `ifOfs*` key, so nothing is double-appl
   `initial` prior. Only when the node assignment is confirmed, every image's aspect ratio is
   within 1 % of 4096:3000, and every image's EXIF focal length is within 0.5 mm of 16 mm (or the
   operator asserts it).
-- `groups` — `xcr:CalibrationGroup`, `xcr:DistortionGroup` and `xcr:DistortionModel` only, so
-  RealityScan solves each camera's intrinsics separately. The fallback whenever `prior` does not
+- `groups` — `xcr:CalibrationGroup`, `xcr:DistortionGroup` and `xcr:DistortionModel`, plus the
+  starting focal as an `initial` `xcr:FocalLength35mm` with `xcr:Skew="0"` and
+  `xcr:CalibrationPrior="initial"` (no principal point, no coefficients), so RealityScan starts
+  each camera at its EXIF focal and solves its intrinsics separately. The fallback whenever `prior` does not
   apply. The August 2026 field data (4752 × 3168, EXIF 29 mm and 24 mm) comes out as `groups`.
 - `off` — no sidecars.
 

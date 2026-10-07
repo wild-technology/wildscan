@@ -198,7 +198,7 @@ dataset. Details and evidence are in [docs/rs-reference/](docs/rs-reference/READ
 - Native Windows; no WSL. `.bat` and `.vbs` files must have CRLF line endings
   (`.gitattributes` enforces it); with LF, cmd's label search fails
   intermittently.
-- Python 3.12 or newer. Invoke the environment's interpreter directly
+- Python 3.13 (3.12 is the declared floor). Invoke the environment's interpreter directly
   (`.venv\Scripts\python.exe`) or activate it; a version-qualified `py -3.13`
   uses the global interpreter.
 - Legacy cp1252 consoles cannot print all Unicode output; set

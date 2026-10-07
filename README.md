@@ -41,7 +41,10 @@ version.** The following are not validated against RealityScan:
   to the calibration and distortion group ids in a `groups` sidecar, starting
   each camera's focal there and refining it;
 - whether RealityScan reads the EXIF focal length from the preprocessed
-  copies (the only focal it gets with calibration `off`).
+  copies (the only focal it gets with calibration `off`);
+- whether the flight-log import settings in `FlightLogParams.xml`
+  (`ifKGrp`, `ifKmode`, `ifuuInh`, `ifuuInhEn`) change the calibration
+  grouping set by the sidecars or the per-image accuracies the log carries.
 
 The [first-run validation checklist](docs/validation/ILX-LR1_first_run_checklist.md)
 covers each of them. Passing offline tests do not establish reconstruction
@@ -55,7 +58,8 @@ quality, geographic accuracy or native behaviour on a new installation.
   `C:\Program Files\Epic Games\RealityScan_2.2\` (with fallbacks to 2.1, 2.0
   and `Capturing Reality` install folders), or set `RS_EXECUTABLE` or
   `"realityscan": {"executable": ...}` in `rs_settings.json`.
-- 64-bit Python 3.12 or newer (`numpy>=2.5` and `scipy>=1.18` require 3.12).
+- 64-bit Python 3.13, the version the pipeline is developed and validated on
+  (the declared floor is 3.12, which CI also tests).
 - One or more CUDA GPUs. RealityScan uses all of them by default.
 
 ## Quickstart
@@ -71,7 +75,8 @@ py -3.13 -m venv .venv
 & ".\.venv\Scripts\python.exe" -m pytest
 ```
 
-Use any installed Python 3.12 or newer in place of `py -3.13`. The install
+Use `py -3.13`; 3.12 is the declared floor and is tested in CI, but 3.13 is
+the standard. The install
 must be editable (`-e`) from a Git clone: the application runs the driver
 scripts and the RealityScan `.bat` workflows from the checkout, and the `.bat`
 files need the CRLF line endings Git applies. A built wheel is not a supported

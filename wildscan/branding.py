@@ -1,4 +1,4 @@
-"""Wild Technology brand tokens for WildScan.
+"""Wild Technologies brand tokens for WildScan.
 
 One place for every colour, glyph and the wordmark, so the app reads as one
 system. Palette: abyssal navy field, bioluminescent teal primary, coral
@@ -50,7 +50,7 @@ WORDMARK = r"""
     \_/\_/    |___| |_____||____/  |____/   \____|/_/   \_\ |_| \_|
 """.strip("\n")
 
-FOOTER_NOTE = "Wild Technology ≈ ocean exploration, open by default"
+FOOTER_NOTE = "Wild Technologies ≈ ocean exploration, open by default"
 
 # ------------------------------------------------------------- Textual CSS
 CSS = f"""
