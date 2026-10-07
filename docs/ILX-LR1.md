@@ -132,14 +132,20 @@ None of these values has been validated as a RealityScan prior.
 The Wild Sync Intake decides one calibration mode per camera
 (`modules/calibration_sidecars.py`, `decide_calibration`) and records it in
 `raw_images/wildsync_intake.json`. The decision is made at intake, from the
-original images, because preprocessing writes its copies without EXIF. Later
-stages read the recorded decision and never recompute it.
+original images the operator handed in, and recorded once; later stages read
+the recorded decision and never recompute it. (The preprocessed copies keep
+the original EXIF - see [Preprocessing](#preprocessing) - but the decision
+belongs to the originals.)
+
+In every mode RealityScan receives a starting focal length for every image,
+and its alignment refines the focal from that starting value (see
+[Starting focal length](#starting-focal-length)).
 
 | Mode | What RealityScan receives |
 |---|---|
-| `prior` | the camera's own calibration and lens-distortion group, the Brown3 model, the 35 mm-equivalent focal length, the principal point and the measured distortion coefficients, as an initial (adjustable) prior |
-| `groups` | the camera's own calibration and lens-distortion group and the Brown3 model only; RealityScan solves each camera's intrinsics separately |
-| `off` | no sidecars |
+| `prior` | the camera's own calibration and lens-distortion group, the Brown3 model, the calibration's 35 mm-equivalent focal length, the principal point and the measured distortion coefficients, as an initial (adjustable) prior |
+| `groups` | the camera's own calibration and lens-distortion group, the Brown3 model, and the focal length observed on the images as an initial (adjustable) 35 mm-equivalent focal; RealityScan solves each camera's intrinsics separately, starting from that focal |
+| `off` | no sidecars; RealityScan reads the focal length from the EXIF of the images it aligns (the preprocessed copies keep it) |
 
 The intake parameter `--w_calibration` chooses `auto` (default), `prior`,
 `groups` or `off`.
@@ -150,11 +156,12 @@ camera, and `groups` otherwise:
 1. the rig's `node_assignment_confirmed` is `true`;
 2. the image aspect ratio (width / height) is within 1 % of the calibration
    aspect ratio, 4096 / 3000 = 1.365;
-3. the EXIF `FocalLength` is within 0.5 mm of the calibration focal length,
-   16 mm, or the operator asserts it with `--w_assert_focal true`.
+3. the EXIF `FocalLength` (or the `--w_focal_override` focal, when given) is
+   within 0.5 mm of the calibration focal length, 16 mm, or the operator
+   asserts it with `--w_assert_focal true`.
 
-Image size and EXIF focal length are read with Pillow from the original files;
-the EXIF orientation tag is not applied. When `auto` falls back to `groups`, the
+Image size and the EXIF `FocalLength` and `FocalLengthIn35mmFilm` are read
+with Pillow from the original files; the EXIF orientation tag is not applied. When `auto` falls back to `groups`, the
 intake logs and records a warning naming each failed condition with both
 values, for example `image 4752x3168 (aspect 1.500) vs calibration 4096x3000
 (aspect 1.365)` and `EXIF focal 29 mm vs calibration 16 mm`.
@@ -163,6 +170,45 @@ An explicit `prior` is refused, and the intake fails, when the node assignment
 is not confirmed, when an image's aspect ratio differs or when no image size is
 known. When only the focal-length check fails, an explicit `prior` is applied
 with a warning. `groups` and `off` are applied as requested.
+
+### Starting focal length
+
+The intake records, per camera, the focal length observed on the original
+images (`modules/calibration_sidecars.py`, `observe_focal`):
+
+- `exif_focal_mm`: the EXIF `FocalLength` (the median over the camera's
+  images);
+- `exif_focal_35mm`: its 35 mm equivalent - the EXIF `FocalLengthIn35mmFilm`
+  when every image carries it, else `FocalLength x 36 / 35.7`, the width of
+  the ILX-LR1's full-frame 35.7 x 23.8 mm sensor (`sensor_size_mm` in
+  `modules/cameras.json`). On the full-frame ILX-LR1 the 35 mm equivalent is
+  the lens focal itself; the x 36 / 35.7 conversion is RealityScan's
+  `FocalLength35mm` scale (focal relative to a 36 mm image width).
+
+The intake fails, naming both values, when the EXIF focal lengths of one
+camera's images differ by more than 0.5 mm (the zoom changed during the run),
+and fails when an image carries no EXIF focal length, unless the operator
+gives the focal: `--w_focal_override <mm>` replaces the EXIF focal length of
+every image of both cameras, both as the starting focal (converted with
+x 36 / 35.7) and in the `auto` decision above. The override cannot be
+combined with `--w_assert_focal` or with `--w_calibration off` (without a
+sidecar it would not reach RealityScan).
+
+What RealityScan starts from, per mode, is recorded as `starting_focal_35mm`
+with its `starting_focal_source`:
+
+| Mode | Starting focal (35 mm equivalent) | Source |
+|---|---|---|
+| `groups` | the observed EXIF focal, or the override, written as `xcr:FocalLength35mm` with `xcr:CalibrationPrior="initial"` and `xcr:Skew="0"` | `exif` or `override` |
+| `prior` | the calibration's `focal_length_35mm` (17.72584), in the prior sidecar | `calibration` |
+| `off` | the images' own EXIF, read by RealityScan from the preprocessed copies | `exif` |
+
+The starting focal is never locked or exact: it is where RealityScan's
+alignment starts, and the solved focal is expected to move away from it. On
+the 2026-08-20 runs the lenses (29 mm on `cam1`, 24 mm on `cam2`) sit behind
+a Nauticam WACP-C corrective port, so the in-water focal differs from the
+in-air EXIF value; RealityScan refines it from the starting value, unlike a
+fixed pinhole. The first-run checklist checks where it lands.
 
 The August 2026 field runs have 4752 x 3168 card images (aspect 1.5), EXIF focal
 29 mm on `cam1` and 24 mm on `cam2`; the 1616 x 1080 review images have aspect
@@ -174,14 +220,21 @@ combined `flight_log_19T_UTM.txt`.
 Each camera's entry under `calibration` in `wildsync_intake.json` records:
 `requested`, `mode`, `reason`, `warnings`, the distinct `image_sizes` and
 `exif_focals_mm` seen, `calibration_image_size`, `calibration_focal_mm`,
-`node_assignment_confirmed` and `focal_asserted`.
+`node_assignment_confirmed` and `focal_asserted`, and the observed focal:
+`exif_focal_mm`, `exif_focal_35mm`, `exif_focal_35mm_from`,
+`images_without_exif_focal`, `focal_override_mm`, `starting_focal_35mm` and
+`starting_focal_source`. The manifest is schema 2; a schema-1 manifest (written
+before the focal was recorded) is refused by every later stage with a request
+to re-run the intake, which reuses the copied images.
 
 ## How the calibration reaches RealityScan
 
 RealityScan takes per-image calibration only from XMP sidecars. The
 RealityScan Alignment stage (`modules/realityscan_interface/realityscan_interface.py`)
-reads the per-camera modes from the intake manifest. When at least one camera's
-mode is `prior` or `groups`, for every zone it aligns it:
+reads the per-camera modes and starting focals from the intake manifest (a
+camera without a usable `starting_focal_35mm` fails the stage before anything
+is aligned). When at least one camera's mode is `prior` or `groups`, for every
+zone it aligns it:
 
 1. moves any existing sidecar beside an image of that camera that is not byte
    for byte one of the pipeline's own calibration sidecars (a pose prior, an
@@ -189,9 +242,11 @@ mode is `prior` or `groups`, for every zone it aligns it:
    `aligned_components/<zone>/pre_existing_sidecars/`, keeping its path
    relative to the zone and never replacing a file already there (a
    numbered name `<stem>.<n>.xmp` instead), and logs one warning with the
-   count and the folder; the pipeline's own sidecars of either mode are
-   replaced in place;
-2. writes the decided sidecar beside every image of that camera in the zone;
+   count and the folder; the pipeline's own sidecars of either mode (a
+   `groups` sidecar with any starting focal, or in the earlier form without
+   one) are replaced in place;
+2. writes the decided sidecar beside every image of that camera in the zone,
+   a `groups` sidecar with the camera's starting focal;
    the sidecar is the image name without its last extension plus `.xmp`
    (`Cam1_20260820_192542.42.card.JPG` -> `Cam1_20260820_192542.42.card.xmp`);
 3. writes `<zone>.rscmd` into the zone's output folder
@@ -235,21 +290,28 @@ before RealityScan starts, with a warning naming each file.
 After each run, the sidecar hygiene (`sanitize_and_census`,
 `ensure_calibration_sidecars`) rewrites any pose-bearing sidecar left beside
 an image to the decided calibration sidecar and restores missing ones; it never
-writes another form.
+writes another form. The zone's `align_inputs.json` records the starting focal
+of the `groups` cameras, so a re-run with another starting focal is reported
+as a retry with changed inputs.
 
-The sidecars use the `xcr` 1.1 attribute form. `groups`, for `ilx_left`:
+The sidecars use the `xcr` 1.1 attribute form. `groups`, for `ilx_left` with an
+observed 29 mm focal (EXIF `FocalLengthIn35mmFilm` 29):
 
 ```xml
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
     <rdf:Description xcr:Version="4"
-       xcr:CalibrationGroup="7" xcr:DistortionGroup="7"
-       xcr:DistortionModel="brown3"
+       xcr:CalibrationPrior="initial" xcr:CalibrationGroup="7"
+       xcr:DistortionGroup="7" xcr:DistortionModel="brown3"
+       xcr:FocalLength35mm="29" xcr:Skew="0"
        xmlns:xcr="http://www.capturingreality.com/ns/xcr/1.1#">
     </rdf:Description>
   </rdf:RDF>
 </x:xmpmeta>
 ```
+
+Without `FocalLengthIn35mmFilm` the same image gets
+`xcr:FocalLength35mm="29.243697479"` (29 x 36 / 35.7).
 
 `prior`, for `ilx_left`:
 
@@ -372,8 +434,8 @@ Into `<workspace>/raw_images/`:
   variant, matched / unmatched rows and images and the match rate, the UTM zone,
   the static-fix flag and position spread per run, the accuracies written, the
   heading columns used, the declination, the orientation convention as text,
-  capture- and time-source counts, the calibration decision per camera, and every
-  warning and notice.
+  capture- and time-source counts, the calibration decision and the observed
+  and starting focal length per camera, and every warning and notice.
 
 The intake fails, before writing anything, on: an unreadable log; no matched
 image; a match rate below `--w_min_match_rate` (default 80 %; the rate is matched
@@ -381,7 +443,9 @@ frames over matched frames plus rows without an image plus images without a
 row); a duplicate image name across the runs taken in together; matched rows in
 more than one UTM zone; no matched row with a UTM position; a `utm_zone` whose
 hemisphere contradicts the row's latitude; an explicit calibration prior that
-cannot apply; and files in `raw_images/` that it did not plan or that differ
+cannot apply; an EXIF focal length that differs by more than 0.5 mm between
+images of one camera, or is missing, without `--w_focal_override`; an unusable
+focal override; and files in `raw_images/` that it did not plan or that differ
 from their source (use a fresh workspace). Re-running the same intake into the
 same workspace reuses identical copies. A `<stem>.xmp` beside a planned image
 that is byte for byte one of the alignment stage's own calibration sidecars for
@@ -493,8 +557,18 @@ The pipeline's preprocessing is this repository's CLAHE
   (`--p_clahe_tile`);
 - gray-world white balance before CLAHE, off by default (`--p_white_balance`);
 - output written to `<workspace>/preprocessed_images/` with the input's folder
-  structure and file names, as JPEG at quality 95, without the original EXIF;
-  the copies in `raw_images/` are kept unchanged.
+  structure and file names, as JPEG at quality 95 with the original EXIF block
+  (focal length, make and model, capture time), so RealityScan can read the
+  focal length from the copies when no calibration sidecar is written; the
+  copies in `raw_images/` are kept unchanged.
+
+OpenCV encodes the pixels exactly as before EXIF was kept; the original APP1
+EXIF segment, read with Pillow, is then inserted into the encoded file
+unchanged, except that the Orientation tag is set to 1 because OpenCV has
+already applied it to the pixels. An EXIF block that cannot be carried over
+fails that image rather than producing a copy without it. Copies written by an
+earlier version, without EXIF, are not reused: the preprocessing manifest
+records the EXIF policy, and a manifest without it reprocesses every image.
 
 Batching and alignment use the preprocessed copies when they exist. The
 defaults were chosen on earlier datasets taken with other cameras; they have
@@ -522,6 +596,20 @@ run with this version of the pipeline. Until one has:
 4. **Calibration command-file mode.** That `-execRSCMD` with quoted
    `-addImageWithCalibration` lines, and sidecars beside the images, imports as
    written in `AlignZone.bat` is unvalidated.
+5. **Starting focal in a `groups` sidecar.** Whether RealityScan honours an
+   `initial` `xcr:FocalLength35mm` (with `xcr:Skew="0"`) written next to the
+   calibration and distortion group ids, starts the camera's focal there and
+   refines it, is unvalidated; so is whether `xcr:CalibrationPrior="initial"`
+   there leaves the principal point and distortion, which the sidecar does not
+   give, free.
+6. **EXIF focal from the preprocessed copies.** Whether RealityScan reads the
+   focal length from the EXIF the preprocessed copies keep (the only focal it
+   gets with calibration `off`), and how it converts it to a 35 mm equivalent
+   without a sidecar, is unvalidated.
+7. **Flight-log import settings.** `FlightLogParams.xml` carries the import
+   keys `ifKGrp`, `ifKmode`, `ifuuInh` and `ifuuInhEn`, whose meaning is not
+   documented; whether the flight-log import changes the calibration grouping
+   or prior set by the sidecars is unvalidated.
 
 The [first-run validation checklist](validation/ILX-LR1_first_run_checklist.md)
 gives a check for each.

@@ -26,10 +26,14 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from modules import camera_registry  # noqa: E402
-from modules.calibration_sidecars import intrinsics_to_xmp_values  # noqa: E402
-from modules.camera_registry import (Mount, PriorAccuracy,  # noqa: E402
-                                     RegistryError, load_registry)
+from modules import camera_registry
+from modules.calibration_sidecars import intrinsics_to_xmp_values
+from modules.camera_registry import (
+    Mount,
+    PriorAccuracy,
+    RegistryError,
+    load_registry,
+)
 
 CAMERAS_JSON = os.path.join(REPO_ROOT, 'modules', 'cameras.json')
 CALIBRATION_JSON = os.path.join(REPO_ROOT, 'calibration',
@@ -222,6 +226,16 @@ def _family(data, name):
     return next(f for f in data['families'] if f['family'] == name)
 
 
+def test_the_registry_loads_the_full_frame_sensor_size():
+    """The ILX-LR1's full-frame sensor, 35.7 x 23.8 mm, typed as floats:
+    the starting 35 mm-equivalent focal is computed from its width when an
+    image carries no EXIF FocalLengthIn35mmFilm."""
+    for key in ('ilx_left', 'ilx_right'):
+        size = camera_registry.CAMERAS[key].sensor_size_mm
+        assert size == (35.7, 23.8)
+        assert all(type(v) is float for v in size)
+
+
 @pytest.mark.parametrize('mutate,match', [
     (lambda d: _family(d, 'cam1').update(camera='ilx_missing'),
      r"names camera 'ilx_missing'"),
@@ -231,6 +245,12 @@ def _family(data, name):
      r"calibration_focal_mm"),
     (lambda d: d['cameras']['ilx_left'].update(resolution='4096x3000'),
      r"resolution"),
+    (lambda d: d['cameras']['ilx_left'].pop('sensor_size_mm'),
+     r"sensor_size_mm"),
+    (lambda d: d['cameras']['ilx_left'].update(sensor_size_mm=[35.7]),
+     r"sensor_size_mm"),
+    (lambda d: d['cameras']['ilx_left'].update(sensor_size_mm=[35.7, 0]),
+     r"sensor_size_mm.*positive"),
     (lambda d: d['cameras']['ilx_left'].update(focal_length_35mm=True),
      r"focal_length_35mm"),
     (lambda d: d['cameras']['ilx_left'].update(calibration_prior='exact'),
@@ -313,5 +333,6 @@ def test_registry_modules_import_with_the_standard_library_only():
     # __pycache__ into the source tree.
     result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', code,
                              REPO_ROOT],
-                            capture_output=True, text=True, timeout=60)
+                            capture_output=True, text=True, timeout=60,
+                            check=False)
     assert result.returncode == 0, result.stderr

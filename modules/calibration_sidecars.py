@@ -19,12 +19,19 @@ For each camera one of three modes applies (:func:`decide_calibration`):
     confirmed, the images have the calibration's aspect ratio, and their lens
     focal length matches the calibration's.
 ``groups``
-    Only the camera's own calibration and distortion group and the Brown3
-    model: RealityScan solves each physical camera's intrinsics separately.
-    The fallback whenever ``prior`` is not applicable.
+    The camera's own calibration and distortion group, the Brown3 model and
+    the focal length observed on the original images (EXIF, or the
+    operator's override) as an initial (adjustable) 35 mm-equivalent focal:
+    RealityScan solves each physical camera's intrinsics separately,
+    starting from that focal. The fallback whenever ``prior`` is not
+    applicable.
 ``off``
     No sidecars; calibration sidecars this pipeline wrote for the camera in
-    an earlier run are removed before alignment.
+    an earlier run are removed before alignment. RealityScan reads the focal
+    length from the images' own EXIF, which preprocessing keeps.
+
+Whatever the mode, RealityScan receives a starting focal length for every
+image and refines it during alignment (:func:`observe_focal`).
 
 The registry values follow the conversion in
 :func:`intrinsics_to_xmp_values`. Two parts of it are not verified against
@@ -43,8 +50,10 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
+import statistics
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Iterable, Mapping
 
 from . import camera_registry
 from .camera_registry import Camera, Rig
@@ -64,6 +73,13 @@ ASPECT_TOLERANCE = 0.01
 # length the calibration was solved at, in millimetres.
 FOCAL_TOLERANCE_MM = 0.5
 
+# Difference allowed between the EXIF focal lengths of the images of one
+# camera, in millimetres; a larger one means the zoom changed during the run.
+FOCAL_SPREAD_TOLERANCE_MM = 0.5
+
+# RealityScan's FocalLength35mm is the focal scaled to a 36 mm image width.
+FILM_WIDTH_MM = 36.0
+
 XCR_NAMESPACE = 'http://www.capturingreality.com/ns/xcr/1.1#'
 
 # XMP token for each registry prior level. 'approximate' is RealityScan's
@@ -78,20 +94,44 @@ class CalibrationRefused(ValueError):
     """An explicitly requested prior cannot be applied safely."""
 
 
+class FocalRefused(ValueError):
+    """No single starting focal length can be given for a camera."""
+
+
 # ------------------------------------------------------------- inputs
 
 @dataclass(frozen=True)
 class ImageGeometry:
-    """Pixel size and EXIF lens focal length (mm, None if absent) of an image."""
+    """Pixel size, EXIF lens focal length and EXIF 35 mm-equivalent focal
+    length (mm, None if absent) of an image."""
     width: int
     height: int
     focal_mm: float | None = None
+    focal_35mm_film: float | None = None
+
+
+def _positive(value) -> float | None:
+    """A positive finite float from an EXIF value, else None (EXIF writes 0
+    for an unknown focal length)."""
+    try:
+        number = float(value) if value is not None else None
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+    if number is None or not (math.isfinite(number) and number > 0):
+        return None
+    return number
+
+
+def _exif_tag(exif, tag: int):
+    value = exif.get_ifd(0x8769).get(tag)       # Exif IFD
+    return exif.get(tag) if value is None else value
 
 
 def read_image_geometry(path: str) -> ImageGeometry:
-    """Size and EXIF ``FocalLength`` of an image file, read with Pillow.
+    """Size, EXIF ``FocalLength`` and EXIF ``FocalLengthIn35mmFilm`` of an
+    image file, read with Pillow.
 
-    Read from the original image: preprocessing writes images without EXIF.
+    Read from the original image, where the calibration decision is made.
     The size is the stored pixel size; the EXIF orientation tag is not
     applied.
     """
@@ -100,16 +140,10 @@ def read_image_geometry(path: str) -> ImageGeometry:
     with Image.open(path) as image:
         width, height = image.size
         exif = image.getexif()
-        focal = exif.get_ifd(0x8769).get(0x920A)  # Exif IFD, FocalLength
-        if focal is None:
-            focal = exif.get(0x920A)
-    try:
-        focal_mm = float(focal) if focal is not None else None
-    except (TypeError, ValueError, ZeroDivisionError):
-        focal_mm = None
-    if focal_mm is not None and not (math.isfinite(focal_mm) and focal_mm > 0):
-        focal_mm = None
-    return ImageGeometry(int(width), int(height), focal_mm)
+        focal = _exif_tag(exif, 0x920A)          # FocalLength
+        focal_35mm = _exif_tag(exif, 0xA405)     # FocalLengthIn35mmFilm
+    return ImageGeometry(int(width), int(height), _positive(focal),
+                         _positive(focal_35mm))
 
 
 # ----------------------------------------------------------- decision
@@ -157,14 +191,18 @@ def _mm(value: float | None) -> str:
 def decide_calibration(camera: Camera, rig: Rig,
                        geometries: Iterable[ImageGeometry],
                        requested: str = 'auto',
-                       focal_asserted: bool = False) -> CalibrationDecision:
+                       focal_asserted: bool = False,
+                       focal_override_mm: float | None = None
+                       ) -> CalibrationDecision:
     """Calibration mode for ``camera`` over a set of its images.
 
     ``prior`` needs all three conditions: the rig's node assignment is
     confirmed; every image's aspect ratio matches the calibration's within
     ASPECT_TOLERANCE; and every image's EXIF focal length matches the
     calibration focal within FOCAL_TOLERANCE_MM, or ``focal_asserted`` says
-    the lens was at that focal length.
+    the lens was at that focal length. ``focal_override_mm``, the
+    operator's focal length for every image, is checked in place of the
+    EXIF focal lengths (which the decision still records).
 
     ``requested``: ``auto`` gives ``prior`` when all conditions hold and
     ``groups`` otherwise, with a warning naming each failed condition and
@@ -212,10 +250,12 @@ def decide_calibration(camera: Camera, rig: Rig,
                 f'{camera.calibration_aspect:.3f})')
     focal_failures: list[str] = []
     if not focal_asserted:
-        for focal in focals:
+        checked, label = ((focals, 'EXIF focal') if focal_override_mm is None
+                          else ((focal_override_mm,), 'focal override'))
+        for focal in checked:
             if focal is None or abs(focal - cal_focal) > FOCAL_TOLERANCE_MM:
                 focal_failures.append(
-                    f'EXIF focal {_mm(focal)} vs calibration {_mm(cal_focal)}')
+                    f'{label} {_mm(focal)} vs calibration {_mm(cal_focal)}')
 
     if requested == 'prior':
         if failures:
@@ -232,12 +272,124 @@ def decide_calibration(camera: Camera, rig: Rig,
         return decision(
             'groups', f'calibration not applicable: {detail}',
             [f'{camera.key}: calibration groups only - {detail}'])
-    focal_note = ('focal length asserted' if focal_asserted else
-                  f'EXIF focal matches {_mm(cal_focal)}')
+    if focal_asserted:
+        focal_note = 'focal length asserted'
+    elif focal_override_mm is not None:
+        focal_note = f'focal override matches {_mm(cal_focal)}'
+    else:
+        focal_note = f'EXIF focal matches {_mm(cal_focal)}'
     return decision(
         'prior',
         f'node assignment confirmed; image aspect matches calibration '
         f'{_size(cal_size)}; {focal_note}')
+
+
+# ------------------------------------------------------- starting focal
+
+@dataclass(frozen=True)
+class ObservedFocal:
+    """The focal length observed on one camera's original images, and the
+    35 mm-equivalent focal a ``groups`` sidecar gives RealityScan to start
+    from."""
+    camera: str
+    exif_focal_mm: float | None          # median EXIF FocalLength
+    exif_focal_35mm: float | None        # its 35 mm-equivalent
+    exif_focal_35mm_from: str | None     # how exif_focal_35mm was obtained
+    images: int                          # images read
+    images_without_exif_focal: int
+    focal_override_mm: float | None
+    starting_focal_35mm: float           # what a groups sidecar carries
+    starting_focal_source: str           # 'exif' | 'override'
+
+    def as_dict(self) -> dict:
+        """JSON-ready form, for the intake manifest."""
+        return {
+            'exif_focal_mm': self.exif_focal_mm,
+            'exif_focal_35mm': self.exif_focal_35mm,
+            'exif_focal_35mm_from': self.exif_focal_35mm_from,
+            'images_without_exif_focal': self.images_without_exif_focal,
+            'focal_override_mm': self.focal_override_mm,
+            'starting_focal_35mm': self.starting_focal_35mm,
+            'starting_focal_source': self.starting_focal_source,
+        }
+
+
+def focal_35mm_from_sensor(camera: Camera, focal_mm: float) -> float:
+    """35 mm-equivalent of a lens focal length on ``camera``'s sensor:
+    ``focal x 36 / sensor width`` (the scale of RealityScan's
+    FocalLength35mm)."""
+    return focal_mm * FILM_WIDTH_MM / camera.sensor_size_mm[0]
+
+
+def _check_spread(camera: Camera, values: list[float], what: str) -> None:
+    low, high = min(values), max(values)
+    if high - low > FOCAL_SPREAD_TOLERANCE_MM:
+        raise FocalRefused(
+            f'{camera.key}: the EXIF {what} differs between images of one '
+            f'camera: {low:g} mm and {high:g} mm (more than '
+            f'{FOCAL_SPREAD_TOLERANCE_MM:g} mm apart - was the zoom changed '
+            'during the run?). Take the runs in separately, or pass the '
+            'focal length of every image explicitly (--w_focal_override, mm)')
+
+
+def observe_focal(camera: Camera, geometries: Iterable[ImageGeometry],
+                  focal_override_mm: float | None = None) -> ObservedFocal:
+    """The focal length of ``camera``'s original images and the starting
+    35 mm-equivalent focal of its ``groups`` sidecar.
+
+    The EXIF 35 mm-equivalent is ``FocalLengthIn35mmFilm`` when every image
+    with a focal length carries it, else ``FocalLength x 36 / sensor
+    width`` (the registry's ``sensor_size_mm``). ``focal_override_mm``
+    replaces the EXIF focal length as the starting value (converted from
+    the sensor width the same way).
+
+    Without an override, FocalRefused when the EXIF focal lengths (or their
+    35 mm-equivalents) of the images differ by more than
+    FOCAL_SPREAD_TOLERANCE_MM, or when an image carries no EXIF focal
+    length: RealityScan would then get no single starting focal.
+    """
+    if focal_override_mm is not None and (
+            isinstance(focal_override_mm, bool)
+            or not isinstance(focal_override_mm, (int, float))
+            or not (math.isfinite(focal_override_mm) and focal_override_mm > 0)):
+        raise ValueError(f'focal override must be a positive number of '
+                         f'millimetres, got {focal_override_mm!r}')
+    geometries = list(geometries)
+    with_focal = [g for g in geometries if g.focal_mm is not None]
+    missing = len(geometries) - len(with_focal)
+    exif_mm = exif_35mm = exif_35mm_from = None
+    if with_focal:
+        focals = [g.focal_mm for g in with_focal]
+        films = [g.focal_35mm_film for g in with_focal
+                 if g.focal_35mm_film is not None]
+        every_film = len(films) == len(with_focal)
+        if focal_override_mm is None:
+            _check_spread(camera, focals, 'focal length')
+            if every_film:
+                _check_spread(camera, films, '35 mm-equivalent focal length')
+        exif_mm = float(statistics.median(focals))
+        if every_film:
+            exif_35mm = float(statistics.median(films))
+            exif_35mm_from = 'FocalLengthIn35mmFilm'
+        else:
+            exif_35mm = focal_35mm_from_sensor(camera, exif_mm)
+            exif_35mm_from = (f'FocalLength x {FILM_WIDTH_MM:g} / sensor width '
+                              f'{camera.sensor_size_mm[0]:g} mm')
+    if focal_override_mm is not None:
+        starting = focal_35mm_from_sensor(camera, float(focal_override_mm))
+        source = 'override'
+        focal_override_mm = float(focal_override_mm)
+    elif missing or exif_35mm is None:
+        raise FocalRefused(
+            f'{camera.key}: {missing} of {len(geometries)} image(s) carry no '
+            'EXIF focal length, so RealityScan would get no starting focal '
+            'for them. Pass the focal length explicitly (--w_focal_override, '
+            'mm)')
+    else:
+        starting, source = exif_35mm, 'exif'
+    return ObservedFocal(camera.key, exif_mm, exif_35mm, exif_35mm_from,
+                         len(geometries), missing, focal_override_mm,
+                         starting, source)
 
 
 # ------------------------------------------------------------ sidecars
@@ -281,28 +433,53 @@ def _num(value: float) -> str:
     return '0' if text in ('', '-0') else text
 
 
-def sidecar_xmp(camera: Camera, mode: str) -> str:
-    """Exact sidecar text for ``camera`` in ``mode`` ('prior' or 'groups')."""
+def _check_focal(camera: Camera, focal_35mm) -> float:
+    if focal_35mm is None or isinstance(focal_35mm, bool) \
+            or not isinstance(focal_35mm, (int, float)) \
+            or not (math.isfinite(focal_35mm) and focal_35mm > 0):
+        raise ValueError(
+            f'{camera.key}: a groups sidecar needs the starting 35 mm-'
+            f'equivalent focal length, got {focal_35mm!r}')
+    return float(focal_35mm)
+
+
+def sidecar_xmp(camera: Camera, mode: str,
+                focal_35mm: float | None = None) -> str:
+    """Exact sidecar text for ``camera`` in ``mode`` ('prior' or 'groups').
+
+    ``groups`` needs ``focal_35mm``, the starting 35 mm-equivalent focal
+    (:func:`observe_focal`), which it writes as an initial (adjustable)
+    value; ``prior`` writes the calibration's own focal and ignores it.
+    """
     if mode not in SIDECAR_MODES:
         raise ValueError(f'mode {mode!r} writes no sidecar')
     if mode == 'groups':
+        return _sidecar_text(camera, mode,
+                             _num(_check_focal(camera, focal_35mm)))
+    return _sidecar_text(camera, mode, None)
+
+
+def _sidecar_text(camera: Camera, mode: str, focal_text: str | None) -> str:
+    if mode == 'groups':
         attributes = [
-            f'xcr:CalibrationGroup="{camera.calibration_group}"'
-            f' xcr:DistortionGroup="{camera.lens_distortion_group}"',
-            f'xcr:DistortionModel="{camera.distortion_model}"',
+            (f'xcr:CalibrationPrior="{_PRIOR_TOKEN["approximate"]}"'
+             f' xcr:CalibrationGroup="{camera.calibration_group}"'),
+            (f'xcr:DistortionGroup="{camera.lens_distortion_group}"'
+             f' xcr:DistortionModel="{camera.distortion_model}"'),
+            f'xcr:FocalLength35mm="{focal_text}" xcr:Skew="0"',
         ]
     else:
         coefficients = ' '.join(
             _num(c) for c in rs_distortion_coefficients(camera.opencv_distortion))
         attributes = [
-            f'xcr:CalibrationPrior="{_PRIOR_TOKEN[camera.calibration_prior]}"'
-            f' xcr:CalibrationGroup="{camera.calibration_group}"',
-            f'xcr:DistortionGroup="{camera.lens_distortion_group}"'
-            f' xcr:DistortionModel="{camera.distortion_model}"',
+            (f'xcr:CalibrationPrior="{_PRIOR_TOKEN[camera.calibration_prior]}"'
+             f' xcr:CalibrationGroup="{camera.calibration_group}"'),
+            (f'xcr:DistortionGroup="{camera.lens_distortion_group}"'
+             f' xcr:DistortionModel="{camera.distortion_model}"'),
             f'xcr:DistortionCoeficients="{coefficients}"',
             f'xcr:FocalLength35mm="{_num(camera.focal_length_35mm)}" xcr:Skew="0"',
-            f'xcr:AspectRatio="1"'
-            f' xcr:PrincipalPointU="{_num(camera.principal_point_u)}"',
+            ('xcr:AspectRatio="1"'
+             f' xcr:PrincipalPointU="{_num(camera.principal_point_u)}"'),
             f'xcr:PrincipalPointV="{_num(camera.principal_point_v)}"',
         ]
     lines = [
@@ -336,11 +513,45 @@ def _check_modes(modes: Mapping[str, str]) -> None:
                              f'{DECIDED_MODES}, got {mode!r}')
 
 
+_FOCAL_SLOT = '\x00'
+
+
+def _legacy_groups_xmp(camera: Camera) -> str:
+    """The ``groups`` sidecar this module wrote before it carried a focal
+    length; still recognised as the pipeline's own, so a re-run replaces or
+    removes it instead of treating it as foreign."""
+    return '\n'.join([
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/">',
+        '  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
+        '    <rdf:Description xcr:Version="4"',
+        (f'       xcr:CalibrationGroup="{camera.calibration_group}"'
+         f' xcr:DistortionGroup="{camera.lens_distortion_group}"'),
+        f'       xcr:DistortionModel="{camera.distortion_model}"',
+        f'       xmlns:xcr="{XCR_NAMESPACE}">',
+        '    </rdf:Description>',
+        '  </rdf:RDF>',
+        '</x:xmpmeta>',
+    ]) + '\n'
+
+
+def _groups_pattern(camera: Camera) -> re.Pattern[bytes]:
+    """The ``groups`` sidecar of ``camera`` with any starting focal."""
+    template = re.escape(
+        _sidecar_text(camera, 'groups', _FOCAL_SLOT).encode('utf-8'))
+    slot = re.escape(_FOCAL_SLOT.encode('utf-8'))
+    return re.compile(template.replace(slot, rb'(\d+(?:\.\d+)?)'))
+
+
 def is_own_sidecar(content: bytes, camera: Camera) -> bool:
     """True when ``content`` is byte for byte a sidecar this module writes
-    for ``camera`` (:func:`sidecar_xmp` in any sidecar-writing mode)."""
-    return any(content == sidecar_xmp(camera, mode).encode('utf-8')
-               for mode in SIDECAR_MODES)
+    for ``camera``: its ``prior`` sidecar, a ``groups`` sidecar with any
+    positive starting focal (:func:`sidecar_xmp`), or the earlier
+    ``groups`` form without a focal."""
+    if content in (sidecar_xmp(camera, 'prior').encode('utf-8'),
+                   _legacy_groups_xmp(camera).encode('utf-8')):
+        return True
+    match = _groups_pattern(camera).fullmatch(content)
+    return match is not None and float(match.group(1)) > 0
 
 
 def _free_path(path: str) -> str:
@@ -408,10 +619,15 @@ def move_foreign_sidecars(image_paths: Iterable[str],
 
 
 def write_sidecars(image_paths: Iterable[str],
-                   modes: Mapping[str, str]) -> list[tuple[str, str | None]]:
+                   modes: Mapping[str, str],
+                   focals: Mapping[str, float] | None = None
+                   ) -> list[tuple[str, str | None]]:
     """Write the decided sidecar beside each image.
 
-    ``modes`` maps camera key to its decided mode. Returns ``(image, xmp)``
+    ``modes`` maps camera key to its decided mode, ``focals`` camera key to
+    the starting 35 mm-equivalent focal of a ``groups`` camera (one without
+    it is refused, ValueError, before anything is written). Returns
+    ``(image, xmp)``
     pairs as absolute paths, sorted by image path; ``xmp`` is None for an
     image that gets no sidecar (mode ``off``, no decision, or a file of no
     known camera). Two images that would share one sidecar name are refused
@@ -432,7 +648,8 @@ def write_sidecars(image_paths: Iterable[str],
             raise ValueError(f'{claimed[key]} and {image} would share the '
                              f'sidecar {xmp}')
         claimed[key] = image
-        plan.append((image, xmp, sidecar_xmp(camera, mode)))
+        plan.append((image, xmp,
+                     sidecar_xmp(camera, mode, (focals or {}).get(camera.key))))
     for _image, xmp, text in plan:
         if xmp is not None:
             _write(xmp, text)
@@ -486,7 +703,8 @@ def write_rscmd(path: str, entries: Iterable[tuple[str, str | None]]) -> str:
 # -------------------------------------------------------------- hygiene
 
 def ensure_calibration_sidecars(image_root: str,
-                                modes: Mapping[str, str] | None = None
+                                modes: Mapping[str, str] | None = None,
+                                focals: Mapping[str, float] | None = None
                                 ) -> tuple[int, int]:
     """Write the decided sidecar for every image under ``image_root`` that
     has none.
@@ -494,7 +712,8 @@ def ensure_calibration_sidecars(image_root: str,
     RealityScan's pose exports overwrite ``<stem>.xmp`` and the identity
     harvest moves them away, leaving those images without their sidecar;
     this puts the decided one back. Only cameras whose mode in ``modes`` is
-    ``prior`` or ``groups`` get one; with no modes nothing is written.
+    ``prior`` or ``groups`` get one (``groups`` with its starting focal from
+    ``focals``); with no modes nothing is written.
 
     Returns (created, images of no known camera).
     """
@@ -517,7 +736,8 @@ def ensure_calibration_sidecars(image_root: str,
             mode = modes.get(camera.key)
             if mode not in SIDECAR_MODES:
                 continue
-            _write(os.path.join(root, sidecar), sidecar_xmp(camera, mode))
+            _write(os.path.join(root, sidecar),
+                   sidecar_xmp(camera, mode, (focals or {}).get(camera.key)))
             present.add(sidecar.lower())
             created += 1
     if created:
@@ -535,10 +755,10 @@ def remove_calibration_sidecars(image_root: str,
     """Remove this pipeline's calibration sidecars of cameras decided ``off``.
 
     A sidecar left by an earlier ``prior`` or ``groups`` run would still be
-    imported beside its image once calibration is off. Only a sidecar whose
-    text is exactly what :func:`sidecar_xmp` writes for that image's camera
-    is removed; any other sidecar of an ``off`` camera (a pose, an edited or
-    foreign file) is left in place and counted. Cameras of any other mode,
+    imported beside its image once calibration is off. Only a sidecar that
+    is byte for byte one this module writes for that image's camera
+    (:func:`is_own_sidecar`) is removed; any other sidecar of an ``off``
+    camera (a pose, an edited or foreign file) is left in place and counted. Cameras of any other mode,
     and images of no known camera, are never touched.
 
     Returns (removed, left in place).
@@ -562,10 +782,9 @@ def remove_calibration_sidecars(image_root: str,
             if sidecar is None:
                 continue
             path = os.path.join(root, sidecar)
-            with open(path, encoding='utf-8', errors='replace',
-                      newline='') as f:
+            with open(path, 'rb') as f:
                 content = f.read()
-            if content in (sidecar_xmp(camera, mode) for mode in SIDECAR_MODES):
+            if is_own_sidecar(content, camera):
                 os.remove(path)
                 del by_lower[sidecar.lower()]
                 removed += 1
@@ -575,7 +794,8 @@ def remove_calibration_sidecars(image_root: str,
 
 
 def sanitize_and_census(image_root: str,
-                        modes: Mapping[str, str] | None = None
+                        modes: Mapping[str, str] | None = None,
+                        focals: Mapping[str, float] | None = None
                         ) -> tuple[int, int, int]:
     """Count pose-bearing sidecars under ``image_root`` and remove their pose.
 
@@ -583,9 +803,10 @@ def sanitize_and_census(image_root: str,
     cameras get a pose), but a pose sidecar left beside an image becomes a
     pose prior on the next add of that image, so none may survive the
     census. Each one is rewritten to the decided calibration sidecar when
-    its camera's mode in ``modes`` is ``prior`` or ``groups``, and deleted
-    otherwise. Sidecars without a pose (including the ones this module
-    writes) are never touched.
+    its camera's mode in ``modes`` is ``prior`` or ``groups`` (``groups``
+    with its starting focal from ``focals``), and deleted otherwise.
+    Sidecars without a pose (including the ones this module writes) are
+    never touched.
 
     Returns (pose sidecars found, rewritten, deleted for no known camera);
     ordinal names (00000.xmp, written for imported components) are deleted
@@ -615,7 +836,8 @@ def sanitize_and_census(image_root: str,
             camera = camera_registry.identify(filename)
             mode = modes.get(camera.key) if camera is not None else None
             if mode in SIDECAR_MODES:
-                _write(path, sidecar_xmp(camera, mode))
+                _write(path, sidecar_xmp(camera, mode,
+                                         (focals or {}).get(camera.key)))
                 restored += 1
                 continue
             os.remove(path)

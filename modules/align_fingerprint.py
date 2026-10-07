@@ -125,7 +125,9 @@ def build_fingerprint(flight_log: str | None,
                       align_settings_xml: str | None,
                       min_component_size: int,
                       rs_executable: str | None = None,
-                      calibration: Mapping[str, str] | None = None) -> dict:
+                      calibration: Mapping[str, str] | None = None,
+                      starting_focals: Mapping[str, float] | None = None
+                      ) -> dict:
     """Identity of everything that determines a zone's aligned output.
 
     align_settings_xml is the RS_ALIGN_PARAMS override when set, else the
@@ -134,7 +136,8 @@ def build_fingerprint(flight_log: str | None,
     log and None when the zone aligned without one. ``calibration`` is the
     {camera: mode} map of a zone aligned with calibration sidecars; it is
     recorded only when given, so a zone aligned without sidecars keeps the
-    fingerprint it always had.
+    fingerprint it always had; likewise ``starting_focals``, the
+    {camera: starting 35 mm-equivalent focal} its groups sidecars carry.
     """
     frame = ("utm" if (flight_log and utm_zone_from_flight_log_name(flight_log))
              else None)
@@ -150,6 +153,8 @@ def build_fingerprint(flight_log: str | None,
     }
     if calibration is not None:
         fp["calibration"] = dict(sorted(calibration.items()))
+    if starting_focals is not None:
+        fp["starting_focal_35mm"] = dict(sorted(starting_focals.items()))
     if rs_executable and os.path.isfile(rs_executable):
         st = os.stat(rs_executable)
         fp["realityscan"] = {"path": os.path.abspath(rs_executable),
@@ -197,6 +202,11 @@ def diff_fingerprints(old: dict | None, new: dict) -> list[str]:
         changes.append(
             f"calibration delivery changed: {old.get('calibration') or 'none'}"
             f" -> {new.get('calibration') or 'none'}")
+    if old.get("starting_focal_35mm") != new.get("starting_focal_35mm"):
+        changes.append(
+            "starting focal of the groups sidecars changed: "
+            f"{old.get('starting_focal_35mm') or 'none'} -> "
+            f"{new.get('starting_focal_35mm') or 'none'}")
     return changes
 
 

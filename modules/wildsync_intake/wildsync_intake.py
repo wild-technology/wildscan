@@ -93,6 +93,20 @@ class WildSyncIntake(RSModule):
             prompt_user=False
         )
 
+        additional_params['ws_focal_override_mm'] = Parameter(
+            name='Focal Length Override (mm)',
+            cli_short='w_fo',
+            cli_long='w_focal_override',
+            type=float,
+            default_value=None,
+            description=('Lens focal length in millimetres to use for every '
+                         'image of both cameras instead of the EXIF focal '
+                         'length (unset = the EXIF focal length). RealityScan '
+                         'starts from it and refines it; needed when the EXIF '
+                         'focal is missing or changes within a camera'),
+            prompt_user=False
+        )
+
         additional_params['ws_declination_deg'] = Parameter(
             name='Magnetic Declination (deg)',
             cli_short='w_d',
@@ -257,7 +271,8 @@ class WildSyncIntake(RSModule):
                                     defaults.time_err_warn_ms),
             calibration=str(self._value(
                 'ws_calibration', defaults.calibration)).strip().lower(),
-            focal_asserted=bool(assert_focal))
+            focal_asserted=bool(assert_focal),
+            focal_override_mm=number('ws_focal_override_mm', None))
 
     def run_paths(self) -> list[str]:
         return split_run_paths(self._value('ws_run_dirs', ''))
@@ -287,6 +302,10 @@ class WildSyncIntake(RSModule):
             'Static Fix': manifest['static_fix'],
             'Calibration': {key: decision['mode'] for key, decision
                             in manifest['calibration'].items()},
+            'Starting Focal 35mm': {
+                key: f'{decision["starting_focal_35mm"]:.3f} '
+                     f'({decision["starting_focal_source"]})'
+                for key, decision in manifest['calibration'].items()},
             'Warnings': len(manifest['warnings']),
             'Manifest': result.manifest_path,
         }

@@ -36,7 +36,12 @@ version.** The following are not validated against RealityScan:
   measured OpenCV k1, k2 are passed in a sidecar;
 - whether the stored calibration applies to a given capture;
 - that the `-execRSCMD` command-file mode of `AlignZone.bat` imports the
-  images and their sidecars as written.
+  images and their sidecars as written;
+- whether RealityScan honours an `initial` `xcr:FocalLength35mm` written next
+  to the calibration and distortion group ids in a `groups` sidecar, starting
+  each camera's focal there and refining it;
+- whether RealityScan reads the EXIF focal length from the preprocessed
+  copies (the only focal it gets with calibration `off`).
 
 The [first-run validation checklist](docs/validation/ILX-LR1_first_run_checklist.md)
 covers each of them. Passing offline tests do not establish reconstruction
