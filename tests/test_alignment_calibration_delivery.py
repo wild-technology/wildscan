@@ -3,8 +3,10 @@
 The alignment module reads the per-camera calibration decision from the
 Wild Sync intake manifest. For ``prior`` / ``groups`` it writes the
 decided sidecar beside every image of that camera and an ``.rscmd`` that
-AlignZone.bat executes instead of ``-addFolder``; for ``off`` (or no
-manifest) the zone is aligned exactly as without calibration delivery.
+AlignZone.bat executes instead of ``-addFolder``; a ``groups`` sidecar
+carries the starting focal the intake observed on the camera's images.
+For ``off`` (or no manifest) the zone is aligned exactly as without
+calibration delivery.
 
 No RealityScan: ``run_batch_script`` is stubbed for the module tests, and
 the AlignZone.bat execution tests run the real script next to stub
@@ -39,6 +41,15 @@ LOG_HEADER = 'filename;X (East);Y (North);Alt\n'
 FRAMES = ('20260820_192542.42', '20260820_192545.42', '20260820_192548.42')
 POSE_SIDECAR = ('<x:xmpmeta><rdf:Description xcr:Version="3" '
                 'xcr:Position="1 2 3"/></x:xmpmeta>\n')
+# Starting 35 mm-equivalent focals as the intake records them: cam1 29 mm
+# from EXIF FocalLengthIn35mmFilm, cam2 24 mm converted from the sensor
+# width (24 x 36 / 35.7).
+FOCALS = {'ilx_left': 29.0, 'ilx_right': 24.0 * 36 / 35.7}
+
+
+def _xmp(camera, mode: str) -> str:
+    """The sidecar the alignment writes for ``camera`` in ``mode``."""
+    return sidecar_xmp(camera, mode, FOCALS[camera.key])
 
 
 class Capture(logging.Handler):
@@ -87,9 +98,10 @@ def _workspace(tmp_path: Path, modes: dict[str, str] | None,
     raw.mkdir(parents=True)
     if modes is not None:
         manifest = {
-            'schema': 1, 'status': 'complete',
+            'schema': 2, 'status': 'complete',
             'calibration': {key: {'camera': key, 'mode': mode,
-                                  'reason': 'test'}
+                                  'reason': 'test',
+                                  'starting_focal_35mm': FOCALS[key]}
                             for key, mode in modes.items()},
         }
         (raw / 'wildsync_intake.json').write_text(json.dumps(manifest),
@@ -204,7 +216,7 @@ def test_sidecars_and_command_file_exist_when_the_script_runs(
     for image in _images(ws):
         camera = camera_registry.identify(image.name)
         if modes[camera.key] in ('prior', 'groups'):
-            expected[image.name[:-len('.JPG')] + '.xmp'] = sidecar_xmp(
+            expected[image.name[:-len('.JPG')] + '.xmp'] = _xmp(
                 camera, modes[camera.key])
     assert seen['sidecars'] == expected
     # After the run the same decided sidecars are still there.
@@ -252,12 +264,14 @@ def test_off_and_no_manifest_align_exactly_as_before(tmp_path, monkeypatch,
     assert _sidecars(ws) == {}
     assert not list((ws / 'aligned_components').rglob('*.rscmd'))
     zone = str(ws / 'batched_images_by_zone' / 'zone_1')
-    assert hygiene == [('sanitize', (zone, None)), ('ensure', (zone, None)),
-                       ('ensure', (zone, None))]
+    assert hygiene == [('sanitize', (zone, None, None)),
+                       ('ensure', (zone, None, None)),
+                       ('ensure', (zone, None, None))]
     fingerprint = json.loads(
         (ws / 'aligned_components' / 'zone_1' / 'align_inputs.json')
         .read_text(encoding='utf-8'))
     assert 'calibration' not in fingerprint
+    assert 'starting_focal_35mm' not in fingerprint
 
 
 def test_no_manifest_with_camera_named_images_says_calibration_is_off(
@@ -292,11 +306,25 @@ def test_a_missing_manifest_fails_when_the_intake_is_part_of_the_run(
 
 @pytest.mark.parametrize('content', [
     '{not json',
-    json.dumps({'schema': 1, 'status': 'partial', 'calibration': {}}),
+    json.dumps({'schema': 2, 'status': 'partial', 'calibration': {}}),
+    json.dumps({'schema': 2, 'status': 'complete',
+                'calibration': {'ilx_left': {'mode': 'locked',
+                                             'starting_focal_35mm': 29.0}}}),
+    json.dumps({'schema': 2, 'status': 'complete',
+                'calibration': {'some_camera': {'mode': 'groups',
+                                                'starting_focal_35mm': 29.0}}}),
+    # A schema-1 manifest predates the observed focal.
     json.dumps({'schema': 1, 'status': 'complete',
-                'calibration': {'ilx_left': {'mode': 'locked'}}}),
-    json.dumps({'schema': 1, 'status': 'complete',
-                'calibration': {'some_camera': {'mode': 'groups'}}}),
+                'calibration': {'ilx_left': {'mode': 'groups'}}}),
+    # A camera without a usable starting focal.
+    json.dumps({'schema': 2, 'status': 'complete',
+                'calibration': {'ilx_left': {'mode': 'groups'}}}),
+    json.dumps({'schema': 2, 'status': 'complete',
+                'calibration': {'ilx_left': {'mode': 'groups',
+                                             'starting_focal_35mm': 0}}}),
+    json.dumps({'schema': 2, 'status': 'complete',
+                'calibration': {'ilx_left': {'mode': 'off',
+                                             'starting_focal_35mm': None}}}),
 ])
 def test_an_unusable_manifest_fails_before_anything_is_aligned(
         tmp_path, monkeypatch, logs, content):
@@ -400,7 +428,7 @@ def test_hygiene_restores_and_never_deletes_the_decided_sidecars(
     for image in _images(ws):
         camera = camera_registry.identify(image.name)
         text = sidecars[image.name[:-len('.JPG')] + '.xmp']
-        assert text == sidecar_xmp(camera, modes[camera.key]), image.name
+        assert text == _xmp(camera, modes[camera.key]), image.name
         assert 'xcr:Position' not in text
 
 
@@ -419,7 +447,31 @@ def test_a_stale_sidecar_of_another_form_is_replaced_before_the_run(
         tmp_path, monkeypatch, ws, logging.getLogger('align-calibration-test'),
         on_run=lambda args: seen.update(_sidecars(ws)), min_size=2)
     module.run()
-    assert seen[name] == sidecar_xmp(left, 'groups')
+    assert seen[name] == _xmp(left, 'groups')
+
+
+def test_a_groups_sidecar_of_an_earlier_starting_focal_is_rewritten(
+        tmp_path, monkeypatch, logs):
+    """The pipeline's own groups sidecar with another starting focal (an
+    earlier intake), or in the form without a focal, is replaced with the
+    current one - not moved aside as foreign."""
+    modes = {'ilx_left': 'groups', 'ilx_right': 'groups'}
+    ws = _workspace(tmp_path, modes)
+    left = camera_registry.CAMERAS['ilx_left']
+    first, second = [p for p in _images(ws)
+                     if camera_registry.identify(p.name) is left][:2]
+    _sidecar_of(first).write_bytes(
+        sidecar_xmp(left, 'groups', 16.0).encode('utf-8'))
+    _sidecar_of(second).write_bytes(
+        calibration_sidecars._legacy_groups_xmp(left).encode('utf-8'))
+    seen = {}
+    module, _calls = _module(
+        tmp_path, monkeypatch, ws, logging.getLogger('align-calibration-test'),
+        on_run=lambda args: seen.update(_sidecars(ws)), min_size=2)
+    assert module.run()['Success'] is True
+    for image in (first, second):
+        assert seen[_sidecar_of(image).name] == _xmp(left, 'groups')
+    assert not (ws / PRE_EXISTING).exists()
 
 
 def _sidecar_of(image: Path) -> Path:
@@ -449,7 +501,7 @@ def test_a_foreign_pose_sidecar_is_moved_aside_before_the_run(
     moved = ws / PRE_EXISTING / foreign.relative_to(zone)
     assert moved.read_bytes() == POSE_SIDECAR.encode('utf-8')
     camera = camera_registry.identify(image.name)
-    assert seen[foreign.name] == sidecar_xmp(camera, modes[camera.key])
+    assert seen[foreign.name] == _xmp(camera, modes[camera.key])
     warnings = [m for m in logs.messages if 'pre-existing' in m]
     assert len(warnings) == 1, logs.messages
     assert '1 pre-existing sidecar(s)' in warnings[0]
@@ -471,7 +523,7 @@ def test_own_stale_sidecar_of_another_mode_is_replaced_not_moved(
                              min_size=2)
     assert module.run()['Success'] is True
     assert _sidecar_of(image).read_text(encoding='utf-8') == \
-        sidecar_xmp(camera, 'groups')
+        _xmp(camera, 'groups')
     assert not (ws / PRE_EXISTING).exists()
     assert not any('pre-existing' in m for m in logs.messages), logs.messages
 
@@ -638,7 +690,7 @@ def test_hygiene_reports_an_unreadable_sidecar(tmp_path, monkeypatch, caplog):
                 {os.path.normcase(str(locked))})
     with caplog.at_level(logging.WARNING, logger='modules.calibration_sidecars'):
         calibration_sidecars.sanitize_and_census(str(tmp_path),
-                                                 {'ilx_left': 'groups'})
+                                                 {'ilx_left': 'groups'}, FOCALS)
     assert locked.exists()
     assert any('1 sidecar(s) could not be read' in r.getMessage()
                and str(locked) in r.getMessage() for r in caplog.records), \
@@ -695,7 +747,7 @@ def test_switching_calibration_off_removes_its_earlier_sidecars(
     for image in _images(ws):
         camera = camera_registry.identify(image.name)
         if after[camera.key] in ('prior', 'groups'):
-            expected[image.name[:-len('.JPG')] + '.xmp'] = sidecar_xmp(
+            expected[image.name[:-len('.JPG')] + '.xmp'] = _xmp(
                 camera, after[camera.key])
     expected[own.name] = '<x:xmpmeta/>\n'
     assert seen == expected
@@ -709,13 +761,105 @@ def test_fingerprint_records_calibration_only_when_given(tmp_path):
     plain = align_fingerprint.build_fingerprint(None, None, str(params), 50)
     calibrated = align_fingerprint.build_fingerprint(
         None, None, str(params), 50,
-        calibration={'ilx_right': 'groups', 'ilx_left': 'prior'})
+        calibration={'ilx_right': 'groups', 'ilx_left': 'prior'},
+        starting_focals={'ilx_right': 24.0})
     assert 'calibration' not in plain
+    assert 'starting_focal_35mm' not in plain
     assert calibrated['calibration'] == {'ilx_left': 'prior',
                                          'ilx_right': 'groups'}
+    assert calibrated['starting_focal_35mm'] == {'ilx_right': 24.0}
     assert align_fingerprint.diff_fingerprints(plain, plain) == []
     assert any('calibration delivery changed' in c for c in
                align_fingerprint.diff_fingerprints(plain, calibrated))
+    refocused = dict(calibrated, starting_focal_35mm={'ilx_right': 29.0})
+    assert align_fingerprint.diff_fingerprints(calibrated, refocused) == [
+        ("starting focal of the groups sidecars changed: {'ilx_right': 24.0} "
+         "-> {'ilx_right': 29.0}")]
+
+
+# ------------------------------------------------------- starting focal
+
+@pytest.mark.parametrize('modes', [
+    {'ilx_left': 'groups', 'ilx_right': 'groups'},
+    {'ilx_left': 'groups', 'ilx_right': 'prior'},
+])
+def test_the_manifest_starting_focal_reaches_every_groups_sidecar(
+        tmp_path, monkeypatch, logs, modes):
+    """The intake's observed focal goes, unchanged, from the manifest into
+    the groups sidecar of every image of that camera as an initial focal;
+    a prior camera keeps the calibration's focal. The fingerprint records
+    the starting focal of the groups cameras."""
+    ws = _workspace(tmp_path, modes)
+    seen = {}
+    module, _calls = _module(
+        tmp_path, monkeypatch, ws, logging.getLogger('align-calibration-test'),
+        on_run=lambda args: seen.update(_sidecars(ws)), min_size=2)
+    assert module.run()['Success'] is True
+    left = camera_registry.CAMERAS['ilx_left']
+    right = camera_registry.CAMERAS['ilx_right']
+    for image in _images(ws):
+        camera = camera_registry.identify(image.name)
+        text = seen[_sidecar_of(image).name]
+        if modes[camera.key] == 'groups':
+            focal = {'ilx_left': '29', 'ilx_right': '24.2016806723'}[camera.key]
+            assert f'xcr:FocalLength35mm="{focal}" xcr:Skew="0"' in text
+            assert 'xcr:CalibrationPrior="initial"' in text
+        else:
+            assert text == sidecar_xmp(right, 'prior')
+            assert 'xcr:FocalLength35mm="17.72584"' in text
+    fingerprint = json.loads(
+        (ws / 'aligned_components' / 'zone_1' / 'align_inputs.json')
+        .read_text(encoding='utf-8'))
+    assert fingerprint['starting_focal_35mm'] == {
+        key: FOCALS[key] for key, mode in modes.items() if mode == 'groups'}
+    assert any('ilx_left=groups (starting focal 29 mm 35mm-eq.)' in m
+               for m in logs.messages), logs.messages
+    assert left.key in fingerprint['calibration']
+
+
+def test_a_changed_starting_focal_is_reported_on_a_rerun(tmp_path,
+                                                         monkeypatch, logs):
+    ws = _workspace(tmp_path, {'ilx_left': 'groups', 'ilx_right': 'groups'})
+    module, _calls = _module(tmp_path, monkeypatch, ws,
+                             logging.getLogger('align-calibration-test'),
+                             min_size=2)
+    assert module.run()['Success'] is True
+    manifest = ws / 'raw_images' / 'wildsync_intake.json'
+    data = json.loads(manifest.read_text(encoding='utf-8'))
+    data['calibration']['ilx_left']['starting_focal_35mm'] = 28.0
+    manifest.write_text(json.dumps(data), encoding='utf-8')
+    seen = {}
+    module, _calls = _module(
+        tmp_path, monkeypatch, ws, logging.getLogger('align-calibration-test'),
+        on_run=lambda args: seen.update(_sidecars(ws)), min_size=2)
+    assert module.run()['Success'] is True
+    assert any('RETRY WITH CHANGED INPUTS' in m and 'starting focal of the '
+               'groups sidecars changed' in m for m in logs.messages), \
+        logs.messages
+    left = camera_registry.CAMERAS['ilx_left']
+    image = next(p for p in _images(ws)
+                 if camera_registry.identify(p.name) is left)
+    assert seen[_sidecar_of(image).name] == sidecar_xmp(left, 'groups', 28.0)
+
+
+def test_a_groups_camera_without_a_starting_focal_aligns_nothing(
+        tmp_path, monkeypatch, logs):
+    """__align_zone refuses a groups camera with no starting focal before
+    anything is written (the manifest reader refuses it earlier still)."""
+    ws = _workspace(tmp_path, {'ilx_left': 'groups', 'ilx_right': 'groups'})
+    module, calls = _module(tmp_path, monkeypatch, ws,
+                            logging.getLogger('align-calibration-test'),
+                            min_size=2)
+    monkeypatch.setattr(
+        module, 'intake_calibration',
+        lambda: ({'ilx_left': 'groups', 'ilx_right': 'groups'},
+                 {'ilx_left': 29.0}))
+    output = module.run()
+    assert output['Success'] is False
+    _assert_nothing_aligned(ws, calls)
+    errors = [c.get('Error', '') for c in output['Components'].values()]
+    assert any('No starting focal for camera(s) ilx_right' in e
+               for e in errors), errors
 
 
 # ---------------------------------------------------------- small dataset
@@ -946,4 +1090,6 @@ def test_module_reads_the_manifest_from_the_workspace_raw_images(tmp_path):
     module.params = {'output_dir': _param('output_dir', str(ws))}
     assert module.intake_calibration_modes() == {'ilx_left': 'prior',
                                                  'ilx_right': 'groups'}
+    assert module.intake_calibration() == (
+        {'ilx_left': 'prior', 'ilx_right': 'groups'}, FOCALS)
     assert ri_mod.MANIFEST_NAME == 'wildsync_intake.json'

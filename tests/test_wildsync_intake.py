@@ -8,9 +8,11 @@ Sync writes it), and edge rows (empty depth, empty heading_imu, empty pitch,
 a large time_err_ms). Pinned here: the golden combined flight log, the
 orientation and altitude functions, every fail-closed gate and every
 warn-only case of the intake, the calibration decision made from the
-original images (including the 2026-08-20 4752x3168 case), the module
-wrapper, and that preprocessing and batching keep names such as
-``Cam1_20260820_192542.42.card.JPG``.
+original images (including the 2026-08-20 4752x3168 case), the focal
+length observed on them and the starting focal recorded per camera (with
+the zoom-change refusal and the operator's override), the module wrapper,
+and that preprocessing and batching keep names such as
+``Cam1_20260820_192542.42.card.JPG`` and the images' EXIF.
 
 Offline; needs Pillow (and OpenCV for the preprocessing test).
 
@@ -55,10 +57,13 @@ RUN_ID = '260820_1925_transect-01'
 FRAMES = ('20260820_192542.42', '20260820_192542.92', '20260820_192543.42')
 X, Y = 294952.55, 4588707.83          # zone 19T, lat 41.4237752 lon -71.4537835
 
-# Card JPEGs with the 2026-08-20 aspect ratio (4752:3168 = 1.5) and EXIF
-# focal lengths, small enough to write quickly.
-AUG20_CARD = {'cam1': ((48, 32), 29.0), 'cam2': ((48, 32), 24.0)}
-CALIBRATED_CARD = {'cam1': ((1024, 750), 16.0), 'cam2': ((1024, 750), 16.0)}
+# Card JPEGs with the 2026-08-20 aspect ratio (4752:3168 = 1.5) and the
+# EXIF the ILX-LR1 writes: FocalLength and, the sensor being full-frame, an
+# equal FocalLengthIn35mmFilm. Small enough to write quickly. The review
+# JPEGs carry the same focal as the card JPEGs.
+AUG20_CARD = {'cam1': ((48, 32), 29.0, 29), 'cam2': ((48, 32), 24.0, 24)}
+CALIBRATED_CARD = {'cam1': ((1024, 750), 16.0, 16),
+                   'cam2': ((1024, 750), 16.0, 16)}
 REVIEW_SIZE = (32, 21)
 WILDSYNC_XMP = ('<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF '
                 'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
@@ -103,10 +108,13 @@ def write_log(path: Path, rows: list[dict], header: str = CSV_HEADER) -> None:
     path.write_bytes(('\r\n'.join(lines) + '\r\n').encode('utf-8'))
 
 
-def jpeg(path: Path, size, focal: float | None = None) -> None:
+def jpeg(path: Path, size, focal: float | None = None,
+         focal_35mm: int | None = None) -> None:
     exif = Image.Exif()
     if focal is not None:
         exif.get_ifd(0x8769)[0x920A] = focal
+    if focal_35mm is not None:
+        exif.get_ifd(0x8769)[0xA405] = focal_35mm
     Image.new('RGB', size, (40, 90, 120)).save(str(path), exif=exif)
 
 
@@ -127,7 +135,7 @@ def build_run(root: Path, name: str = RUN_ID, rows=None, card=None,
         node.mkdir()
         for frame in frames:
             stem = f'{cam.capitalize()}_{frame}'
-            jpeg(node / f'{stem}.jpg', REVIEW_SIZE)
+            jpeg(node / f'{stem}.jpg', REVIEW_SIZE, *card[cam][1:])
             jpeg(node / f'{stem}.card.JPG', *card[cam])
             (node / f'{stem}.ARW').write_bytes(b'II*\x00raw')
             (node / f'{stem}.xmp').write_text(WILDSYNC_XMP, encoding='utf-8')
@@ -293,7 +301,7 @@ def test_golden_intake_of_the_card_variant(run_dir, workspace):
 
     manifest = json.loads((raw / 'wildsync_intake.json').read_text('utf-8'))
     assert manifest == result.manifest
-    assert manifest['schema'] == 1 and manifest['status'] == 'complete'
+    assert manifest['schema'] == 2 and manifest['status'] == 'complete'
     assert manifest['variant'] == 'card'
     assert manifest['flight_log'] == 'flight_log_19T_UTM.txt'
     assert manifest['flight_log_rows'] == 6
@@ -326,7 +334,8 @@ def test_golden_intake_of_the_card_variant(run_dir, workspace):
     assert manifest['notices'] == [
         'lever arm not measured for ilx_left, ilx_right: zero offset used']
 
-    # calibration decided from the original card JPEGs
+    # calibration decided from the original card JPEGs, with the focal
+    # observed on them as the starting focal of the groups sidecars
     for key, focal in (('ilx_left', 29.0), ('ilx_right', 24.0)):
         decision = manifest['calibration'][key]
         assert decision['mode'] == 'groups' and decision['requested'] == 'auto'
@@ -334,8 +343,17 @@ def test_golden_intake_of_the_card_variant(run_dir, workspace):
         assert decision['exif_focals_mm'] == [focal]
         assert f'EXIF focal {focal:g} mm vs calibration 16 mm' in \
             decision['reason']
+        assert decision['exif_focal_mm'] == focal
+        assert decision['exif_focal_35mm'] == focal
+        assert decision['exif_focal_35mm_from'] == 'FocalLengthIn35mmFilm'
+        assert decision['images_without_exif_focal'] == 0
+        assert decision['focal_override_mm'] is None
+        assert decision['starting_focal_35mm'] == focal
+        assert decision['starting_focal_source'] == 'exif'
     assert intake.calibration_modes(intake.load_manifest(str(raw))) == {
         'ilx_left': 'groups', 'ilx_right': 'groups'}
+    assert intake.starting_focals(intake.load_manifest(str(raw))) == {
+        'ilx_left': 29.0, 'ilx_right': 24.0}
 
 
 def test_every_warn_only_case_is_warned_and_recorded(run_dir, workspace):
@@ -652,6 +670,14 @@ def test_calibrated_images_get_the_prior(tmp_path, workspace):
     assert intake.calibration_modes(result.manifest) == {
         'ilx_left': 'prior', 'ilx_right': 'prior'}
     assert not any('calibration' in w for w in result.manifest['warnings'])
+    # The prior sidecar carries the calibration's focal; the EXIF focal is
+    # still recorded.
+    for key in ('ilx_left', 'ilx_right'):
+        entry = result.manifest['calibration'][key]
+        assert entry['exif_focal_mm'] == 16.0
+        assert entry['starting_focal_35mm'] == \
+            camera_registry.CAMERAS[key].focal_length_35mm
+        assert entry['starting_focal_source'] == 'calibration'
 
 
 def _registry(tmp_path, confirmed: bool):
@@ -692,12 +718,129 @@ def test_an_explicit_prior_is_refused_for_the_wrong_aspect(run_dir, workspace):
                                        calibration='prior'))
 
 
-def test_off_reads_no_image_and_writes_no_warning(run_dir, workspace):
+def test_off_records_the_exif_focal_and_writes_no_warning(run_dir, workspace):
+    """With calibration off the images are still read: RealityScan takes
+    the focal from their EXIF, so it is recorded (and checked) here."""
     result = run_intake([str(run_dir)], str(workspace),
                         IntakeOptions(calibration='off'), log=QUIET)
-    for decision in result.manifest['calibration'].values():
-        assert decision['mode'] == 'off' and decision['image_sizes'] == []
+    for key, focal in (('ilx_left', 29.0), ('ilx_right', 24.0)):
+        decision = result.manifest['calibration'][key]
+        assert decision['mode'] == 'off'
+        assert decision['image_sizes'] == [[48, 32]]
+        assert decision['starting_focal_35mm'] == focal
+        assert decision['starting_focal_source'] == 'exif'
     assert not any('calibration' in w for w in result.manifest['warnings'])
+
+
+# ------------------------------------------------------ observed focal
+
+def _frames_with_focal(tmp_path, focals: dict[str, list]) -> Path:
+    """A run whose card JPEGs carry the given (FocalLength,
+    FocalLengthIn35mmFilm) per frame and camera."""
+    run = build_run(tmp_path / 'runs')
+    for cam, values in focals.items():
+        for frame, value in zip(FRAMES, values):
+            jpeg(run / cam / f'{cam.capitalize()}_{frame}.card.JPG', (48, 32),
+                 *value)
+    return run
+
+
+def test_a_zoom_change_within_one_camera_fails(tmp_path, workspace):
+    run = _frames_with_focal(tmp_path, {
+        'cam1': [(29.0, 29), (29.0, 29), (24.0, 24)]})
+    _refused([run], workspace,
+             'ilx_left: the EXIF focal length differs between images of one '
+             'camera: 24 mm and 29 mm')
+
+
+def test_a_focal_spread_within_the_tolerance_is_accepted(tmp_path, workspace):
+    run = _frames_with_focal(tmp_path, {
+        'cam1': [(29.0, 29), (29.4, 29), (29.2, 29)]})
+    result = run_intake([str(run)], str(workspace), log=QUIET)
+    entry = result.manifest['calibration']['ilx_left']
+    assert entry['exif_focal_mm'] == 29.2
+    assert entry['starting_focal_35mm'] == 29.0
+
+
+def test_an_image_without_an_exif_focal_fails(tmp_path, workspace):
+    run = _frames_with_focal(tmp_path, {'cam2': [(None, None)] + [(24.0, 24)] * 2})
+    _refused([run], workspace, 'ilx_right: 1 of 3 image.*no EXIF focal length')
+
+
+def test_without_the_35mm_tag_the_sensor_width_gives_the_starting_focal(
+        tmp_path, workspace):
+    run = _frames_with_focal(tmp_path, {'cam2': [(24.0, None)] * 3})
+    result = run_intake([str(run)], str(workspace), log=QUIET)
+    entry = result.manifest['calibration']['ilx_right']
+    assert entry['exif_focal_35mm'] == pytest.approx(24.0 * 36 / 35.7)
+    assert entry['exif_focal_35mm_from'] == \
+        'FocalLength x 36 / sensor width 35.7 mm'
+    assert entry['starting_focal_35mm'] == entry['exif_focal_35mm']
+
+
+def test_the_focal_override_replaces_the_exif_focal_and_is_recorded(
+        tmp_path, workspace):
+    """The override is the starting focal of both cameras, also where the
+    EXIF focal is missing or changes; the EXIF values stay recorded."""
+    run = _frames_with_focal(tmp_path, {
+        'cam1': [(29.0, 29), (29.0, 29), (24.0, 24)],
+        'cam2': [(None, None)] * 3})
+    result = run_intake([str(run)], str(workspace),
+                        IntakeOptions(focal_override_mm=28.0), log=QUIET)
+    for key in ('ilx_left', 'ilx_right'):
+        entry = result.manifest['calibration'][key]
+        assert entry['mode'] == 'groups'
+        assert entry['focal_override_mm'] == 28.0
+        assert entry['starting_focal_source'] == 'override'
+        assert entry['starting_focal_35mm'] == pytest.approx(28.0 * 36 / 35.7)
+        assert 'focal override 28 mm vs calibration 16 mm' in entry['reason']
+    assert result.manifest['calibration']['ilx_left']['exif_focals_mm'] == [
+        24.0, 29.0]
+    assert result.manifest['calibration']['ilx_right'][
+        'images_without_exif_focal'] == 3
+    assert intake.starting_focals(result.manifest) == pytest.approx({
+        'ilx_left': 28.0 * 36 / 35.7, 'ilx_right': 28.0 * 36 / 35.7})
+
+
+def test_a_focal_override_at_the_calibration_focal_allows_the_prior(
+        tmp_path, workspace):
+    card = {cam: ((1024, 750), 29.0, 29) for cam in ('cam1', 'cam2')}
+    run = build_run(tmp_path / 'runs', card=card)
+    result = run_intake([str(run)], str(workspace),
+                        IntakeOptions(focal_override_mm=16.0), log=QUIET)
+    assert intake.calibration_modes(result.manifest) == {
+        'ilx_left': 'prior', 'ilx_right': 'prior'}
+    assert result.manifest['calibration']['ilx_left'][
+        'starting_focal_source'] == 'calibration'
+
+
+@pytest.mark.parametrize('options,match', [
+    (IntakeOptions(focal_override_mm=0.0), 'focal override'),
+    (IntakeOptions(focal_override_mm=float('nan')), 'focal override'),
+    (IntakeOptions(focal_override_mm=24.0, focal_asserted=True), 'not both'),
+    (IntakeOptions(focal_override_mm=24.0, calibration='off'),
+     'calibration off writes none'),
+])
+def test_an_unusable_focal_override_fails(run_dir, workspace, options, match):
+    _refused([run_dir], workspace, match, options=options)
+
+
+def test_a_schema_1_manifest_is_refused_not_misread(tmp_path):
+    (tmp_path / 'wildsync_intake.json').write_text(json.dumps({
+        'schema': 1, 'status': 'complete',
+        'calibration': {'ilx_left': {'mode': 'groups'}}}), encoding='utf-8')
+    with pytest.raises(ValueError, match='schema-1.*Re-run Wild Sync Intake'):
+        intake.load_manifest(str(tmp_path))
+
+
+@pytest.mark.parametrize('entry', [{'mode': 'groups'},
+                                   {'mode': 'groups', 'starting_focal_35mm': 0},
+                                   {'mode': 'off', 'starting_focal_35mm': None},
+                                   {'mode': 'groups',
+                                    'starting_focal_35mm': True}])
+def test_a_camera_without_a_starting_focal_is_refused(entry):
+    with pytest.raises(ValueError, match='no usable starting focal'):
+        intake.starting_focals({'calibration': {'ilx_left': entry}})
 
 
 def test_an_unreadable_card_image_is_warned_not_fatal(run_dir, workspace):
@@ -741,6 +884,7 @@ def test_module_parameters_follow_the_conventions():
         'ws_run_dirs': ('w_i', None), 'ws_variant': ('w_v', 'card'),
         'ws_calibration': ('w_cal', 'auto'),
         'ws_assert_focal': ('w_af', False),
+        'ws_focal_override_mm': ('w_fo', None),
         'ws_declination_deg': ('w_d', 0.0),
         'ws_heading_source': ('w_hs', 'auto'),
         'ws_pos_accuracy_m': ('w_pa', 10.0),
@@ -768,6 +912,19 @@ def test_module_runs_the_intake(run_dir, workspace):
     assert result['Static Fix'] is True
     assert result['Calibration'] == {'ilx_left': 'groups',
                                      'ilx_right': 'groups'}
+    assert result['Starting Focal 35mm'] == {'ilx_left': '29.000 (exif)',
+                                             'ilx_right': '24.000 (exif)'}
+
+
+def test_module_passes_the_focal_override(run_dir, workspace):
+    module = _module(str(run_dir), workspace, ws_focal_override_mm=28.0)
+    assert module.intake_options().focal_override_mm == 28.0
+    assert module.validate_parameters() == (True, None)
+    result = module.run()
+    assert result['Success'] is True
+    assert result['Starting Focal 35mm']['ilx_left'] == '28.235 (override)'
+    assert _module(str(run_dir), workspace).intake_options() \
+        .focal_override_mm is None
 
 
 def test_module_reports_failure_instead_of_raising(run_dir, workspace):
@@ -782,6 +939,7 @@ def test_module_reports_failure_instead_of_raising(run_dir, workspace):
     ({'ws_variant': 'raw'}, 'RAW'),
     ({'ws_calibration': 'exact'}, 'calibration mode'),
     ({'ws_pos_accuracy_m': 'ten'}, 'position accuracy'),
+    ({'ws_focal_override_mm': -24.0}, 'focal override'),
 ])
 def test_module_validation_names_the_bad_parameter(run_dir, workspace, values,
                                                    match):
@@ -843,11 +1001,15 @@ def test_preprocessing_keeps_the_card_names(run_dir, workspace, monkeypatch):
     result = module.run()
     assert result['Success'] and result['Processed'] == 6, result
     out = workspace / 'preprocessed_images'
-    for cam, key in (('cam1', 'ilx_left'), ('cam2', 'ilx_right')):
+    for (cam, key), focal in zip((('cam1', 'ilx_left'), ('cam2', 'ilx_right')),
+                                 (29.0, 24.0)):
         assert sorted(os.listdir(out / key)) == sorted(_names(FRAMES, cam))
         for name in _names(FRAMES, cam):
             with Image.open(out / key / name) as image:
                 assert image.format == 'JPEG'
+                # The copy RealityScan aligns keeps the EXIF focal.
+                exif = image.getexif().get_ifd(0x8769)
+                assert (exif[0x920A], exif[0xA405]) == (focal, int(focal))
 
 
 def test_batching_matches_and_keeps_the_card_names(run_dir, workspace):
@@ -890,7 +1052,7 @@ def test_an_interrupted_copy_leaves_an_incomplete_marker(run_dir, workspace,
         run_intake([str(run_dir)], str(workspace), log=QUIET)
     raw = workspace / 'raw_images'
     marker = json.loads((raw / 'wildsync_intake.json').read_text('utf-8'))
-    assert marker['schema'] == 1 and marker['status'] == 'in_progress'
+    assert marker['schema'] == 2 and marker['status'] == 'in_progress'
     assert len(list(raw.rglob('*.card.JPG'))) == 2
     with pytest.raises(ValueError, match='did not finish'):
         intake.load_manifest(str(raw))
@@ -982,7 +1144,8 @@ def test_a_rerun_tolerates_the_pipelines_own_calibration_sidecars(
     from modules.calibration_sidecars import sidecar_xmp
     run_intake([str(run_dir)], str(workspace), log=QUIET)
     sidecar = _sidecar_beside(workspace)
-    own = sidecar_xmp(camera_registry.CAMERAS['ilx_left'], mode).encode('utf-8')
+    own = sidecar_xmp(camera_registry.CAMERAS['ilx_left'], mode,
+                      29.0).encode('utf-8')
     sidecar.write_bytes(own)
     result = run_intake([str(run_dir)], str(workspace), log=QUIET)
     assert result.manifest['images']['reused'] == 6
@@ -1000,11 +1163,11 @@ def test_a_rerun_refuses_any_other_sidecar(run_dir, workspace, content):
     sidecar = _sidecar_beside(workspace)
     if content == 'own sidecar of the other camera':
         content = sidecar_xmp(camera_registry.CAMERAS['ilx_right'],
-                              'groups').encode('utf-8')
+                              'groups', 24.0).encode('utf-8')
     elif content == 'own sidecar beside no planned image':
         sidecar = sidecar.with_name('Cam1_20990101_000000.00.card.xmp')
         content = sidecar_xmp(camera_registry.CAMERAS['ilx_left'],
-                              'groups').encode('utf-8')
+                              'groups', 29.0).encode('utf-8')
     sidecar.write_bytes(content)
     with pytest.raises(IntakeError, match='did not plan'):
         run_intake([str(run_dir)], str(workspace), log=QUIET)
