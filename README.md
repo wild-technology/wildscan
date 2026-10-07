@@ -123,7 +123,6 @@ camera. Details: [The ILX-LR1 stereo rig](docs/ILX-LR1.md).
 | Understand the rig, its calibration and conventions | [The ILX-LR1 stereo rig](docs/ILX-LR1.md) |
 | Validate a new installation on real data | [First-run validation checklist](docs/validation/ILX-LR1_first_run_checklist.md) |
 | Understand the code and the native execution rules | [Architecture](ARCHITECTURE.md) |
-| Look up a RealityScan command, setting or failure mode | [RealityScan reference](docs/rs-reference/README.md) |
 | Contribute a change | [Contributing](CONTRIBUTING.md) |
 
 ## Repository layout
