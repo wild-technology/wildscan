@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import os
 import shutil
@@ -45,6 +46,10 @@ SCENE_EXTENSIONS = ('.rsproj', '.rcproj')
 # Folder in a zone's output where sidecars this pipeline did not write are
 # moved before calibration sidecars are written beside the images.
 PRE_EXISTING_SIDECARS = 'pre_existing_sidecars'
+# Record, in a zone's output, of the components the identity loop captured
+# but the minimum component size set aside: {component: camera count}.
+BELOW_MIN_SIZE_RECORD = 'components_below_min_size.json'
+DEFAULT_MIN_COMPONENT_SIZE = 10
 
 
 def small_scene_min_component_size(configured: int, image_count: int) -> int:
@@ -59,6 +64,15 @@ def small_scene_min_component_size(configured: int, image_count: int) -> int:
     if image_count <= 0 or image_count >= configured:
         return configured
     return min(configured, max(2, math.ceil(image_count / 2)))
+
+
+def _census_text(sizes) -> str:
+    """'3 component(s) aligned, sizes 8, 5, 2 cameras' or the plain
+    statement that no component identity was captured."""
+    if not sizes:
+        return 'no component identity was captured'
+    counts = ', '.join(str(n) for n in sorted(sizes.values(), reverse=True))
+    return f'{len(sizes)} component(s) aligned, sizes {counts} cameras'
 
 
 class RealityScanAlignment(RSModule):
@@ -122,9 +136,13 @@ class RealityScanAlignment(RSModule):
             cli_short='r_mcs',
             cli_long='r_min_component_size',
             type=int,
-            default_value=50,
+            default_value=DEFAULT_MIN_COMPONENT_SIZE,
             description=('Smallest component (in cameras) exported after a '
-                         'zone align. A scene with fewer images than this '
+                         'zone align (owner decision 2026-10-07: 10 for the '
+                         'two-camera rig). Every component the scene holds is '
+                         'captured; the smaller ones are set aside and listed '
+                         'in components_below_min_size.json. A scene with '
+                         'fewer images than this '
                          'exports components holding at least half of its '
                          'images instead (never fewer than 2 cameras), so a '
                          'small dataset still exports when a few cameras fail '
@@ -222,7 +240,8 @@ class RealityScanAlignment(RSModule):
 
     def __align_zone(self, input_folder, output_folder, scene_name,
                      flight_log_path, flight_log_params_path,
-                     display_output=False, min_component_size=50,
+                     display_output=False,
+                     min_component_size=DEFAULT_MIN_COMPONENT_SIZE,
                      calibration_modes: Mapping[str, str] | None = None,
                      require_flight_log: bool = False,
                      starting_focals: Mapping[str, float] | None = None):
@@ -555,22 +574,11 @@ class RealityScanAlignment(RSModule):
         if not scene_success:
             self.logger.error(f'Project file "{scene_path}" was not created')
 
-        if not component_files:
-            self.logger.error(
-                'RealityScan finished, but no component of >= %d cameras '
-                '(threshold used for this scene; configured %d) was '
-                'exported for %s (%d image(s) in the scene): no group of that '
-                'many cameras aligned together. Check the alignment log %s; '
-                'to keep smaller components, lower Min Component Size '
-                '(--r_min_component_size).',
-                min_component_size, configured_min_component_size,
-                input_folder, len(image_paths), result.log_path)
-            return {'Success': False, 'Component Count': 0,
-                    'Registered Cameras': 0}, {'Success': scene_success}
-
         # Per-component identity: manifests built from the identity_c<K>
         # harvest folders written by AlignZone.bat's in-session loop (the
-        # only place stem-named sidecars exist).
+        # only place stem-named sidecars exist). The loop captures EVERY
+        # component (min size 1 in the script); the minimum component size
+        # is applied here, so the sizes are known before anything is judged.
         # The registration census = sum of manifest camera counts. A
         # manifest failure does not fail the zone: alignment succeeded and
         # manifests are bookkeeping, but errors are logged loudly because
@@ -579,6 +587,22 @@ class RealityScanAlignment(RSModule):
         if scene_success:
             manifest_paths = self.capture_component_identities(
                 input_folder, output_folder, scene_name, flight_log_path)
+        component_files, manifest_paths, sizes = self.__apply_min_component_size(
+            output_folder, scene_name, component_files, manifest_paths,
+            min_component_size)
+
+        if not component_files:
+            self.logger.error(
+                'RealityScan finished, but no component of >= %d cameras '
+                '(threshold used for this scene; configured %d) was '
+                'exported for %s (%d image(s) in the scene): %s. Check the '
+                'alignment log %s; to keep smaller components, lower Min '
+                'Component Size (--r_min_component_size).',
+                min_component_size, configured_min_component_size,
+                input_folder, len(image_paths), _census_text(sizes),
+                result.log_path)
+            return {'Success': False, 'Component Count': 0,
+                    'Registered Cameras': 0}, {'Success': scene_success}
         # Fingerprint travels with the exports: nav-aware resume
         # (align_fingerprint.matches_current) and merge-stage unanimity
         # checks key off this file, not off mere file existence.
@@ -601,10 +625,15 @@ class RealityScanAlignment(RSModule):
             except Exception as exc:
                 self.logger.warning('Could not read manifest %s: %s', mp, exc)
 
+        set_aside = {name: count for name, count in sizes.items()
+                     if count < min_component_size}
         self.logger.info(
             'Zone %s: %d component(s) exported, %d cameras registered '
-            '(census from %d manifest(s))',
-            scene_name, len(component_files), registered, len(manifest_paths))
+            '(census from %d manifest(s)); %d component(s) below %d cameras '
+            'set aside%s',
+            scene_name, len(component_files), registered, len(manifest_paths),
+            len(set_aside), min_component_size,
+            ': ' + _census_text(set_aside) if set_aside else '')
 
         component_data = {
             'Success': True,
@@ -616,9 +645,63 @@ class RealityScanAlignment(RSModule):
         scene_data = {'Success': scene_success, 'Scene Path': scene_path}
         return component_data, scene_data
 
-    # Bounded per-component identity loop: zones fragment into 2-5
-    # components; 20 is a generous ceiling against a pathological scene.
-    MAX_IDENTITY_COMPONENTS = 20
+    # Bounded per-component identity loop. The loop captures every
+    # component (the 2026-10-07 transect fragmented into 23), so the
+    # ceiling is a backstop against a pathological scene, not a target.
+    MAX_IDENTITY_COMPONENTS = 100
+
+    def __apply_min_component_size(self, output_folder, scene_name,
+                                   component_files, manifest_paths,
+                                   min_component_size):
+        """Keep the components of at least ``min_component_size`` cameras.
+
+        The identity loop captures every component, so each manifest's
+        camera count is known here. Components below the threshold are
+        removed from the zone output (their .rsalign and manifest), so the
+        merge stage never sees them, and recorded with their sizes in
+        ``components_below_min_size.json``; lowering --r_min_component_size
+        and re-aligning brings them back. A component without a manifest
+        (no identity harvest) is kept: its size is unknown, not small.
+        Returns (component files, manifest paths, {component: cameras}).
+        """
+        sizes = {}
+        by_manifest = {}
+        for mp in manifest_paths:
+            try:
+                manifest = component_manifest.load_manifest(mp)
+            except Exception as exc:
+                self.logger.warning('Could not read manifest %s: %s', mp, exc)
+                continue
+            name = manifest.get('component') or os.path.basename(mp)
+            sizes[name] = int(manifest.get('camera_count') or 0)
+            by_manifest[mp] = name
+        small = {name: count for name, count in sizes.items()
+                 if count < min_component_size}
+        if not small:
+            return component_files, manifest_paths, sizes
+        for name in sorted(small):
+            for suffix in COMPONENT_EXTENSIONS:
+                path = os.path.join(output_folder, name + suffix)
+                if os.path.isfile(path):
+                    os.remove(path)
+        for mp, name in by_manifest.items():
+            if name in small and os.path.isfile(mp):
+                os.remove(mp)
+        record = os.path.join(output_folder, BELOW_MIN_SIZE_RECORD)
+        with open(record, 'w', encoding='utf-8') as fh:
+            json.dump({'zone': scene_name,
+                       'min_component_size': min_component_size,
+                       'components': small}, fh, indent=2, sort_keys=True)
+        self.logger.warning(
+            'Zone %s: %d component(s) below %d cameras set aside (%s); '
+            'recorded in %s',
+            scene_name, len(small), min_component_size, _census_text(small),
+            record)
+        kept_files = [f for f in component_files
+                      if os.path.splitext(f)[0] not in small]
+        kept_manifests = [mp for mp in manifest_paths
+                          if by_manifest.get(mp) not in small]
+        return kept_files, kept_manifests, sizes
 
     def capture_component_identities(self, input_folder, output_folder,
                                      scene_name, flight_log_path):
@@ -1033,7 +1116,7 @@ class RealityScanAlignment(RSModule):
             scene_path = os.path.join(zone_output_dir, zone_name + ".rsproj")
 
             try:
-                min_comp = 50
+                min_comp = DEFAULT_MIN_COMPONENT_SIZE
                 if 'rs_min_component_size' in self.params:
                     min_comp = int(self.params['rs_min_component_size'].get_value())
                 component_data, scene_data = self.__align_zone(

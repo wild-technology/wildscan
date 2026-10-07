@@ -52,6 +52,11 @@ cameras captured with Wild Sync. This release is breaking.
 - Flight logs are imported in their UTM zone only.
 - The app's stage list and dataset selection follow the Wild Sync Intake
   chain.
+- The minimum component size for export is 10 cameras (was 50) and is
+  applied by the orchestrator after the identity loop has captured every
+  component, so a zone whose components are all too small reports how
+  many there were and how large; the small ones are removed from the
+  zone output and listed in `components_below_min_size.json`.
 - A zone with fewer images than the minimum component size exports
   components holding at least half of its images (at least 2 cameras),
   instead of requiring every image to register.
