@@ -23,10 +23,13 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from modules import calibration_sidecars as cs  # noqa: E402
-from modules import camera_registry  # noqa: E402
-from modules.calibration_sidecars import (CalibrationRefused,  # noqa: E402
-                                          ImageGeometry, decide_calibration)
+from modules import calibration_sidecars as cs
+from modules import camera_registry
+from modules.calibration_sidecars import (
+    CalibrationRefused,
+    ImageGeometry,
+    decide_calibration,
+)
 
 LEFT = camera_registry.CAMERAS['ilx_left']
 RIGHT = camera_registry.CAMERAS['ilx_right']
@@ -68,7 +71,27 @@ RIGHT_PRIOR = (
     '  </rdf:RDF>\n'
     '</x:xmpmeta>\n')
 
+# groups: the camera's own groups, Brown3, and the focal observed on the
+# images as an initial (adjustable) 35 mm-equivalent focal - here the
+# 2026-08-20 lenses, 29 mm (cam1) and 24 mm (cam2), whose EXIF
+# FocalLengthIn35mmFilm equals the lens focal on the full-frame ILX-LR1.
 LEFT_GROUPS = (
+    '<x:xmpmeta xmlns:x="adobe:ns:meta/">\n'
+    '  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n'
+    '    <rdf:Description xcr:Version="4"\n'
+    '       xcr:CalibrationPrior="initial" xcr:CalibrationGroup="7"\n'
+    '       xcr:DistortionGroup="7" xcr:DistortionModel="brown3"\n'
+    '       xcr:FocalLength35mm="29" xcr:Skew="0"\n'
+    '       xmlns:xcr="http://www.capturingreality.com/ns/xcr/1.1#">\n'
+    '    </rdf:Description>\n'
+    '  </rdf:RDF>\n'
+    '</x:xmpmeta>\n')
+
+RIGHT_GROUPS = LEFT_GROUPS.replace('"7"', '"8"').replace('"29"', '"24"')
+FOCALS = {'ilx_left': 29.0, 'ilx_right': 24.0}
+
+# The groups sidecar written before it carried a focal.
+LEFT_GROUPS_LEGACY = (
     '<x:xmpmeta xmlns:x="adobe:ns:meta/">\n'
     '  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n'
     '    <rdf:Description xcr:Version="4"\n'
@@ -78,8 +101,6 @@ LEFT_GROUPS = (
     '    </rdf:Description>\n'
     '  </rdf:RDF>\n'
     '</x:xmpmeta>\n')
-
-RIGHT_GROUPS = LEFT_GROUPS.replace('"7"', '"8"')
 
 POSE = '<x:xmpmeta><xcr:Position>1 2 3</xcr:Position></x:xmpmeta>'
 
@@ -167,9 +188,98 @@ def test_explicit_prior_refuses_an_unsafe_calibration(rig, geometries, match):
         decide_calibration(LEFT, rig, geometries, 'prior', focal_asserted=True)
 
 
+def test_a_focal_override_is_checked_in_place_of_the_exif_focal():
+    """The operator's focal replaces the EXIF focal in the decision; the
+    decision still records the EXIF focal lengths it saw."""
+    exif_29 = [ImageGeometry(4096, 3000, 29.0)]
+    decision = decide_calibration(LEFT, RIG, exif_29, focal_override_mm=16.0)
+    assert decision.mode == 'prior'
+    assert 'focal override matches 16 mm' in decision.reason
+    assert decision.exif_focals_mm == (29.0,)
+    decision = decide_calibration(LEFT, RIG, [CALIBRATED], focal_override_mm=24.0)
+    assert decision.mode == 'groups'
+    assert 'focal override 24 mm vs calibration 16 mm' in decision.reason
+
+
 def test_an_unknown_mode_is_refused():
     with pytest.raises(ValueError, match='calibration mode'):
         decide_calibration(LEFT, RIG, [CALIBRATED], 'locked')
+
+
+# -------------------------------------------------------- starting focal
+
+def _g(focal, film=None):
+    return ImageGeometry(4752, 3168, focal, film)
+
+
+def test_the_starting_focal_is_the_exif_35mm_equivalent():
+    observed = cs.observe_focal(LEFT, [_g(29.0, 29.0)] * 3)
+    assert observed.exif_focal_mm == 29.0
+    assert observed.exif_focal_35mm == 29.0
+    assert observed.exif_focal_35mm_from == 'FocalLengthIn35mmFilm'
+    assert observed.starting_focal_35mm == 29.0
+    assert observed.starting_focal_source == 'exif'
+    assert observed.images == 3 and observed.images_without_exif_focal == 0
+    assert observed.focal_override_mm is None
+    record = observed.as_dict()
+    assert json.loads(json.dumps(record)) == record
+    assert set(record) == {
+        'exif_focal_mm', 'exif_focal_35mm', 'exif_focal_35mm_from',
+        'images_without_exif_focal', 'focal_override_mm',
+        'starting_focal_35mm', 'starting_focal_source'}
+
+
+def test_without_the_35mm_tag_the_sensor_width_converts_the_focal():
+    """FocalLength x 36 / 35.7 mm (the registry's sensor width), also
+    when only some images carry FocalLengthIn35mmFilm."""
+    for geometries in ([_g(24.0)] * 2, [_g(24.0, 24.0), _g(24.0)]):
+        observed = cs.observe_focal(RIGHT, geometries)
+        assert observed.exif_focal_35mm == pytest.approx(24.0 * 36 / 35.7)
+        assert observed.exif_focal_35mm_from == \
+            'FocalLength x 36 / sensor width 35.7 mm'
+        assert observed.starting_focal_35mm == observed.exif_focal_35mm
+
+
+def test_a_small_focal_spread_takes_the_median():
+    observed = cs.observe_focal(LEFT, [_g(29.0, 29.0), _g(29.4, 29.0),
+                                       _g(29.2, 29.0)])
+    assert observed.exif_focal_mm == 29.2
+    assert observed.starting_focal_35mm == 29.0
+
+
+@pytest.mark.parametrize('geometries,match', [
+    ([_g(24.0, 24.0), _g(29.0, 29.0)], 'focal length differs.*24 mm and 29 mm'),
+    ([_g(24.0), _g(24.0), _g(25.0)], 'focal length differs.*24 mm and 25 mm'),
+    ([_g(29.0, 24.0), _g(29.0, 29.0)],
+     '35 mm-equivalent focal length differs.*24 mm and 29 mm'),
+])
+def test_a_zoom_change_within_one_camera_is_refused(geometries, match):
+    with pytest.raises(cs.FocalRefused, match=match) as caught:
+        cs.observe_focal(LEFT, geometries)
+    assert 'ilx_left' in str(caught.value)
+    assert '--w_focal_override' in str(caught.value)
+
+
+@pytest.mark.parametrize('geometries', [[_g(None)], [_g(29.0, 29.0), _g(None)],
+                                        []])
+def test_an_image_without_an_exif_focal_is_refused(geometries):
+    with pytest.raises(cs.FocalRefused, match='no EXIF focal length'):
+        cs.observe_focal(LEFT, geometries)
+
+
+@pytest.mark.parametrize('geometries', [
+    [_g(29.0, 29.0)], [_g(24.0), _g(29.0)], [_g(None)], []])
+def test_the_override_replaces_the_exif_focal(geometries):
+    observed = cs.observe_focal(LEFT, geometries, focal_override_mm=28.0)
+    assert observed.focal_override_mm == 28.0
+    assert observed.starting_focal_source == 'override'
+    assert observed.starting_focal_35mm == pytest.approx(28.0 * 36 / 35.7)
+
+
+@pytest.mark.parametrize('override', [0.0, -1.0, float('nan'), True, '28'])
+def test_a_bad_override_is_refused(override):
+    with pytest.raises(ValueError, match='focal override'):
+        cs.observe_focal(LEFT, [_g(29.0, 29.0)], focal_override_mm=override)
 
 
 # -------------------------------------------------------------- sidecars
@@ -180,11 +290,43 @@ def test_prior_sidecars_exact_text():
 
 
 def test_groups_sidecars_exact_text():
-    assert cs.sidecar_xmp(LEFT, 'groups') == LEFT_GROUPS
-    assert cs.sidecar_xmp(RIGHT, 'groups') == RIGHT_GROUPS
+    assert cs.sidecar_xmp(LEFT, 'groups', 29.0) == LEFT_GROUPS
+    assert cs.sidecar_xmp(RIGHT, 'groups', 24.0) == RIGHT_GROUPS
+    # A focal computed from the sensor width keeps its decimals.
+    assert cs.sidecar_xmp(LEFT, 'groups', 29 * 36 / 35.7) == LEFT_GROUPS.replace(
+        'FocalLength35mm="29"', 'FocalLength35mm="29.243697479"')
 
 
-@pytest.mark.parametrize('text', [LEFT_PRIOR, RIGHT_PRIOR, LEFT_GROUPS])
+@pytest.mark.parametrize('focal', [None, 0.0, -24.0, float('nan'),
+                                   float('inf'), True, '29'])
+def test_a_groups_sidecar_needs_a_starting_focal(focal):
+    with pytest.raises(ValueError, match='starting 35 mm-equivalent focal'):
+        cs.sidecar_xmp(LEFT, 'groups', focal)
+
+
+def test_the_prior_sidecar_ignores_the_starting_focal():
+    assert cs.sidecar_xmp(LEFT, 'prior', 29.0) == LEFT_PRIOR
+
+
+@pytest.mark.parametrize('content,own', [
+    (LEFT_PRIOR, True),
+    (LEFT_GROUPS, True),
+    (LEFT_GROUPS.replace('"29"', '"29.243697479"'), True),
+    (LEFT_GROUPS_LEGACY, True),
+    (RIGHT_GROUPS, False),                               # the other camera
+    (LEFT_GROUPS.replace('"29"', '"0"'), False),         # no focal
+    (LEFT_GROUPS.replace('"29"', '"-29"'), False),
+    (LEFT_GROUPS.replace('"29"', '"29mm"'), False),
+    (LEFT_GROUPS.replace('initial', 'exact'), False),
+    (LEFT_GROUPS.replace('\n', '\r\n'), False),            # not byte for byte
+    (LEFT_GROUPS + ' ', False),
+])
+def test_own_sidecars_are_recognised_whatever_their_focal(content, own):
+    assert cs.is_own_sidecar(content.encode('utf-8'), LEFT) is own
+
+
+@pytest.mark.parametrize('text', [LEFT_PRIOR, RIGHT_PRIOR, LEFT_GROUPS,
+                                  RIGHT_GROUPS])
 def test_sidecars_carry_no_pose_rig_or_fixed_prior(text):
     for absent in ('Position', 'Rotation', 'PosePrior', 'xcr:Rig', 'locked',
                    'exact', 'Camera:', 'xcr/1.0', 'approximate'):
@@ -221,7 +363,7 @@ def test_write_sidecars_writes_each_decided_form(tmp_path):
     images = _images(tmp_path, ['Cam2_b.card.JPG', 'Cam1_a.card.JPG',
                                 'other.jpg'])
     entries = cs.write_sidecars(images, {'ilx_left': 'prior',
-                                         'ilx_right': 'groups'})
+                                         'ilx_right': 'groups'}, FOCALS)
     root = os.path.abspath(str(tmp_path))
     assert entries == [
         (os.path.join(root, 'Cam1_a.card.JPG'), os.path.join(root, 'Cam1_a.card.xmp')),
@@ -243,8 +385,16 @@ def test_write_sidecars_writes_nothing_for_off_or_no_decision(tmp_path):
 def test_write_sidecars_refuses_a_shared_sidecar_name(tmp_path):
     images = _images(tmp_path, ['Cam1_a.jpg', 'Cam1_a.png'])
     with pytest.raises(ValueError, match='share the sidecar'):
-        cs.write_sidecars(images, {'ilx_left': 'groups'})
+        cs.write_sidecars(images, {'ilx_left': 'groups'}, FOCALS)
     assert not (tmp_path / 'Cam1_a.xmp').exists()
+
+
+def test_write_sidecars_refuses_groups_without_a_starting_focal(tmp_path):
+    images = _images(tmp_path, ['Cam1_a.jpg', 'Cam2_a.jpg'])
+    with pytest.raises(ValueError, match='ilx_right: a groups sidecar needs'):
+        cs.write_sidecars(images, {'ilx_left': 'groups', 'ilx_right': 'groups'},
+                          {'ilx_left': 29.0})
+    assert sorted(os.listdir(tmp_path)) == ['Cam1_a.jpg', 'Cam2_a.jpg']
 
 
 def test_write_sidecars_refuses_an_undecidable_mode(tmp_path):
@@ -265,7 +415,8 @@ def test_rscmd_exact_text_with_crlf(tmp_path):
         f'-addImageWithCalibration "{os.path.abspath(a)}" "{os.path.abspath(a_xmp)}"\r\n'
         f'-add "{os.path.abspath(b)}"\r\n'
         f'-add "{os.path.abspath(c)}"\r\n')
-    data = open(path, 'rb').read()
+    with open(path, 'rb') as stream:
+        data = stream.read()
     assert data == expected.encode('utf-8')
     assert data.count(b'\n') == data.count(b'\r\n') == 3
     assert path == os.path.abspath(str(tmp_path / 'add.rscmd'))
@@ -299,7 +450,7 @@ def test_rscmd_refuses_an_image_listed_twice(tmp_path):
 def test_sidecars_and_rscmd_together(tmp_path):
     images = _images(tmp_path, ['Cam1_a.jpg', 'Cam2_a.jpg'])
     entries = cs.write_sidecars(images, {'ilx_left': 'groups',
-                                         'ilx_right': 'off'})
+                                         'ilx_right': 'off'}, FOCALS)
     root = os.path.abspath(str(tmp_path))
     assert cs.rscmd_text(entries) == (
         f'-addImageWithCalibration "{os.path.join(root, "Cam1_a.jpg")}" '
@@ -334,7 +485,8 @@ def test_sanitize_rewrites_a_pose_sidecar_to_the_decided_form(tmp_path):
     (tmp_path / 'Cam1_a.xmp').write_text(POSE, encoding='utf-8')
     (tmp_path / 'Cam2_a.xmp').write_text(POSE, encoding='utf-8')
     assert cs.sanitize_and_census(
-        str(tmp_path), {'ilx_left': 'groups', 'ilx_right': 'prior'}) == (2, 2, 0)
+        str(tmp_path), {'ilx_left': 'groups', 'ilx_right': 'prior'},
+        FOCALS) == (2, 2, 0)
     assert (tmp_path / 'Cam1_a.xmp').read_text(encoding='utf-8') == LEFT_GROUPS
     assert (tmp_path / 'Cam2_a.xmp').read_text(encoding='utf-8') == RIGHT_PRIOR
 
@@ -362,19 +514,27 @@ def test_off_removes_only_this_pipelines_calibration_sidecars(tmp_path):
     pipeline did not write stays. Sidecars are written byte for byte as the
     pipeline writes them (LF line endings)."""
     _images(tmp_path, ['Cam1_a.jpg', 'Cam1_b.jpg', 'Cam1_c.jpg',
-                       'Cam1_d.jpg', 'Cam2_a.jpg', 'other.jpg'])
+                       'Cam1_d.jpg', 'Cam1_e.jpg', 'Cam1_f.jpg', 'Cam2_a.jpg',
+                       'other.jpg'])
     (tmp_path / 'Cam1_a.xmp').write_bytes(LEFT_PRIOR.encode())
     (tmp_path / 'Cam1_b.xmp').write_bytes(LEFT_GROUPS.encode())
     (tmp_path / 'Cam1_c.xmp').write_bytes(POSE.encode())
     (tmp_path / 'Cam1_d.xmp').write_text(LEFT_GROUPS.replace('"7"', '"9"'),
                                          encoding='utf-8')
+    # An earlier run's groups sidecar with another starting focal, and one
+    # in the form written before groups sidecars carried a focal.
+    (tmp_path / 'Cam1_e.xmp').write_bytes(
+        LEFT_GROUPS.replace('"29"', '"24.5"').encode())
+    (tmp_path / 'Cam1_f.xmp').write_bytes(LEFT_GROUPS_LEGACY.encode())
     (tmp_path / 'Cam2_a.xmp').write_bytes(RIGHT_GROUPS.encode())
     (tmp_path / 'other.xmp').write_bytes(LEFT_PRIOR.encode())
     removed, kept = cs.remove_calibration_sidecars(
         str(tmp_path), {'ilx_left': 'off', 'ilx_right': 'groups'})
-    assert (removed, kept) == (2, 2)
+    assert (removed, kept) == (4, 2)
     assert not (tmp_path / 'Cam1_a.xmp').exists()
     assert not (tmp_path / 'Cam1_b.xmp').exists()
+    assert not (tmp_path / 'Cam1_e.xmp').exists()
+    assert not (tmp_path / 'Cam1_f.xmp').exists()
     assert (tmp_path / 'Cam1_c.xmp').read_text(encoding='utf-8') == POSE
     assert (tmp_path / 'Cam1_d.xmp').exists()
     assert (tmp_path / 'Cam2_a.xmp').read_text(encoding='utf-8') == RIGHT_GROUPS
@@ -402,7 +562,19 @@ def test_read_image_geometry_reads_size_and_exif_focal(tmp_path):
     exif.get_ifd(0x8769)[0x920A] = 29.0
     image_mod.new('RGB', (64, 48)).save(str(tmp_path / 'Cam1_a.jpg'), exif=exif)
     image_mod.new('RGB', (40, 30)).save(str(tmp_path / 'Cam2_a.jpg'))
+    exif = image_mod.Exif()
+    exif.get_ifd(0x8769)[0x920A] = 24.0
+    exif.get_ifd(0x8769)[0xA405] = 24
+    image_mod.new('RGB', (48, 32)).save(str(tmp_path / 'Cam2_b.jpg'), exif=exif)
+    exif = image_mod.Exif()
+    exif.get_ifd(0x8769)[0x920A] = 0.0      # EXIF's "unknown"
+    exif.get_ifd(0x8769)[0xA405] = 0
+    image_mod.new('RGB', (48, 32)).save(str(tmp_path / 'Cam2_c.jpg'), exif=exif)
     assert cs.read_image_geometry(str(tmp_path / 'Cam1_a.jpg')) == \
         ImageGeometry(64, 48, 29.0)
     assert cs.read_image_geometry(str(tmp_path / 'Cam2_a.jpg')) == \
         ImageGeometry(40, 30, None)
+    assert cs.read_image_geometry(str(tmp_path / 'Cam2_b.jpg')) == \
+        ImageGeometry(48, 32, 24.0, 24.0)
+    assert cs.read_image_geometry(str(tmp_path / 'Cam2_c.jpg')) == \
+        ImageGeometry(48, 32, None, None)

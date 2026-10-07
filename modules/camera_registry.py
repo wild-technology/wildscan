@@ -27,9 +27,9 @@ import json
 import math
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Mapping
 
 SCHEMA_VERSION = 2
 

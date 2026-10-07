@@ -22,6 +22,7 @@ from ..wildsync_intake.intake import (
     RAW_IMAGES,
     calibration_modes,
     load_manifest,
+    starting_focals,
 )
 from .realityscan_cli import METADATA_DIR, RealityScanCLI, set_project_save_env
 
@@ -223,15 +224,19 @@ class RealityScanAlignment(RSModule):
                      flight_log_path, flight_log_params_path,
                      display_output=False, min_component_size=50,
                      calibration_modes: Mapping[str, str] | None = None,
-                     require_flight_log: bool = False):
+                     require_flight_log: bool = False,
+                     starting_focals: Mapping[str, float] | None = None):
         """Align one zone as one scene via AlignZone.bat and export ALL its
         components (>= min_component_size cameras) plus a registration
         census. No model generation here: models are built once, on the
         merged component (GenerateModel.bat).
 
         ``calibration_modes`` ({camera key: prior | groups | off}, from the
-        intake manifest): when any camera's mode writes a sidecar, the
-        decided sidecar is written beside every image of that camera, an
+        intake manifest) and ``starting_focals`` ({camera key: starting
+        35 mm-equivalent focal}, from the same manifest; a ``groups``
+        sidecar carries it as an initial focal): when any camera's mode
+        writes a sidecar, the decided sidecar is written beside every image
+        of that camera, an
         .rscmd that adds every image (with its sidecar where it has one) is
         written to the output folder, and AlignZone.bat adds the images by
         executing it instead of -addFolder. The sidecar hygiene after the
@@ -262,11 +267,24 @@ class RealityScanAlignment(RSModule):
         if not os.path.isdir(input_folder):
             raise ValueError(f"Input folder {input_folder} is not a directory")
 
-        sidecar_modes = None
+        sidecar_modes = sidecar_focals = None
         if calibration_modes and any(
                 mode in calibration_sidecars.SIDECAR_MODES
                 for mode in calibration_modes.values()):
             sidecar_modes = dict(calibration_modes)
+            # Only a groups sidecar carries the observed starting focal
+            # (a prior sidecar carries the calibration's own).
+            sidecar_focals = {
+                key: (starting_focals or {}).get(key)
+                for key, mode in sidecar_modes.items() if mode == 'groups'
+            } or None
+            missing = sorted(key for key, focal in (sidecar_focals or {}).items()
+                             if focal is None)
+            if missing:
+                raise ValueError(
+                    f'No starting focal for camera(s) {", ".join(missing)} '
+                    'decided groups: RealityScan would align them without a '
+                    'starting focal length. Re-run Wild Sync Intake.')
             if os.environ.get('RS_ALIGN_POOL_DIR'):
                 raise ValueError(
                     'Calibration sidecars cannot be delivered with the pool '
@@ -339,7 +357,8 @@ class RealityScanAlignment(RSModule):
                             or os.path.join(METADATA_DIR, 'AlignmentParams.xml')),
             min_component_size,
             rs_executable=self.cli.find_executable(),
-            calibration=sidecar_modes)
+            calibration=sidecar_modes,
+            starting_focals=sidecar_focals)
 
         if os.path.isdir(output_folder) and os.listdir(output_folder):
             prev_fp = align_fingerprint.read_fingerprint(output_folder)
@@ -480,7 +499,8 @@ class RealityScanAlignment(RSModule):
                 flight_log_params_path, scene_name, str(min_component_size)]
         if sidecar_modes:
             args.append(self.__write_calibration_inputs(
-                image_paths, output_folder, scene_name, sidecar_modes))
+                image_paths, output_folder, scene_name, sidecar_modes,
+                sidecar_focals))
 
         files_before = set(os.listdir(output_folder))
 
@@ -497,7 +517,7 @@ class RealityScanAlignment(RSModule):
         # modes, so they rewrite or restore exactly the sidecars written
         # before the run and never delete one of them.
         leftover, _restored, _removed = calibration_sidecars.sanitize_and_census(
-            hygiene_root, sidecar_modes)
+            hygiene_root, sidecar_modes, sidecar_focals)
         if leftover:
             self.logger.warning(
                 '%d pose sidecars were left beside the images (partial '
@@ -513,7 +533,7 @@ class RealityScanAlignment(RSModule):
         # skipped precisely when the operator re-runs, leaving images
         # ungrouped. Idempotent: (0, 0) on a complete tree.
         created, _no_camera = calibration_sidecars.ensure_calibration_sidecars(
-            hygiene_root, sidecar_modes)
+            hygiene_root, sidecar_modes, sidecar_focals)
         if created:
             self.logger.info(
                 'Restored %d calibration sidecar(s) displaced by the identity '
@@ -571,7 +591,8 @@ class RealityScanAlignment(RSModule):
         # this call covers the input folder when it differs from the
         # hygiene root.)
         calibration_sidecars.ensure_calibration_sidecars(input_folder,
-                                                         sidecar_modes)
+                                                         sidecar_modes,
+                                                         sidecar_focals)
 
         registered = 0
         for mp in manifest_paths:
@@ -759,17 +780,21 @@ class RealityScanAlignment(RSModule):
 
     def __write_calibration_inputs(self, image_paths: list[str],
                                    output_folder: str, scene_name: str,
-                                   modes: Mapping[str, str]) -> str:
+                                   modes: Mapping[str, str],
+                                   focals: Mapping[str, float] | None) -> str:
         """Write the decided sidecar beside each image and the .rscmd that
         adds every image of the scene; returns the .rscmd path."""
-        entries = calibration_sidecars.write_sidecars(image_paths, modes)
+        entries = calibration_sidecars.write_sidecars(image_paths, modes, focals)
         rscmd = calibration_sidecars.write_rscmd(
             os.path.join(output_folder, f'{scene_name}.rscmd'), entries)
         with_sidecar = sum(1 for _image, xmp in entries if xmp is not None)
         self.logger.info(
             'Calibration delivery for %s (%s): %d of %d image(s) added with a '
             'calibration sidecar, command file %s', scene_name,
-            ', '.join(f'{key}={mode}' for key, mode in sorted(modes.items())),
+            ', '.join(f'{key}={mode}'
+                      + (f' (initial focal {focals[key]:g} mm 35mm-eq.)'
+                         if focals and key in focals else '')
+                      for key, mode in sorted(modes.items())),
             with_sidecar, len(entries), rscmd)
         if with_sidecar < len(entries):
             self.logger.warning(
@@ -778,15 +803,17 @@ class RealityScanAlignment(RSModule):
                 len(entries) - with_sidecar, scene_name)
         return rscmd
 
-    def intake_calibration_modes(self) -> dict[str, str] | None:
-        """{camera key: decided calibration mode} from this workspace's Wild
-        Sync intake manifest, ``<output_dir>/raw_images/wildsync_intake.json``.
+    def intake_calibration(self) -> tuple[dict[str, str], dict[str, float]] | None:
+        """({camera key: decided calibration mode}, {camera key: starting
+        35 mm-equivalent focal}) from this workspace's Wild Sync intake
+        manifest, ``<output_dir>/raw_images/wildsync_intake.json``.
 
-        The decision is read, never recomputed: preprocessing writes images
-        without EXIF. Returns None when there is no manifest and the intake
-        is not part of this run. Raises ValueError when the manifest is
-        unreadable or incomplete, or missing although the intake is part of
-        this run.
+        Both are read, never recomputed: the intake decided them on the
+        original images the operator handed in. Returns None when there is
+        no manifest and the intake is not part of this run. Raises
+        ValueError when the manifest is unreadable, incomplete or of an
+        older schema, lacks a camera's starting focal, or is missing
+        although the intake is part of this run.
         """
         raw_dir = os.path.join(self.params['output_dir'].get_value(), RAW_IMAGES)
         manifest = load_manifest(raw_dir)
@@ -796,7 +823,13 @@ class RealityScanAlignment(RSModule):
                     f'Wild Sync Intake is part of this run but '
                     f'{os.path.join(raw_dir, MANIFEST_NAME)} does not exist')
             return None
-        return calibration_modes(manifest)
+        return calibration_modes(manifest), starting_focals(manifest)
+
+    def intake_calibration_modes(self) -> dict[str, str] | None:
+        """{camera key: decided calibration mode} from the intake manifest
+        (:meth:`intake_calibration`), or None without one."""
+        calibration = self.intake_calibration()
+        return None if calibration is None else calibration[0]
 
     def run(self):
         # Parameters are validated by the orchestrator before run()
@@ -821,10 +854,11 @@ class RealityScanAlignment(RSModule):
         # this run, fails the stage before anything is aligned: aligning
         # without the decided calibration would be a different run.
         try:
-            modes = self.intake_calibration_modes()
+            calibration = self.intake_calibration()
         except ValueError as exc:
             self.logger.error('%s - nothing was aligned.', exc)
             return {'Success': False}
+        modes, focals = calibration if calibration is not None else (None, None)
         manifest_path = os.path.join(self.params['output_dir'].get_value(),
                                      RAW_IMAGES, MANIFEST_NAME)
         # With an intake in the picture every zone must carry its flight
@@ -837,7 +871,10 @@ class RealityScanAlignment(RSModule):
         else:
             self.logger.info(
                 'Calibration delivery decided by %s: %s', manifest_path,
-                ', '.join(f'{key}={mode}' for key, mode in sorted(modes.items()))
+                ', '.join(f'{key}={mode} ('
+                          + (f'starting focal {focals[key]:g} mm 35mm-eq.'
+                             if key in focals else 'no starting focal') + ')'
+                          for key, mode in sorted(modes.items()))
                 or 'no cameras')
 
         process_data = []
@@ -1004,7 +1041,8 @@ class RealityScanAlignment(RSModule):
                     item_flight_log_path, item_flight_log_params_path,
                     item_display_output, min_component_size=min_comp,
                     calibration_modes=modes,
-                    require_flight_log=intake_present)
+                    require_flight_log=intake_present,
+                    starting_focals=focals)
                 output_data['Components'][zone_output_dir] = component_data
                 output_data['Scenes'][scene_path] = scene_data
             except Exception as e:
