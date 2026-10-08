@@ -137,7 +137,8 @@ class WildSyncIntake(RSModule):
             description=('X/Y position accuracy written for every image of a '
                          'run with a GPS track, in metres (the receiver '
                          'accuracy); a run whose position never moves (a '
-                         'static fix) gets no position at all'),
+                         'static fix) gets no position, and its empty '
+                         'position cells the 100 m no-position accuracy'),
             prompt_user=False
         )
 

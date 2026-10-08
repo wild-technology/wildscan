@@ -106,8 +106,9 @@ For any RealityScan command-line question, start at
 - `modules/flight_logs.py`: the 13-column flight-log writer, flight-log
   discovery (`find_flight_log`, the only way a stage locates a log), the UTM
   zone tag in the file name, the regenerated `FlightLogParams` XML
-  (`write_flight_log_params`), and the orientation convention
-  (`realityscan_orientation`).
+  (`write_import_params`: the log's UTM zone, or the local Euclidean system
+  for a log without a single position, with `NO_POSITION_ACCURACY_M`), and
+  the orientation convention (`realityscan_orientation`).
 
 **Processing modules**
 

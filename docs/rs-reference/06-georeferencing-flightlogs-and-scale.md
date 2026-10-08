@@ -150,6 +150,21 @@ Numbers are written with six decimals; a missing value is an empty cell, never 0
 name is the bare file name; line endings are LF. The header is skipped on import
 (`csvFLIgn=true`). [VERIFIED-by-inspection: `modules/flight_logs.py`]
 
+**An empty cell is not kept empty.** RealityScan stored every empty X, Y and Alt cell of an
+imported log as `absX`/`absY`/`absZ` = 0 with accuracy `absuX`/`absuY`/`absuZ` = 0 and
+`absPrior="pose"`, in the log's UTM zone — an exact prior at the zone origin, not "no prior".
+[VERIFIED: zone_1.rsproj, 20 Aug 1925 transect, RealityScan 2.2.0.119430, 2026-10-07]
+The repo's response (owner decision 2026-10-07): an image with an orientation prior but no
+position gets 100 m (`NO_POSITION_ACCURACY_M`) in the X and Y accuracy cells and, when it has no
+depth, in the Alt accuracy cell; the position cells stay empty. A row without orientation stays
+fully empty. A log without a single position is imported in the local Euclidean system
+(`FlightLogParams_Euclidean.xml`: `CoordinateSystemFlightLog` = `+proj=geocent +ellps=WGS84
++no_defs`, `CoordinateSystemFlightLogType` = `local:1 - Euclidean`; §3.1), and `AlignZone.bat` and
+`MergeZoneComponents.bat` set the scene to it with `-setProjectCoordinateSystem Local:1`, through
+the env var `RS_PROJECT_COORDINATE_SYSTEM` that the orchestrator sets for that script call only.
+A log mixing positioned and unpositioned rows stays UTM, and the intake warns.
+[VERIFIED-by-inspection: `modules/flight_logs.py`, `modules/wildsync_intake/intake.py`, 2026-10-07]
+
 ### 2.3 `flightlogs.xml` — the shipped reader definitions
 
 Path: `C:\Program Files\Epic Games\RealityScan_2.2\flightlogs.xml`. Structure
@@ -754,13 +769,16 @@ Values in force in this repo (`modules/cameras.json` defaults and mounts, Wild S
 parameters):
 
 ```python
-pos_x_acc = 10.0     # metres; 1000.0 when a run carries one static fix
-pos_y_acc = 10.0     # metres; 1000.0 when a run carries one static fix
-alt_acc   = 1.0      # metres
-yaw_acc   = 15.0     # degrees
-roll_acc  = 15.0     # degrees
-pitch_acc = 15.0     # degrees, per camera mount (families[].mount.pitch_accuracy_deg)
+pos_x_acc = 0.1      # metres (GPS receiver); 100.0 with an empty position (static fix or
+pos_y_acc = 0.1      #   no UTM position) when the image has an orientation prior, §2.2
+alt_acc   = 1.0      # metres; 100.0 when depth and position are both empty (orientation prior only)
+yaw_acc   = 10.0     # degrees
+roll_acc  = 10.0     # degrees
+pitch_acc = 10.0     # degrees, per camera mount (families[].mount.pitch_accuracy_deg)
 ```
+
+[VERIFIED-by-inspection: `modules/cameras.json` `rigs.ilx_lr1_stereo.prior_accuracy` and
+`modules/flight_logs.py` `NO_POSITION_ACCURACY_M`, 2026-10-07]
 
 - [OPEN] The intermediate accuracy ladder (3 / 3 / 0.5 and 5 / 5 / 1) was queued and never
   run. Loose is **proven**, not proven **optimal**. Each cell is a ~70-minute zone_1

@@ -37,6 +37,8 @@ setlocal enabledelayedexpansion
 ::          errors marker. The colon is converted to '=' here.
 ::
 :: Environment (set by merge_zones.py; env because %1-%9 are exhausted):
+::   RS_PROJECT_COORDINATE_SYSTEM - set (Local:1) when the union log carries
+::   no position; the new scene is set to that coordinate system.
 ::   RS_MERGE_FLIGHT_LOG / RS_MERGE_FLIGHT_LOG_PARAMS - union flight log
 ::   + CRS params for the merge scene. REQUIRED for a georeferenced
 ::   result: a merged component is a NEW component, and without
@@ -110,6 +112,13 @@ if errorlevel 1 exit /b 1
 
 echo Creating new scene
 call :run -newScene || goto :fail
+:: A flight log without a single position is imported in the local
+:: Euclidean system; the orchestrator then names the project coordinate
+:: system (RS_PROJECT_COORDINATE_SYSTEM, Local:1) so the scene uses it too.
+if defined RS_PROJECT_COORDINATE_SYSTEM if not "%RS_PROJECT_COORDINATE_SYSTEM%" == "" (
+    echo Setting project coordinate system %RS_PROJECT_COORDINATE_SYSTEM%
+    call :run -setProjectCoordinateSystem %RS_PROJECT_COORDINATE_SYSTEM% || goto :fail
+)
 
 echo Importing %component_count% components
 if defined list_mode (

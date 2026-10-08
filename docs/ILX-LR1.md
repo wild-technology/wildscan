@@ -483,8 +483,8 @@ filename;X (East);Y (North);Alt;X Accuracy;Y Accuracy;Alt Accuracy;Yaw;Pitch;Rol
 | Column | Source | Default accuracy |
 |---|---|---|
 | `filename` | the copied image's name | |
-| `X (East)`, `Y (North)` | `xutm`, `yutm` (plus the horizontal lever arm, zero while it is not measured); empty for a static fix | 0.1 m (`--w_pos_accuracy`, the GPS receiver's accuracy) |
-| `Alt` | `-abs(depth_from_xplore9)` minus the downward lever arm; empty when depth is empty | 1 m (`--w_alt_accuracy`) |
+| `X (East)`, `Y (North)` | `xutm`, `yutm` (plus the horizontal lever arm, zero while it is not measured); empty for a static fix | 0.1 m (`--w_pos_accuracy`, the GPS receiver's accuracy); 100 m when the cell is empty and the row carries an orientation |
+| `Alt` | `-abs(depth_from_xplore9)` minus the downward lever arm; empty when depth is empty | 1 m (`--w_alt_accuracy`); 100 m when the row has no position, no depth and an orientation |
 | `Yaw`, `Pitch`, `Roll` | [orientation convention](#orientation-convention) | yaw and roll 10 degrees (`--w_orientation_accuracy`); pitch from the mount, 10 degrees |
 
 The defaults come from the rig entry in `modules/cameras.json`
@@ -493,8 +493,15 @@ the rig; the `AlignmentParams.xml` fallback carries the same 10 degrees.
 
 A run is a static fix when every row's position lies within 1 m (bounding-box
 diagonal): one repeated position says nothing about where each camera was, so
-no position is written for its images and RealityScan gets no position prior
-(Batch Directory then puts every image in one zone). The August 2026 runs
+no position is written for its images (Batch Directory then puts every image in
+one zone). RealityScan does not keep an empty cell empty: in a saved project
+of the 20 Aug transect every empty X, Y and Alt cell was stored as 0 with
+accuracy 0. So an image with an orientation but no position gets 100 m in the
+accuracy cells of the position it lacks, and a log without a single position
+is imported in RealityScan's local Euclidean system (`local:1 - Euclidean`),
+with the scene set to `Local:1`; a log with positions stays in its UTM zone.
+The intake warns when one log mixes positioned and unpositioned images, since
+the unpositioned ones would sit at easting 0, northing 0 in UTM. The August 2026 runs
 carry the same static navigation fix on every row (the GPS feed was not
 recording) and empty depth, so their images are written with empty position
 and altitude cells and orientation priors only. The manifest records, under

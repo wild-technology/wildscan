@@ -341,7 +341,7 @@ Wild Sync Intake flags (defaults in brackets):
 | `--w_focal_override` | Lens focal length in mm used for every image of both cameras instead of the EXIF focal length; RealityScan starts from it and refines it. Needed when the EXIF focal is missing or changes within a camera; not with `--w_assert_focal` or `--w_calibration off` [unset: the EXIF focal] |
 | `--w_declination` | Magnetic declination in degrees, east positive, added to the heading [`0`] |
 | `--w_heading_source` | `auto` (`heading_imu`, else `yaw`), `heading_imu`, `yaw` or `heading_mag_xplore` [`auto`] |
-| `--w_pos_accuracy` | X/Y position accuracy in metres for a run with a GPS track (the receiver's accuracy); a run whose position never moves gets no position at all [`0.1`] |
+| `--w_pos_accuracy` | X/Y position accuracy in metres for a run with a GPS track (the receiver's accuracy); a run whose position never moves gets no position, and its images with an orientation get 100 m in the position accuracy cells (a log without any position is imported in the local Euclidean system) [`0.1`] |
 | `--w_alt_accuracy` | Altitude accuracy in metres for images with a depth; an image without depth gets no altitude [`1`] |
 | `--w_orientation_accuracy` | Yaw and roll accuracy in degrees; pitch accuracy comes from the mount, the same value by default [`10`] |
 | `--w_min_match_rate` | Fail below this percentage of matched frames; `0` disables [`80`] |

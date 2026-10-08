@@ -60,7 +60,7 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 from module_base.settings_store import SettingsStore, realityscan_env
 from modules import calibration_sidecars
-from modules.flight_logs import require_utm_zone, write_flight_log_params
+from modules.flight_logs import write_import_params
 from modules.realityscan_interface.realityscan_cli import (
     METADATA_DIR, RealityScanCLI, set_project_save_env)
 from modules.wildsync_intake.intake import workspace_calibration
@@ -439,25 +439,23 @@ def main() -> int:
     # GrowZone.bat via the environment.
     os.environ['RS_GROW_SELECT_CMDS'] = args.selection_cmds or 'editsel'
     # Per-step flight-log reload. Env-gated in GrowZone.bat: unset =
-    # legacy behavior, byte-identical. The params file is generated for
-    # the UTM zone the flight log's own filename names, as the align
-    # stage does.
+    # legacy behavior, byte-identical. The params file is generated as the
+    # align stage does: the UTM zone the flight log's own filename names,
+    # or the local Euclidean system for a log without a single position
+    # (the saved scene was set to it when it was aligned).
     if args.flight_log:
         if not os.path.isfile(args.flight_log):
             logger.error('--flight_log not found: %s', args.flight_log)
             return 1
+        template = args.flight_log_params or os.path.join(
+            METADATA_DIR, 'FlightLogParams.xml')
         try:
-            log_zone, log_band = require_utm_zone(args.flight_log)
+            params, _frame = write_import_params(template, logs_dir,
+                                                 args.flight_log)
         except ValueError as exc:
             logger.error('%s', exc)
             return 1
         os.environ['RS_GROW_FLIGHT_LOG'] = os.path.abspath(args.flight_log)
-        template = args.flight_log_params or os.path.join(
-            METADATA_DIR, 'FlightLogParams.xml')
-        params = write_flight_log_params(
-            template,
-            os.path.join(logs_dir, f'FlightLogParams_{log_zone}{log_band}.xml'),
-            log_zone, log_band)
         os.environ['RS_GROW_FLIGHT_LOG_PARAMS'] = os.path.abspath(params)
         logger.info('per-step flight-log reload: %s', args.flight_log)
     if args.lock_anchor:

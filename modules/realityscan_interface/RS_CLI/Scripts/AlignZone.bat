@@ -25,6 +25,9 @@ setlocal
 ::      line for the rest) instead of -addFolder. It cannot be combined
 ::      with the pool layout (RS_ALIGN_POOL_DIR).
 ::
+:: Environment (optional): RS_PROJECT_COORDINATE_SYSTEM, set by the
+:: orchestrator (Local:1) when the flight log carries no position.
+::
 :: Alignment settings ALWAYS come from Metadata\AlignmentParams.xml -
 :: never from instance defaults (an instance carries whatever the last
 :: GUI/CLI session set; aligning on unknown settings is not reproducible).
@@ -81,6 +84,13 @@ if errorlevel 1 exit /b 1
 
 echo Creating new scene
 call :run -newScene || goto :fail
+:: A flight log without a single position is imported in the local
+:: Euclidean system; the orchestrator then names the project coordinate
+:: system (RS_PROJECT_COORDINATE_SYSTEM, Local:1) so the scene uses it too.
+if defined RS_PROJECT_COORDINATE_SYSTEM if not "%RS_PROJECT_COORDINATE_SYSTEM%" == "" (
+    echo Setting project coordinate system %RS_PROJECT_COORDINATE_SYSTEM%
+    call :run -setProjectCoordinateSystem %RS_PROJECT_COORDINATE_SYSTEM% || goto :fail
+)
 
 if defined RS_ALIGN_POOL_DIR if not "%RS_ALIGN_POOL_DIR%" == "" goto :addViaList
 if not "%calibration_rscmd%" == "" goto :addViaRscmd

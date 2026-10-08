@@ -544,7 +544,7 @@ touching the canonical copy — the pattern to copy for any experiment.
 | **Producing dialog** | WORKFLOW ▸ Import Metadata ▸ Trajectory |
 | **Root** | `<Configuration id="{93DBD041-AE1C-4631-89BC-D9430FCED843}">` |
 | **Consumed by** | `-importFlightLog <log> <params.xml>`, `-importTrajectory <log> <params.xml>` |
-| **Repo file** | `RS_CLI/Metadata/FlightLogParams.xml` — **regenerated per run**, never used as-is |
+| **Repo file** | `RS_CLI/Metadata/FlightLogParams.xml` — **regenerated per run**, never used as-is. A log without a single position is imported with `FlightLogParams_Euclidean.xml` instead (`+proj=geocent +ellps=WGS84 +no_defs` / `local:1 - Euclidean`; `06-georeferencing-flightlogs-and-scale.md` §2.2) [VERIFIED-by-inspection: `modules/flight_logs.py`, 2026-10-07] |
 
 Complete file, as generated for SURVEY_D (UTM 57S):
 

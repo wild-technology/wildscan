@@ -49,7 +49,12 @@ cameras captured with Wild Sync. This release is breaking.
 - Alignment uses RealityScan's global Brown3 distortion model. The previous
   global setting was Division, with per-camera distortion supplied through XMP
   sidecars.
-- Flight logs are imported in their UTM zone only.
+- Flight logs with positions are imported in their UTM zone. A flight log
+  without a single position is imported in RealityScan's local Euclidean
+  system (`local:1 - Euclidean`), and AlignZone and the merge set the scene
+  to it (`-setProjectCoordinateSystem Local:1`): RealityScan stores an empty
+  position cell as 0 with accuracy 0, which in UTM put every camera at
+  easting 0, northing 0.
 - The app's stage list and dataset selection follow the Wild Sync Intake
   chain.
 - The minimum component size for export is 10 cameras (was 50) and is
@@ -79,9 +84,12 @@ cameras captured with Wild Sync. This release is breaking.
   accuracy), altitude 1 m, orientation 10 degrees for yaw, pitch and roll.
   The `defaults` block is gone and the `AlignmentParams.xml` fallback carries
   the same 10 degrees. (1.0.0 wrote 10 m and 15 degrees.)
-- A run whose position never moves (a static fix) gets no position prior:
-  its images are written with empty X/Y cells instead of the one repeated
-  position. `--w_static_pos_accuracy` is gone.
+- A run whose position never moves (a static fix) gets no position: its
+  images are written with empty X/Y cells instead of the one repeated
+  position. `--w_static_pos_accuracy` is gone. An image with an orientation
+  but no position gets 100 m accuracy in the X, Y and (without depth) Alt
+  accuracy cells; the intake warns when a log mixes positioned and
+  unpositioned images, since that log is still imported in UTM.
 - An image without depth gets no altitude prior (empty Alt cells) instead of
   altitude 0. `--w_surface_altitude` and `--w_surface_alt_accuracy` are
   gone. The manifest counts the images written without a position and

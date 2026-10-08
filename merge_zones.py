@@ -68,9 +68,10 @@ from modules import calibration_sidecars
 from modules import component_analysis
 from modules import component_manifest
 from modules import scale_oracle
-from modules.flight_logs import (assert_one_zone,
+from modules.flight_logs import (EUCLIDEAN_PROJECT_CS, assert_one_zone,
+                                 flight_log_frame,
                                  utm_zone_from_flight_log_name,
-                                 write_flight_log_params)
+                                 write_import_params)
 from modules.harvest_guard import assert_harvestable
 from modules.realityscan_interface.realityscan_cli import (
     RealityScanCLI, METADATA_DIR, set_project_save_env)
@@ -660,10 +661,9 @@ def build_union_flight_log(images_root: str, output_dir: str, logger,
     with open(union_path, 'w', encoding='utf-8', newline='\r\n') as f:
         f.write(header + '\n' + '\n'.join(rows.values()) + '\n')
 
-    params_path = write_flight_log_params(
-        os.path.join(METADATA_DIR, 'FlightLogParams.xml'),
-        os.path.join(output_dir, f'FlightLogParams_{zone}{band}.xml'),
-        zone, band)
+    params_path, _frame = write_import_params(
+        os.path.join(METADATA_DIR, 'FlightLogParams.xml'), output_dir,
+        union_path)
     logger.info('flight log%s: %d rows -> %s', suffix, len(rows), union_path)
     return union_path, params_path
 
@@ -721,6 +721,12 @@ def run_merge_workflow(cli: RealityScanCLI, complist_path: str, out_dir: str,
     else:
         os.environ.pop('RS_MERGE_FLIGHT_LOG', None)
         os.environ.pop('RS_MERGE_FLIGHT_LOG_PARAMS', None)
+    # A union log without a single position is imported in the local
+    # Euclidean system, and the new merge scene is set to it (only for this
+    # script call).
+    os.environ['RS_PROJECT_COORDINATE_SYSTEM'] = (
+        EUCLIDEAN_PROJECT_CS if flight_log_frame(flight_log) == 'euclidean'
+        else '')
     if harvest:
         os.environ['RS_MERGE_HARVEST'] = '1'
         os.environ['RS_MERGE_IMAGES_ROOT'] = images_root
@@ -728,7 +734,10 @@ def run_merge_workflow(cli: RealityScanCLI, complist_path: str, out_dir: str,
         os.environ.pop('RS_MERGE_HARVEST', None)
         os.environ.pop('RS_MERGE_IMAGES_ROOT', None)
     args = [complist_path, out_dir, name, mode, '1'] + settings
-    return cli.run_batch_script('MergeZoneComponents.bat', args, logs_dir)
+    try:
+        return cli.run_batch_script('MergeZoneComponents.bat', args, logs_dir)
+    finally:
+        os.environ.pop('RS_PROJECT_COORDINATE_SYSTEM', None)
 
 
 def peel_counts_from(out_dir: str) -> list[int]:
