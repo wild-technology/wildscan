@@ -36,10 +36,11 @@ SCHEMA_VERSION = 2
 CAMERAS_JSON = os.path.join(
     os.path.dirname(os.path.realpath(__file__)), 'cameras.json')
 
-# The pipeline aligns with RealityScan's global Brown3 model
-# (sfmDistortionModel is global and all-or-nothing, verified on an earlier
-# dataset), so a camera may only declare that model.
-DISTORTION_MODELS = frozenset({'brown3'})
+# The pipeline aligns with RealityScan's global Division model (owner,
+# 2026-10-07; sfmDistortionModel is global and all-or-nothing, verified on
+# an earlier dataset), so a camera may only declare that model. The
+# measured calibration (opencv_distortion_k1_k2_p1_p2_k3) stays Brown.
+DISTORTION_MODELS = frozenset({'division'})
 
 # 'approximate' = a starting value that alignment adjusts. The calibration
 # is never declared fixed: its conversion to RealityScan's coefficient and
@@ -61,7 +62,7 @@ class Camera:
     calibration_group: str                    # one per physical camera
     lens_distortion_group: str                # one per physical camera
     calibration_prior: str                    # 'approximate'
-    distortion_model: str                     # 'brown3'
+    distortion_model: str                     # 'division'
     calibration_image_size: tuple[int, int]   # (width, height) in pixels
     calibration_focal_mm: float               # lens focal length at calibration
     sensor_size_mm: tuple[float, float]       # (width, height) of the sensor
@@ -252,9 +253,11 @@ class _Loader:
         model = self.choice(spec, 'distortion_model', where, DISTORTION_MODELS)
         coefficients = self.numbers(
             spec, 'opencv_distortion_k1_k2_p1_p2_k3', where, 5)
-        if model == 'brown3' and (coefficients[2] or coefficients[3]):
+        if coefficients[2] or coefficients[3]:
             self.fail(f'{where}.opencv_distortion_k1_k2_p1_p2_k3',
-                      'brown3 has no tangential terms, but p1/p2 are non-zero')
+                      'the prior sidecar writes the measured calibration as '
+                      'Brown3, which has no tangential terms, but p1/p2 are '
+                      'non-zero')
         self.choice(spec, 'lens_distortion_prior', where, CALIBRATION_PRIORS)
         return Camera(
             key=key,

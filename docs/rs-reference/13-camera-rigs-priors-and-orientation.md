@@ -1835,13 +1835,15 @@ code and data files unless tagged otherwise.
 
 | Camera key | Wild Sync node | Eye | `CalibrationGroup` | `DistortionGroup` | Prior level | `FocalLength35mm` (prior mode) | `DistortionModel` | Calibration image | Calibration focal |
 |---|---|---|---:|---:|---|---:|---|---|---:|
-| `ilx_left` | `cam1` | L | `7` | `7` | `approximate` → `initial` | `17.72584` | `brown3` | 4096 × 3000 | 16 mm |
-| `ilx_right` | `cam2` | R | `8` | `8` | `approximate` → `initial` | `17.72584` | `brown3` | 4096 × 3000 | 16 mm |
+| `ilx_left` | `cam1` | L | `7` | `7` | `approximate` → `initial` | `17.72584` | `division` | 4096 × 3000 | 16 mm |
+| `ilx_right` | `cam2` | R | `8` | `8` | `approximate` → `initial` | `17.72584` | `division` | 4096 × 3000 | 16 mm |
 
 One calibration group and one lens-distortion group per physical camera (§4.3). The registry
-accepts only `brown3` and only the `approximate` prior level, and refuses non-zero tangential
-coefficients for `brown3`. Remember §5.4: the per-image `DistortionModel` is a hint; the global
-`sfmDistortionModel=Brown3` in `AlignmentParams.xml` decides.
+accepts only `division` (owner decision 2026-10-07; was `brown3`) and only the `approximate`
+prior level. The measured calibration (`calibration/ilx_lr1_stereo_dive_001.json`) stays Brown3
+(OpenCV `k1, k2, p1, p2, k3`), and the registry still refuses non-zero tangential coefficients
+(`p1`/`p2`) in it. Remember §5.4: the per-image `DistortionModel` is a hint; the global
+`sfmDistortionModel=Division` in `AlignmentParams.xml` decides.
 
 `approximate` is written as `xcr:CalibrationPrior="initial"`. [INFERRED: `initial` is the value
 in RealityScan's own sample sidecar; the documented token set is initial / exact / locked, §1]
@@ -1901,8 +1903,10 @@ stage reads the same answer), and the intake records it in
   the six-slot order of §5.3 (OpenCV `k1, k2, p1, p2, k3` written as `k1 k2 k3 0 p2 p1`), as an
   `initial` prior. Only when the node assignment is confirmed, every image's aspect ratio is
   within 1 % of 4096:3000, and every image's EXIF focal length is within 0.5 mm of 16 mm (or the
-  operator asserts it).
-- `groups` — `xcr:CalibrationGroup`, `xcr:DistortionGroup` and `xcr:DistortionModel`, plus the
+  operator asserts it), **and** the camera aligns with Brown3. Since 2026-10-07 both cameras
+  align with Division, so `prior` never applies: the Brown3 coefficients are never given to a
+  Division camera, and the decision falls back to `groups` with a warning.
+- `groups` — `xcr:CalibrationGroup`, `xcr:DistortionGroup` and `xcr:DistortionModel` (`"division"`), plus the
   starting focal as an `initial` `xcr:FocalLength35mm` with `xcr:Skew="0"` and
   `xcr:CalibrationPrior="initial"` (no principal point, no coefficients), so RealityScan starts
   each camera at its EXIF focal and solves its intrinsics separately. The fallback whenever `prior` does not
@@ -2014,7 +2018,7 @@ RealityScan.exe -delegateTo RS1 -importFlightLog ^
 
 :: 4. -align takes NO parameters in 2.x. Apply every sfm*/lis* key first.
 RealityScan.exe -delegateTo RS1 -set "sfmEnableCameraPrior=true"
-RealityScan.exe -delegateTo RS1 -set "sfmDistortionModel=Brown3"
+RealityScan.exe -delegateTo RS1 -set "sfmDistortionModel=Division"
 RealityScan.exe -delegateTo RS1 -set "sfmCameraPriorWeight=10.0"
 RealityScan.exe -delegateTo RS1 -set "sfmCameraPriorWeightOrientation=10.0"
 RealityScan.exe -delegateTo RS1 -set "sfmDetectorSensitivity=Ultra"

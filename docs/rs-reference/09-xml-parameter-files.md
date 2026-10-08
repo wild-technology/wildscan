@@ -481,7 +481,7 @@ Production values, all 35 entries:
 
 | Key | Value | Note |
 |---|---|---|
-| `sfmDistortionModel` | `Brown3` | **global and all-or-nothing** — a per-camera XMP distortion-model hint does **not** switch models per camera; on an earlier four-camera dataset every solved camera came back with the global model [VERIFIED: project testing 2026-07-26]. The file's own comment records this. Earlier datasets (fisheye cameras behind a dome) ran `Division` |
+| `sfmDistortionModel` | `Division` | owner decision 2026-10-07, was `Brown3` [VERIFIED-by-inspection: `AlignmentParams.xml`, 2026-10-07]. **Global and all-or-nothing** — a per-camera XMP distortion-model hint does **not** switch models per camera; on an earlier four-camera dataset every solved camera came back with the global model [VERIFIED: project testing 2026-07-26]. The file's own comment records this. Earlier datasets (fisheye cameras behind a dome) ran `Division` |
 | `sfmEnableCameraPrior` | `true` | the GUI's "use camera priors for georeferencing" |
 | `sfmCameraPriorWeight` | `10.0` | never A/B'd |
 | `sfmCameraPriorWeightOrientation` | `10.0` | never A/B'd |
@@ -525,7 +525,7 @@ Minimal working example (this is a complete, valid file):
 
 ```xml
 <Configuration id="{E377B69D-FB4B-4833-9CBE-FF747B7AF6D9}">
-  <entry key="sfmDistortionModel" value="Brown3"/>
+  <entry key="sfmDistortionModel" value="Division"/>
   <entry key="sfmEnableCameraPrior" value="true"/>
   <entry key="sfmDetectorSensitivity" value="Ultra"/>
   <entry key="sfmImagesOverlap" value="Medium"/>
@@ -1975,7 +1975,7 @@ and Python drivers in this checkout.
 
 | File | Type | Consumed by | What it sets / changes | Status |
 |---|---|---|---|---|
-| `AlignmentParams.xml` | alignment | `AlignZone.bat`, `GrowZone.bat` (parsed → `-set`, never passed as an argument); fingerprinted by `modules/align_fingerprint.py` | the production alignment config, §2.1; `sfmDistortionModel=Brown3` | **Production** |
+| `AlignmentParams.xml` | alignment | `AlignZone.bat`, `GrowZone.bat` (parsed → `-set`, never passed as an argument); fingerprinted by `modules/align_fingerprint.py` | the production alignment config, §2.1; `sfmDistortionModel=Division` (was `Brown3` until 2026-10-07) | **Production** |
 | `FlightLogParams.xml` | trajectory import | template for `modules/flight_logs.write_flight_log_params`, which writes a per-zone copy for `-importFlightLog` in `AlignZone.bat`, `GrowZone.bat` and `MergeZoneComponents.bat`; path supplied by `realityscan_interface.py`, `merge_zones.py`, `grow_zone.py` | 13-column format GUID + UTM CRS rewritten from the log's zone tag | **Production, generated** |
 | `XMPExportParams.xml` | XMP export | **nothing** | would enable merge / GPS / flags / calib-groups / rig, `xmpCamera=3` | **Unreferenced** |
 | `SimplifyNoise_Params.xml` | simplify | `GenerateModel.bat` | relative 70 %, `simplPreserveParts=2`, `simplEqualizeDensity=true` | **Production** — but a documented placeholder derived from the 50 % template |

@@ -143,8 +143,8 @@ and its alignment refines the focal from that starting value (see
 
 | Mode | What RealityScan receives |
 |---|---|
-| `prior` | the camera's own calibration and lens-distortion group, the Brown3 model, the calibration's 35 mm-equivalent focal length, the principal point and the measured distortion coefficients, as an initial (adjustable) prior |
-| `groups` | the camera's own calibration and lens-distortion group, the Brown3 model, and the focal length observed on the images as an initial (adjustable) 35 mm-equivalent focal; RealityScan solves each camera's intrinsics separately, starting from that focal |
+| `prior` | (a Brown3 camera only; the ILX-LR1 cameras align with Division and never get it) the camera's own calibration and lens-distortion group, the Brown3 model, the calibration's 35 mm-equivalent focal length, the principal point and the measured distortion coefficients, as an initial (adjustable) prior |
+| `groups` | the camera's own calibration and lens-distortion group, the Division model, and the focal length observed on the images as an initial (adjustable) 35 mm-equivalent focal; RealityScan solves each camera's intrinsics separately, starting from that focal |
 | `off` | no sidecars; RealityScan reads the focal length from the EXIF of the images it aligns (the preprocessed copies keep it) |
 
 The intake parameter `--w_calibration` chooses `auto` (default), `prior`,
@@ -302,7 +302,7 @@ observed 29 mm focal (EXIF `FocalLengthIn35mmFilm` 29):
   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
     <rdf:Description xcr:Version="4"
        xcr:CalibrationPrior="initial" xcr:CalibrationGroup="7"
-       xcr:DistortionGroup="7" xcr:DistortionModel="brown3"
+       xcr:DistortionGroup="7" xcr:DistortionModel="division"
        xcr:FocalLength35mm="29" xcr:Skew="0"
        xmlns:xcr="http://www.capturingreality.com/ns/xcr/1.1#">
     </rdf:Description>
@@ -313,7 +313,8 @@ observed 29 mm focal (EXIF `FocalLengthIn35mmFilm` 29):
 Without `FocalLengthIn35mmFilm` the same image gets
 `xcr:FocalLength35mm="29.243697479"` (29 x 36 / 35.7).
 
-`prior`, for `ilx_left`:
+`prior`, for a Brown3 copy of `ilx_left` (the form written before the
+cameras moved to Division, still recognised as the pipeline's own):
 
 ```xml
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
@@ -347,18 +348,21 @@ This is why the prior is never locked.
 
 ## Distortion model
 
-Alignment uses RealityScan's Brown3 model (three radial coefficients, no
-tangential terms). `sfmDistortionModel` is set to `Brown3` in
+Alignment uses RealityScan's single-parameter Division model (owner,
+2026-10-07). `sfmDistortionModel` is set to `Division` in
 `modules/realityscan_interface/RS_CLI/Metadata/AlignmentParams.xml`, which
 `AlignZone.bat` applies with `-set` before every alignment. The setting is
 global and all-or-nothing: a per-image `xcr:DistortionModel` in a sidecar does
 not override it. Verified on an earlier dataset: with the global model set to
 Division, sidecars that declared `brown3` were all exported back as
 `division`.
-The sidecars declare `brown3` to match.
+The sidecars declare `division` to match.
 
-The camera registry accepts only `brown3` and refuses a camera whose stored
-tangential coefficients (p1, p2) are non-zero.
+The camera registry accepts only `division`. The stored calibration was
+measured as Brown3 (OpenCV k1, k2, p1, p2, k3) and does not convert to
+Division, so the calibration decision gives these cameras `groups` and never
+`prior`; the registry still refuses stored tangential coefficients (p1, p2)
+that are non-zero.
 
 ## Wild Sync input
 

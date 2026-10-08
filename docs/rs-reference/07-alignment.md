@@ -484,7 +484,7 @@ Epic marks these as expert settings, not to be changed without understanding the
 | `sfmEnableAutoSuggestions` | bool | — | `true` | Suggests image measurements in the 3Ds view while placing control points. [OFFICIAL: prose] Key name [UNDOCUMENTED]. Irrelevant headless; left at the exporter's value. |
 | `sfmForceComponentRematch` | bool | `false` | `false` in pass-1 zone aligns; `true` on merge-ladder align rungs | Re-aligns using the existing camera poses to search for new matches and better connections. [OFFICIAL] A merge-stage tool — wasted per zone [VERIFIED-as-decision: project test records, 2026-07; `merge_zones.py` LADDERS]. |
 | `sfmMergeGeoreferencedComponents` | bool | `false` | `false` in pass-1 zone aligns; `true` on every merge-ladder rung | Lets georeferenced components merge without visual overlap. [OFFICIAL] See §3.8 — the documented capability was never observed headless. Deliberately `false` per zone so that per-zone components stay honest: auto-fusing disjoint pockets by georeference during a zone align would freeze bad geometry invisibly [VERIFIED-as-decision: project test records, 2026-07]. |
-| `sfmDistortionModel` | enum | `Brown3` | `Brown3` (earlier datasets: `Division`) | See §3.9. **Global and all-or-nothing.** |
+| `sfmDistortionModel` | enum | `Brown3` | `Division` (owner decision 2026-10-07; was `Brown3`) | See §3.9. **Global and all-or-nothing.** |
 | `lisPreferImagesAsFeatureSource` | bool | `true` | `false` | Z+F scans only: imports the `.zfprj` mosaic images as a feature source for alignment. [OFFICIAL] The only `lis*` key in the Help and the only one in the binary. No LiDAR in this pipeline; pinned `false` rather than left to the default. Its low-priority probe cell (E3) was never run [OPEN]. |
 
 ### 3.6 `sfmImagesOverlap` — a control whose direction is not settled
@@ -658,7 +658,7 @@ Any new align workflow must carry the replay block of `AlignZone.bat` verbatim.
 | 3 | `s251l` | `0.05` | no | `sfmControlPointXAccuracy` slot [INFERRED] |
 | 4 | `sfmMaxFeaturesPerImage` | `0xc350` | yes | = 50000 |
 | 5 | `sfmForceComponentRematch` | `false` | yes | merge-stage tool |
-| 6 | `sfmDistortionModel` | `Brown3` | yes | preceded in the file by an XML comment recording that the model is global and all-or-nothing |
+| 6 | `sfmDistortionModel` | `Division` (was `Brown3` until 2026-10-07) | yes | preceded in the file by an XML comment recording that the model is global and all-or-nothing |
 | 7 | `sfmCameraPriorAccuracyRoll` | `10.0` | yes | degrees |
 | 8 | `sfmMaxFeatureReprojectionError` | `1.29999995` | yes | px |
 | 9 | `sfmMaxFeaturesPerMpx` | `0x36b0` | yes | = 14000 |
