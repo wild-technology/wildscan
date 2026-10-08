@@ -12,10 +12,12 @@ stage produced them:
 Every consumer that needs to locate a flight log on disk must go through
 :func:`find_flight_log` so the naming conventions stay in one place.
 
-Every trajectory is imported in WGS84 UTM, in the zone named by the log's
-own filename tag (``flight_log_19T_UTM.txt``). A log whose name carries no
-zone tag can still be found, but it is refused wherever a trajectory is
-imported (:func:`require_utm_zone`).
+A trajectory with positions is imported in WGS84 UTM, in the zone named by
+the log's own filename tag (``flight_log_19T_UTM.txt``). A log whose name
+carries no zone tag can still be found, but it is refused wherever a
+trajectory is imported (:func:`require_utm_zone`). A log without a single
+position (orientation priors only) is imported in RealityScan's local
+Euclidean system instead (:func:`write_import_params`).
 
 The log format is RealityScan flight-log format
 ``{B438A617-2434-5A24-C1B7-58980F28345A}`` (``flightlogs.xml``): 13
@@ -151,7 +153,9 @@ def validate_utm_zone(zone, band) -> tuple[int, str]:
 
 
 def crs_for_flight_log(path: str | None) -> str | None:
-    """``'EPSG:32654'`` for a zone-tagged flight log, else None.
+    """``'EPSG:32654'`` for a zone-tagged flight log, else None. None also
+    for a log on disk without a single position: it was imported in the
+    local Euclidean system, so its exports are not in UTM.
 
     The publish path needs this: georeferenced OBJ/FBX exports carry raw
     UTM metres (ModelExportParamsOBJ_NiraParts sets
@@ -163,7 +167,31 @@ def crs_for_flight_log(path: str | None) -> str | None:
     zone_band = utm_zone_from_flight_log_name(path)
     if zone_band is None:
         return None
+    if os.path.isfile(path) and not flight_log_has_positions(path):
+        return None
     return f'EPSG:{epsg_for_utm_zone(*zone_band)}'
+
+
+def flight_log_has_positions(path: str) -> bool:
+    """True when at least one row of the flight log at ``path`` carries an
+    X (East) and a Y (North) cell. The first line is the header."""
+    with open(path, encoding='utf-8') as f:
+        next(f, None)
+        for line in f:
+            cells = line.rstrip('\r\n').split(';')
+            if len(cells) > 2 and cells[1].strip() and cells[2].strip():
+                return True
+    return False
+
+
+def flight_log_frame(path: str | None) -> str | None:
+    """``'utm'`` for a zone-tagged flight log with positions, ``'euclidean'``
+    for one without a single position, None without a zone-tagged log."""
+    if not path or utm_zone_from_flight_log_name(path) is None:
+        return None
+    if os.path.isfile(path) and not flight_log_has_positions(path):
+        return 'euclidean'
+    return 'utm'
 
 
 def epsg_for_utm_zone(zone: int, band: str) -> int:
@@ -171,6 +199,19 @@ def epsg_for_utm_zone(zone: int, band: str) -> int:
     zone, band = validate_utm_zone(zone, band)
     return (32700 if band in _SOUTH_BANDS else 32600) + zone
 
+
+# RealityScan's local Euclidean system: local.xml <cs id="1"
+# desc="Euclidean">, with the label RealityScan itself stores in a saved
+# project's appConfig.
+EUCLIDEAN_CRS = '+proj=geocent +ellps=WGS84 +no_defs'
+EUCLIDEAN_CRS_TYPE = 'local:1 - Euclidean'
+EUCLIDEAN_PROJECT_CS = 'Local:1'
+
+# Position and altitude accuracy (metres) of an image with an orientation
+# prior but no position (owner, 2026-10-07). RealityScan does not keep an
+# empty cell empty: it stores position 0 with accuracy 0, so the accuracy
+# is written explicitly to make that position a loose prior.
+NO_POSITION_ACCURACY_M = 100.0
 
 _WRONG_ZONE = (
     "a trajectory imported under the wrong coordinate system is placed in "
@@ -218,13 +259,50 @@ def write_flight_log_params(template_path: str, output_path: str,
     itself (:func:`require_utm_zone`), never a hand-edited template.
     """
     zone, band = validate_utm_zone(zone, band)
-    content = _read_params_template(template_path)
     epsg = epsg_for_utm_zone(zone, band)
     south = ' +south' if band in _SOUTH_BANDS else ''
     hemisphere = 'S' if south else 'N'
     proj = f'+proj=utm +zone={zone}{south} +datum=WGS84 +units=m +no_defs'
     crs_type = f'epsg:{epsg} - WGS 84 / UTM zone {zone}{hemisphere}'
+    return _write_params(template_path, output_path, proj, crs_type)
 
+
+def write_euclidean_flight_log_params(template_path: str,
+                                      output_path: str) -> str:
+    """Copy the FlightLogParams template with its coordinate-system pair
+    set to RealityScan's local Euclidean system. Returns output_path."""
+    return _write_params(template_path, output_path,
+                         EUCLIDEAN_CRS, EUCLIDEAN_CRS_TYPE)
+
+
+def write_import_params(template_path: str, output_dir: str,
+                        flight_log_path: str) -> tuple[str, str]:
+    """Generate the params XML a flight-log import needs; returns
+    (params path, frame).
+
+    A log with positions gets the UTM zone of its filename tag
+    (``FlightLogParams_<zone><band>.xml``, frame ``'utm'``). A log without a
+    single position gets the Euclidean system
+    (``FlightLogParams_Euclidean.xml``, frame ``'euclidean'``) and the
+    project must be set to :data:`EUCLIDEAN_PROJECT_CS`: RealityScan stores
+    an empty position cell as 0, so a no-position log imported in UTM
+    puts every camera at easting 0, northing 0. The zone tag is required
+    either way (:func:`require_utm_zone`).
+    """
+    zone, band = require_utm_zone(flight_log_path)
+    if flight_log_has_positions(flight_log_path):
+        return write_flight_log_params(
+            template_path,
+            os.path.join(output_dir, f'FlightLogParams_{zone}{band}.xml'),
+            zone, band), 'utm'
+    return write_euclidean_flight_log_params(
+        template_path,
+        os.path.join(output_dir, 'FlightLogParams_Euclidean.xml')), 'euclidean'
+
+
+def _write_params(template_path: str, output_path: str, proj: str,
+                  crs_type: str) -> str:
+    content = _read_params_template(template_path)
     content = re.sub(
         r'(<entry key="CoordinateSystemFlightLog" value=")[^"]*("/>)',
         lambda m: m.group(1) + proj + m.group(2), content)

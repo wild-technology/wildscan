@@ -1734,9 +1734,9 @@ distance-from-centroid, validated both directions (known-good 1.045 vs stem 1.02
 |---|---|---|
 | `sfmEnableCameraPrior` | `true` | required for georeferenced components [VERIFIED-as-decision] |
 | `sfmCameraPriorWeight` / `…WeightOrientation` | `10.0` / `10.0` | proven on this data class (dataset C zone_13 93.4 %); fallback 1.0 never exercised [VERIFIED-as-in-use; OPEN: never A/B'd] |
-| flight-log position accuracies | **10 / 10 / 1 m** | Bow 2×2: tight (1/1/0.1) fragments and mis-scales [VERIFIED] |
-| flight-log orientation | **ON at 15° YPR** | dose-response (5° fragments, 15° gains); removing it destroyed two dataset B zones [VERIFIED-as-decision, attribution flagged] |
-| `sfmDistortionModel` | `Brown3` | matches the camera registry and calibration sidecars of the rectilinear ILX-LR1 lenses; on the earlier fisheye rig `Division` gave the best Z3 registration and both optics solved division (§3.9); global and all-or-nothing [VERIFIED for the earlier rig, with the PD-6 attribution caveat] |
+| flight-log position accuracies | **0.1 / 0.1 / 1 m** with a GPS track; **100 m** on each position axis an oriented image lacks | owner decisions 2026-10-07 (GPS receiver 10 cm; no-position rows); earlier datasets used 10 / 10 / 1 m after the Bow 2×2 (tight 1/1/0.1 fragmented and mis-scaled there) [VERIFIED-as-decision] |
+| flight-log orientation | **ON at 10° YPR** | owner decision 2026-10-07, held on the rig in cameras.json; earlier datasets used 15° (dose-response: 5° fragments, 15° gains) [VERIFIED-as-decision, attribution flagged] |
+| `sfmDistortionModel` | `Division` | owner decision 2026-10-07 (was `Brown3`); matches the camera registry and the groups-mode calibration sidecars of the ILX-LR1 cameras (the measured Brown3 calibration is therefore not delivered as a prior); on the earlier fisheye rig `Division` gave the best Z3 registration and both optics solved division (§3.9); global and all-or-nothing [VERIFIED for the earlier rig, with the PD-6 attribution caveat] |
 | `sfmDetectorSensitivity` | `Ultra` | weak underwater texture [VERIFIED-as-in-use; OPEN: no A/B] |
 | `sfmMaxFeaturesPerImage` / `PerMpx` / `sfmPreselectorFeatures` | 50000 / 14000 / 20000 | "more features ⇒ fewer components on low-texture seabed" [VERIFIED-as-decision] |
 | `sfmImagesOverlap` | `Medium` | adopted on reasoning, not measurement — see the §3.6 contradiction |

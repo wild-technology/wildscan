@@ -123,8 +123,9 @@ class Rig:
 class PriorAccuracy:
     """Flight-log prior accuracies of a rig (metres, degrees): X and Y
     share ``position_m`` (a real track only; a static fix gets no position
-    prior), ``altitude_m`` applies when a depth is recorded, and yaw, pitch
-    and roll share ``orientation_deg``."""
+    and the 100 m no-position accuracy of modules/flight_logs.py),
+    ``altitude_m`` applies when a depth is recorded, and yaw, pitch and roll
+    share ``orientation_deg``."""
     position_m: float
     altitude_m: float
     orientation_deg: float

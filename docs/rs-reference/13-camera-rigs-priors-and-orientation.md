@@ -1935,15 +1935,25 @@ filename;X (East);Y (North);Alt;X Accuracy;Y Accuracy;Alt Accuracy;Yaw;Pitch;Rol
 
 | Column | Source (Wild Sync `flight_log.csv`) | Default accuracy |
 |---|---|---|
-| X, Y | `xutm`, `yutm` (+ horizontal lever arm, zero while unmeasured); **empty** when the whole run carries one static fix (positions within 1 m) | 0.1 m (the GPS receiver's accuracy) |
-| Alt | `-abs(depth_from_xplore9)` − downward lever arm; **empty** when depth is empty | 1 m |
+| X, Y | `xutm`, `yutm` (+ horizontal lever arm, zero while unmeasured); **empty** when the whole run carries one static fix (positions within 1 m) or the row has no UTM position | 0.1 m (the GPS receiver's accuracy); **100 m** when the position is empty and the image has an orientation prior |
+| Alt | `-abs(depth_from_xplore9)` − downward lever arm; **empty** when depth is empty | 1 m; **100 m** when depth and position are both empty and the image has an orientation prior |
 | Yaw, Pitch, Roll | §10.6 | yaw and roll 10°; pitch 10° from the mount |
 
 The accuracies come from the rig entry in `modules/cameras.json` (`rigs.ilx_lr1_stereo.prior_accuracy`;
-the `sfmCameraPriorAccuracyYaw/Pitch/Roll` fallback in `AlignmentParams.xml` carries the same 10°). A
-missing value is an empty cell, never 0. The August 2026 field runs carry the same static fix on
-every row and empty depth, so their images get orientation priors only: no position and no altitude
-cells, hence no metric constraint from navigation.
+the `sfmCameraPriorAccuracyYaw/Pitch/Roll` fallback in `AlignmentParams.xml` carries the same 10°),
+except the 100 m no-position accuracy, which is `NO_POSITION_ACCURACY_M` in `modules/flight_logs.py`
+(owner decision 2026-10-07). A missing value is written as an empty cell, never 0, but RealityScan
+does not keep it empty: it stores an empty X/Y/Alt cell as position 0 with accuracy 0
+(`06-georeferencing-flightlogs-and-scale.md` §2.2). The 100 m accuracy turns that 0 into a loose
+prior. A row with no orientation stays fully empty. A log without a single position is imported in
+RealityScan's local Euclidean system (`FlightLogParams_Euclidean.xml`, `+proj=geocent +ellps=WGS84
++no_defs` / `local:1 - Euclidean`), and `AlignZone.bat` and `MergeZoneComponents.bat` set the scene
+to it with `-setProjectCoordinateSystem Local:1` (env var `RS_PROJECT_COORDINATE_SYSTEM`, set by the
+orchestrator for that script call only). A log mixing positioned and unpositioned rows stays UTM and
+the intake warns. [VERIFIED-by-inspection: `modules/wildsync_intake/intake.py`,
+`modules/flight_logs.py`, 2026-10-07] The August 2026 field runs carry the same static fix on every
+row and empty depth, so their images get orientation priors with 100 m position and altitude
+accuracies and no position values, hence no metric constraint from navigation.
 
 ### 10.6 Orientation priors — what is and is not established
 

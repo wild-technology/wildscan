@@ -31,7 +31,7 @@ from pathlib import Path
 from module_base.scene_checkpoint import scene_bundle
 
 from . import calibration_sidecars, camera_registry
-from .flight_logs import utm_zone_from_flight_log_name
+from .flight_logs import flight_log_frame
 
 FINGERPRINT_NAME = "align_inputs.json"
 SCHEMA = 1
@@ -150,7 +150,8 @@ def build_fingerprint(flight_log: str | None,
     align_settings_xml is the RS_ALIGN_PARAMS override when set, else the
     canonical Metadata/AlignmentParams.xml - i.e. whatever AlignZone.bat
     will actually apply. ``frame`` is ``"utm"`` for a zone-tagged flight
-    log and None when the zone aligned without one. ``calibration`` is the
+    log with positions, ``"euclidean"`` for one without a single position
+    and None when the zone aligned without one. ``calibration`` is the
     {camera: mode} map of a zone aligned with calibration sidecars; it is
     recorded only when given, so a zone aligned without sidecars keeps the
     fingerprint it always had; likewise ``starting_focals``, the
@@ -160,8 +161,7 @@ def build_fingerprint(flight_log: str | None,
     (``calibration_sidecar_sha256``): the mode and focal alone do not
     change when a prior in cameras.json is edited, the sidecar text does.
     """
-    frame = ("utm" if (flight_log and utm_zone_from_flight_log_name(flight_log))
-             else None)
+    frame = flight_log_frame(flight_log)
     fp = {
         "schema": SCHEMA,
         "created": time.strftime("%Y-%m-%d %H:%M:%S"),

@@ -16,7 +16,12 @@ from .. import (
     camera_registry,
     component_manifest,
 )
-from ..flight_logs import find_flight_log, require_utm_zone, write_flight_log_params
+from ..flight_logs import (
+    EUCLIDEAN_PROJECT_CS,
+    find_flight_log,
+    require_utm_zone,
+    write_import_params,
+)
 from ..image_exts import PROCESSABLE_IMAGE_EXTS
 from ..wildsync_intake.intake import (
     MANIFEST_NAME,
@@ -36,8 +41,9 @@ def flight_log_params_template(metadata_dir: str,
                                explicit: str | None = None) -> str:
     """FlightLogParams template for an alignment: the explicit choice when
     given, else the repository's UTM template. Either way its
-    coordinate-system entries are rewritten for the flight log's own UTM
-    zone before import (write_flight_log_params)."""
+    coordinate-system entries are rewritten before import for the flight
+    log's own UTM zone, or for the local Euclidean system when the log
+    carries no position (write_import_params)."""
     return explicit or os.path.join(metadata_dir, "FlightLogParams.xml")
 
 
@@ -491,13 +497,25 @@ class RealityScanAlignment(RSModule):
         # template's zone is only a placeholder, so regenerate it from the
         # zone tag in the flight log's own filename
         # (flight_log_53N_UTM.txt -> EPSG:32653).
+        # A log without a single position is imported in the local
+        # Euclidean system and the project is set to it (AlignZone.bat reads
+        # RS_PROJECT_COORDINATE_SYSTEM, set only for the script call below).
+        project_cs = ''
         if flight_log_path and flight_log_params_path:
-            zone, band = require_utm_zone(flight_log_path)
-            generated = os.path.join(log_dir, f'FlightLogParams_{zone}{band}.xml')
-            flight_log_params_path = write_flight_log_params(
-                flight_log_params_path, generated, zone, band)
-            self.logger.info(f'Flight log CRS: UTM zone {zone}{band} '
-                             f'(params: {generated})')
+            flight_log_params_path, frame = write_import_params(
+                flight_log_params_path, log_dir, flight_log_path)
+            if frame == 'euclidean':
+                project_cs = EUCLIDEAN_PROJECT_CS
+                self.logger.warning(
+                    'Flight log %s carries no position: importing its '
+                    'orientation priors in the local Euclidean system and '
+                    'setting the project to %s (params: %s)',
+                    flight_log_path, EUCLIDEAN_PROJECT_CS,
+                    flight_log_params_path)
+            else:
+                zone, band = require_utm_zone(flight_log_path)
+                self.logger.info(f'Flight log CRS: UTM zone {zone}{band} '
+                                 f'(params: {flight_log_params_path})')
 
         # A camera switched to off must not inherit the calibration sidecars
         # an earlier prior/groups run left beside its images.
@@ -523,8 +541,12 @@ class RealityScanAlignment(RSModule):
 
         files_before = set(os.listdir(output_folder))
 
-        result = self.cli.run_batch_script(
-            'AlignZone.bat', args, log_dir, display_output)
+        os.environ['RS_PROJECT_COORDINATE_SYSTEM'] = project_cs
+        try:
+            result = self.cli.run_batch_script(
+                'AlignZone.bat', args, log_dir, display_output)
+        finally:
+            os.environ.pop('RS_PROJECT_COORDINATE_SYSTEM', None)
 
         # Sidecar hygiene even on failure: the in-session identity loop
         # normally harvests every pose sidecar into identity_c<K> folders,

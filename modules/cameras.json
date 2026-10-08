@@ -165,7 +165,7 @@
         "altitude_m": 1.0,
         "orientation_deg": 10.0
       },
-      "_prior_accuracy_comment": "Flight-log prior accuracies the intake writes for this rig's images when no other value is given (owner, 2026-10-07). position_m is the GPS receiver's accuracy (10 cm) and applies only to a real track: a run whose positions never move (a static fix) gets no position prior at all. altitude_m applies when a depth is recorded; an empty depth gives no altitude prior. orientation_deg is written for yaw and roll and is the families' mount pitch_accuracy_deg; it is also the fallback RS_CLI/Metadata/AlignmentParams.xml sfmCameraPriorAccuracyYaw/Pitch/Roll carry, and stays at 10 deg until the IMU convention is validated on a live run.",
+      "_prior_accuracy_comment": "Flight-log prior accuracies the intake writes for this rig's images when no other value is given (owner, 2026-10-07). position_m is the GPS receiver's accuracy (10 cm) and applies only to a real track: a run whose positions never move (a static fix) gets no position. altitude_m applies when a depth is recorded; an empty depth gives no altitude. An image with an orientation but no position gets 100 m on each position axis it lacks (modules/flight_logs.py NO_POSITION_ACCURACY_M, not per rig), because RealityScan stores an empty cell as 0 with accuracy 0. orientation_deg is written for yaw and roll and is the families' mount pitch_accuracy_deg; it is also the fallback RS_CLI/Metadata/AlignmentParams.xml sfmCameraPriorAccuracyYaw/Pitch/Roll carry, and stays at 10 deg until the IMU convention is validated on a live run.",
       "eyes": {
         "L": {
           "camera": "ilx_left"
