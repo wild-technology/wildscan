@@ -46,9 +46,12 @@ cameras captured with Wild Sync. This release is breaking.
   written without EXIF by an earlier version are processed again.
 - The intake manifest is schema 2; a schema-1 manifest is refused by every
   later stage until the intake is re-run.
-- Alignment uses RealityScan's global Brown3 distortion model. The previous
-  global setting was Division, with per-camera distortion supplied through XMP
-  sidecars.
+- Alignment uses RealityScan's global Division distortion model, and the
+  ILX-LR1 cameras declare `division` in `modules/cameras.json` and in their
+  `groups` sidecars (owner, 2026-10-07). The measured ILX-LR1 calibration is
+  Brown3 and does not convert, so these cameras get `groups`, never `prior`;
+  sidecars written with `brown3` by an earlier run are still recognised as
+  the pipeline's own.
 - Flight logs with positions are imported in their UTM zone. A flight log
   without a single position is imported in RealityScan's local Euclidean
   system (`local:1 - Euclidean`), and AlignZone and the merge set the scene

@@ -596,7 +596,7 @@ Production values below are from `RS_CLI/Metadata/AlignmentParams.xml`, which
 | `sfmPreselectorFeatures` | int | `10000` | positive int; Epic: "1/4–1/2 of the detected features" | **Advanced → Preselector features** | `0x4e20` (20000) |
 | `sfmDetectorSensitivity` | enum | `Medium` | `Low` `Medium` `High` `Ultra` | **Advanced → Detector sensitivity** — Ultra detects more features in weak texture but "may also include less reliable points caused by image noise" | `Ultra` |
 | `sfmMergeGeoreferencedComponents` | bool | `false` | `true` `false` | **Advanced → Merge georeferenced components** — "When multiple components are created and each is georeferenced, enabling this setting allows them to be merged even without visual overlap" | `false` in pass-1 zone aligns; `true` on every merge-ladder rung. **Never observed to work headless** — §12 and §13.4 |
-| `sfmDistortionModel` | enum | `Brown3` | `Division` `Brown3` `Brown4` `Brown3WithTangential2` `Brown4WithTangential2` `KplusBrown3WithTangential2` `KplusBrown4WithTangential2` | **Advanced → Distortion model** | `Brown3` in the current `AlignmentParams.xml` (earlier datasets ran `Division`, §4.2). **The key is global and all-or-nothing** — §13.5 |
+| `sfmDistortionModel` | enum | `Brown3` | `Division` `Brown3` `Brown4` `Brown3WithTangential2` `Brown4WithTangential2` `KplusBrown3WithTangential2` `KplusBrown4WithTangential2` | **Advanced → Distortion model** | `Division` in the current `AlignmentParams.xml` (owner decision 2026-10-07; was `Brown3`; earlier datasets also ran `Division`, §4.2). **The key is global and all-or-nothing** — §13.5 |
 
 [OFFICIAL: tutorials/setkeyvaluetable] for every key/type/default/enum;
 [OFFICIAL: appbasics/alignsettings] for the prose; [VERIFIED-by-inspection:
@@ -1427,7 +1427,7 @@ Replayed row-by-row from `RS_CLI/Metadata/AlignmentParams.xml` (filter `sfm`/`li
 | `sfmCameraPriorWeightOrientation` | `10.0` | Same |
 | `sfmCameraPriorAccuracyYaw` / `Pitch` / `Roll` | `10.0` each | Defaults retained explicitly |
 | `sfmControPointImageMeasAccuracy` | `4.0` | Loosened from the `2.0` default |
-| `sfmDistortionModel` | `Brown3` | Matches the model of the camera registry and the calibration sidecars; earlier datasets with fisheye cameras behind a dome ran `Division` (§4.2). §13.5 makes the choice consequential |
+| `sfmDistortionModel` | `Division` | Owner decision 2026-10-07 (was `Brown3`). Matches the camera registry (`distortion_model: "division"`) and the groups-mode calibration sidecars; the measured ILX-LR1 calibration stays Brown3, so no `prior`-mode sidecar is used. Earlier datasets with fisheye cameras behind a dome also ran `Division` (§4.2). §13.5 makes the choice consequential |
 | `sfmDetectorSensitivity` | `Ultra` | Weak underwater texture; the CLAHE A/B was validated at this setting |
 | `sfmMaxFeaturesPerMpx` | `0x36b0` (14000) | More features ⇒ fewer components on low-texture seabed |
 | `sfmMaxFeaturesPerImage` | `0xc350` (50000) | Same |

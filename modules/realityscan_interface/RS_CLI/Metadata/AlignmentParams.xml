@@ -6,9 +6,10 @@
   <entry key="sfmForceComponentRematch" value="false"/>
   <!-- The distortion model is global and all-or-nothing: a per-image
        xcr:DistortionModel in an XMP sidecar does not override it
-       (verified on an earlier dataset). Brown3 matches the model of
-       the camera registry and the calibration sidecars. -->
-  <entry key="sfmDistortionModel" value="Brown3"/>
+       (verified on an earlier dataset). Division (owner, 2026-10-07)
+       matches the model of the camera registry and the calibration
+       sidecars. -->
+  <entry key="sfmDistortionModel" value="Division"/>
   <entry key="sfmCameraPriorAccuracyRoll" value="10.0"/>
   <entry key="sfmMaxFeatureReprojectionError" value="1.29999995"/>
   <entry key="sfmMaxFeaturesPerMpx" value="0x36b0"/>

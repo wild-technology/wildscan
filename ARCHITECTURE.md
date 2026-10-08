@@ -168,8 +168,8 @@ For any RealityScan command-line question, start at
 - `RS_CLI/Metadata/*.xml`: RealityScan parameter files (setting keys and
   values) passed to RealityScan commands on its command line, documented in
   [docs/rs-reference/09-xml-parameter-files.md](docs/rs-reference/09-xml-parameter-files.md).
-  `AlignmentParams.xml` sets `sfmDistortionModel=Brown3`, which is global for
-  all cameras.
+  `AlignmentParams.xml` sets `sfmDistortionModel=Division`, which is global
+  for all cameras.
 
 ## RealityScan facts the code depends on
 

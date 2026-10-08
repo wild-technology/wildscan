@@ -67,7 +67,7 @@
       ],
       "lens_distortion_group": "7",
       "lens_distortion_prior": "approximate",
-      "distortion_model": "brown3",
+      "distortion_model": "division",
       "opencv_distortion_k1_k2_p1_p2_k3": [
         -0.15051064317869475,
         0.01672300219900676,
@@ -75,7 +75,7 @@
         0.0,
         0.0
       ],
-      "_distortion_comment": "OpenCV order k1, k2, p1, p2, k3; k3 and the tangential terms were held at 0 in the solve. modules/calibration_sidecars.py writes them in RealityScan's Brown slot order."
+      "_distortion_comment": "OpenCV order k1, k2, p1, p2, k3; k3 and the tangential terms were held at 0 in the solve. modules/calibration_sidecars.py writes them in RealityScan's Brown slot order, only for a prior-mode sidecar; distortion_model is the model the camera aligns with (Division, owner 2026-10-07), so this camera gets groups-mode sidecars and RealityScan solves its distortion."
     },
     "ilx_right": {
       "_provenance": "Checkerboard solve 2026-09-30 from Stereo_Calibration/dive_001 (pool, 2026-05-18): 59 of 59 detected boards used, reprojection RMS 1.40 px. Focal FIXED at the stated 16 mm (fx=fy=2016.8 px, assuming the 3000 px image height spans the 23.8 mm sensor height); a free-focal solve gave fx=1995+/-54 px at the same RMS. Principal point 1-sigma +/-19/20 px. UNVALIDATED as a RealityScan prior.",
@@ -112,7 +112,7 @@
       ],
       "lens_distortion_group": "8",
       "lens_distortion_prior": "approximate",
-      "distortion_model": "brown3",
+      "distortion_model": "division",
       "opencv_distortion_k1_k2_p1_p2_k3": [
         -0.14233307188331493,
         0.01544261781011792,
@@ -120,7 +120,7 @@
         0.0,
         0.0
       ],
-      "_distortion_comment": "OpenCV order k1, k2, p1, p2, k3; k3 and the tangential terms were held at 0 in the solve. modules/calibration_sidecars.py writes them in RealityScan's Brown slot order."
+      "_distortion_comment": "OpenCV order k1, k2, p1, p2, k3; k3 and the tangential terms were held at 0 in the solve. modules/calibration_sidecars.py writes them in RealityScan's Brown slot order, only for a prior-mode sidecar; distortion_model is the model the camera aligns with (Division, owner 2026-10-07), so this camera gets groups-mode sidecars and RealityScan solves its distortion."
     }
   },
   "families": [

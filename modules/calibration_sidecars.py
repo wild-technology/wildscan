@@ -16,10 +16,13 @@ For each camera one of three modes applies (:func:`decide_calibration`):
     Focal length, principal point and the measured distortion
     coefficients, as an initial (adjustable) prior in the camera's own
     calibration and distortion group. Only when the rig's node assignment is
-    confirmed, the images have the calibration's aspect ratio, and their lens
-    focal length matches the calibration's.
+    confirmed, the images have the calibration's aspect ratio, their lens
+    focal length matches the calibration's, and the camera's distortion
+    model is the calibration's own Brown3 (a Division camera never gets
+    it: the measured Brown coefficients do not convert).
 ``groups``
-    The camera's own calibration and distortion group, the Brown3 model and
+    The camera's own calibration and distortion group, its distortion model
+    (Division) and
     the focal length observed on the original images (EXIF, or the
     operator's override) as an initial (adjustable) 35 mm-equivalent focal:
     RealityScan solves each physical camera's intrinsics separately,
@@ -53,7 +56,7 @@ import os
 import re
 import statistics
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from . import camera_registry
 from .camera_registry import Camera, Rig
@@ -208,8 +211,9 @@ def decide_calibration(camera: Camera, rig: Rig,
     ``groups`` otherwise, with a warning naming each failed condition and
     both values. ``groups`` and ``off`` are honoured as given. ``prior`` is
     honoured with a warning when only the focal check fails, and raises
-    CalibrationRefused when the node assignment is unconfirmed or the aspect
-    ratio differs (or no image size is known).
+    CalibrationRefused when the camera's distortion model is not Brown3, the
+    node assignment is unconfirmed or the aspect ratio differs (or no image
+    size is known).
     """
     if requested not in MODES:
         raise ValueError(f'calibration mode must be one of {MODES}, '
@@ -232,6 +236,11 @@ def decide_calibration(camera: Camera, rig: Rig,
         return decision('groups', 'calibration groups only, as requested')
 
     failures: list[str] = []
+    if camera.distortion_model != 'brown3':
+        failures.append(
+            f'the camera aligns with the {camera.distortion_model} model and '
+            'the measured calibration is Brown3 (its coefficients do not '
+            'convert)')
     if not rig.node_assignment_confirmed:
         failures.append(
             f'the node assignment of rig {rig.key} is not confirmed '
@@ -453,6 +462,11 @@ def sidecar_xmp(camera: Camera, mode: str,
     """
     if mode not in SIDECAR_MODES:
         raise ValueError(f'mode {mode!r} writes no sidecar')
+    if mode == 'prior' and camera.distortion_model != 'brown3':
+        raise ValueError(
+            f'{camera.key}: a prior sidecar carries the measured Brown3 '
+            f'calibration, but the camera aligns with the '
+            f'{camera.distortion_model} model')
     if mode == 'groups':
         return _sidecar_text(camera, mode,
                              _num(_check_focal(camera, focal_35mm)))
@@ -546,9 +560,18 @@ def is_own_sidecar(content: bytes, camera: Camera) -> bool:
     """True when ``content`` is byte for byte a sidecar this module writes
     for ``camera``: its ``prior`` sidecar, a ``groups`` sidecar with any
     positive starting focal (:func:`sidecar_xmp`), or the earlier
-    ``groups`` form without a focal."""
-    if content in (sidecar_xmp(camera, 'prior').encode('utf-8'),
-                   _legacy_groups_xmp(camera).encode('utf-8')):
+    ``groups`` form without a focal. The same forms with the Brown3 model,
+    which this module wrote before the cameras moved to Division
+    (2026-10-07), are recognised too."""
+    return any(_is_own_form(content, form) for form in
+               (camera, replace(camera, distortion_model='brown3')))
+
+
+def _is_own_form(content: bytes, camera: Camera) -> bool:
+    if content == _legacy_groups_xmp(camera).encode('utf-8'):
+        return True
+    if (camera.distortion_model == 'brown3'
+            and content == sidecar_xmp(camera, 'prior').encode('utf-8')):
         return True
     match = _groups_pattern(camera).fullmatch(content)
     return match is not None and float(match.group(1)) > 0
