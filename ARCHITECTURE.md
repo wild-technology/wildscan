@@ -89,10 +89,12 @@ For any RealityScan command-line question, start at
 **Rig and inputs**
 
 - `modules/cameras.json` and `modules/camera_registry.py`: the single source
-  for the two cameras (`ilx_left`, `ilx_right`), their calibration, the Wild
-  Sync file name families (`Cam1_`, `Cam2_`; node `cam1` is the left eye,
-  `cam2` the right), each camera's mount, the rig `ilx_lr1_stereo` with its
-  `node_assignment_confirmed` switch, and the default prior accuracies. The
+  for the cameras (`ilx_left`, `ilx_right`, and the Voyis `voyis_left`,
+  `voyis_right`), their calibration, the file name families (Wild Sync
+  `Cam1_`, `Cam2_`; node `cam1` is the left eye, `cam2` the right; Voyis
+  `image_left_`, `image_right_`), each Wild Sync camera's mount, the rigs
+  `ilx_lr1_stereo` and `voyis_stereo` with their `node_assignment_confirmed`
+  switch, and the default prior accuracies (held by `ilx_lr1_stereo`). The
   registry is validated at import; a malformed entry stops the import with a
   message naming it. `calibration/ilx_lr1_stereo_dive_001.json` is the
   calibration record; a test keeps the two files in agreement.
@@ -100,7 +102,9 @@ For any RealityScan command-line question, start at
   `flight_log.csv` reader, frame matching, copying, priors, gates, manifest);
   `wildsync_intake.py` is the `RSModule` with its parameters.
 - `modules/calibration_sidecars.py`: the per-camera decision between `prior`,
-  `groups` and `off`; the `xcr` 1.1 sidecar text for each mode; the `.rscmd`
+  `groups` and `off`; the locked `prior` for a camera with a fixed
+  calibration (the Voyis, `fixed_calibration_modes`, applied by alignment
+  without an intake); the `xcr` 1.1 sidecar text for each mode; the `.rscmd`
   builder; and the sidecar hygiene (`sanitize_and_census`,
   `ensure_calibration_sidecars`), which only ever writes the decided form.
 - `modules/flight_logs.py`: the 13-column flight-log writer, flight-log
