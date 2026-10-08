@@ -292,6 +292,17 @@ class RealityScanAlignment(RSModule):
         if not os.path.isdir(input_folder):
             raise ValueError(f"Input folder {input_folder} is not a directory")
 
+        image_paths = self.__image_paths(input_folder)
+        # A camera with a fixed calibration (the Voyis) is not decided by
+        # the intake: every one of its images gets its locked calibration.
+        fixed_modes = calibration_sidecars.fixed_calibration_modes(
+            image_paths + self.__pool_image_paths(input_folder))
+        if fixed_modes:
+            calibration_modes = {**fixed_modes, **(calibration_modes or {})}
+            self.logger.info(
+                'Locked calibration (no lens distortion) for %s in %s',
+                ', '.join(sorted(fixed_modes)), input_folder)
+
         sidecar_modes = sidecar_focals = None
         if calibration_modes and any(
                 mode in calibration_sidecars.SIDECAR_MODES
@@ -321,7 +332,6 @@ class RealityScanAlignment(RSModule):
         # A scene smaller than the export threshold could never export a
         # component, however well it aligned.
         configured_min_component_size = min_component_size
-        image_paths = self.__image_paths(input_folder)
         lowered = small_scene_min_component_size(min_component_size,
                                                  len(image_paths))
         if lowered != min_component_size:
@@ -866,6 +876,19 @@ class RealityScanAlignment(RSModule):
             for root, _dirs, files in os.walk(os.path.abspath(image_folder))
             for name in files
             if os.path.splitext(name)[1].lower() in PROCESSABLE_IMAGE_EXTS)
+
+    @staticmethod
+    def __pool_image_paths(image_folder: str) -> list[str]:
+        """The image paths a pool-layout zone lists in its .imagelist
+        files (RS_ALIGN_POOL_DIR set), else none."""
+        if not os.environ.get('RS_ALIGN_POOL_DIR'):
+            return []
+        paths: list[str] = []
+        for name in sorted(os.listdir(image_folder)):
+            if name.lower().endswith('.imagelist'):
+                with open(os.path.join(image_folder, name), encoding='utf-8') as f:
+                    paths += [line.strip() for line in f if line.strip()]
+        return paths
 
     def __move_pre_existing_sidecars(self, image_paths: list[str],
                                      input_folder: str, output_folder: str,

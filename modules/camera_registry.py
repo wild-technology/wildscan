@@ -1,16 +1,19 @@
-"""Camera registry for the two-camera Sony ILX-LR1 rig, loaded from cameras.json.
+"""Camera registry, loaded from cameras.json: the two-camera Sony ILX-LR1
+rig captured with Wild Sync, and the Voyis Discovery Stereo.
 
 ``modules/cameras.json`` is the single source for:
 
-- the two physical cameras (``ilx_left``, ``ilx_right``) and their
-  calibration: calibration image size, the focal length the calibration was
-  solved at, the 35 mm-equivalent focal, the normalised principal point, the
-  distortion model and its measured coefficients, the sensor size, and one
+- the physical cameras (``ilx_left``, ``ilx_right``, ``voyis_left``,
+  ``voyis_right``) and their calibration: calibration image size, the focal
+  length the calibration was solved at (unknown for the Voyis), the 35
+  mm-equivalent focal, the normalised principal point, the distortion model
+  and its coefficients, the sensor size (unknown for the Voyis), and one
   calibration group and one lens-distortion group per camera;
-- the Wild Sync filename families (``Cam1_...`` and ``Cam2_...``), which say
-  which node is which eye, and the mount of each;
-- the stereo rig, including ``node_assignment_confirmed``;
-- the default flight-log prior accuracies.
+- the filename families (Wild Sync ``Cam1_...`` and ``Cam2_...``, which say
+  which node is which eye and carry the mount of each; Voyis
+  ``image_left_...`` and ``image_right_...``, which carry no mount);
+- the stereo rigs, including ``node_assignment_confirmed``;
+- the default flight-log prior accuracies, held by exactly one rig.
 
 The file is loaded and validated when this module is imported. A missing or
 mistyped field, a family naming an unknown camera, or a camera outside every
@@ -37,15 +40,21 @@ CAMERAS_JSON = os.path.join(
     os.path.dirname(os.path.realpath(__file__)), 'cameras.json')
 
 # The pipeline aligns with RealityScan's global Division model (owner,
-# 2026-10-07; sfmDistortionModel is global and all-or-nothing, verified on
-# an earlier dataset), so a camera may only declare that model. The
-# measured calibration (opencv_distortion_k1_k2_p1_p2_k3) stays Brown.
-DISTORTION_MODELS = frozenset({'division'})
+# 2026-10-07). sfmDistortionModel is global and all-or-nothing for an
+# adjustable calibration (verified on an earlier dataset), so an adjustable
+# camera may only declare Division; its measured calibration
+# (opencv_distortion_k1_k2_p1_p2_k3) stays Brown. 'perspective' (no lens
+# distortion) is a pinhole camera with a LOCKED calibration: a locked
+# calibration overrides the global model (verified 2026-10-07 on the Voyis).
+DISTORTION_MODELS = frozenset({'division', 'perspective'})
 
-# 'approximate' = a starting value that alignment adjusts. The calibration
-# is never declared fixed: its conversion to RealityScan's coefficient and
-# principal-point conventions is not verified (see calibration_sidecars).
-CALIBRATION_PRIORS = frozenset({'approximate'})
+# 'approximate' = a starting value that alignment adjusts (the ILX-LR1: the
+# conversion of its measured calibration to RealityScan's conventions is
+# not verified). 'exact' = locked, and only with the perspective model and
+# zero coefficients (the Voyis: rectified images and the manufacturer's
+# calibration).
+CALIBRATION_PRIORS = frozenset({'approximate', 'exact'})
+FIXED_MODEL, FIXED_PRIOR = 'perspective', 'exact'
 
 _KEY_RE = re.compile(r'^[a-z0-9_]+$')
 _GROUP_RE = re.compile(r'^\d+$')
@@ -61,11 +70,12 @@ class Camera:
     key: str                                  # also the batch subfolder name
     calibration_group: str                    # one per physical camera
     lens_distortion_group: str                # one per physical camera
-    calibration_prior: str                    # 'approximate'
-    distortion_model: str                     # 'division'
+    calibration_prior: str                    # 'approximate' | 'exact'
+    distortion_model: str                     # 'division' | 'perspective'
     calibration_image_size: tuple[int, int]   # (width, height) in pixels
-    calibration_focal_mm: float               # lens focal length at calibration
-    sensor_size_mm: tuple[float, float]       # (width, height) of the sensor
+    calibration_focal_mm: float | None        # lens focal at calibration;
+                                              # None for a locked pinhole camera
+    sensor_size_mm: tuple[float, float] | None  # (width, height); None likewise
     focal_length_35mm: float                  # RealityScan normalised focal
     principal_point_u: float                  # RealityScan normalised offsets
     principal_point_v: float
@@ -75,6 +85,12 @@ class Camera:
     def calibration_aspect(self) -> float:
         width, height = self.calibration_image_size
         return width / height
+
+    @property
+    def fixed_calibration(self) -> bool:
+        """True for a camera whose calibration is delivered locked on every
+        image (a pinhole camera: perspective model, exact prior)."""
+        return self.calibration_prior == FIXED_PRIOR
 
 
 @dataclass(frozen=True)
@@ -96,11 +112,12 @@ class Mount:
 
 @dataclass(frozen=True)
 class Family:
-    """A filename family: which camera a file belongs to, and its mount."""
+    """A filename family: which camera a file belongs to, and its mount
+    (None for a family Wild Sync Intake never reads, such as the Voyis)."""
     name: str
     pattern: str
     camera: str
-    mount: Mount
+    mount: Mount | None
 
 
 @dataclass(frozen=True)
@@ -113,7 +130,7 @@ class Rig:
     key: str
     eyes: tuple[tuple[str, str], ...]         # ((eye, camera key), ...)
     node_assignment_confirmed: bool
-    prior_accuracy: 'PriorAccuracy'
+    prior_accuracy: 'PriorAccuracy | None'    # on exactly one rig
 
     @property
     def cameras(self) -> tuple[str, ...]:
@@ -258,18 +275,36 @@ class _Loader:
                       'the prior sidecar writes the measured calibration as '
                       'Brown3, which has no tangential terms, but p1/p2 are '
                       'non-zero')
-        self.choice(spec, 'lens_distortion_prior', where, CALIBRATION_PRIORS)
+        prior = self.choice(spec, 'calibration_prior', where, CALIBRATION_PRIORS)
+        lens_prior = self.choice(spec, 'lens_distortion_prior', where,
+                                 CALIBRATION_PRIORS)
+        fixed = model == FIXED_MODEL
+        for field_name, value in (('calibration_prior', prior),
+                                  ('lens_distortion_prior', lens_prior)):
+            if fixed != (value == FIXED_PRIOR):
+                self.fail(f'{where}.{field_name}',
+                          f'{FIXED_PRIOR!r} goes with distortion_model '
+                          f'{FIXED_MODEL!r} and only with it, got {value!r} '
+                          f'with {model!r}')
+        if fixed and any(coefficients):
+            self.fail(f'{where}.opencv_distortion_k1_k2_p1_p2_k3',
+                      f'a {FIXED_MODEL} camera has no lens distortion, so its '
+                      f'coefficients must all be 0, got {list(coefficients)}')
+        unknown_ok = fixed
         return Camera(
             key=key,
             calibration_group=self.group(spec, 'calibration_group', where),
             lens_distortion_group=self.group(spec, 'lens_distortion_group', where),
-            calibration_prior=self.choice(spec, 'calibration_prior', where,
-                                          CALIBRATION_PRIORS),
+            calibration_prior=prior,
             distortion_model=model,
             calibration_image_size=(size[0], size[1]),
-            calibration_focal_mm=self.number(spec, 'calibration_focal_mm', where,
-                                             positive=True),
-            sensor_size_mm=self.sensor_size(spec, where),
+            calibration_focal_mm=(
+                None if unknown_ok and 'calibration_focal_mm' not in spec
+                else self.number(spec, 'calibration_focal_mm', where,
+                                 positive=True)),
+            sensor_size_mm=(
+                None if unknown_ok and 'sensor_size_mm' not in spec
+                else self.sensor_size(spec, where)),
             focal_length_35mm=self.number(spec, 'focal_length_35mm', where,
                                           positive=True),
             principal_point_u=self.number(spec, 'principal_point_u', where),
@@ -304,8 +339,14 @@ class _Loader:
         if camera not in cameras:
             self.fail(f'{where}.camera', f'names camera {camera!r}, which is not '
                       f'in cameras ({sorted(cameras)})')
+        # A camera with a fixed calibration (the Voyis) never passes through
+        # Wild Sync Intake and has no mount; every other family needs one.
+        mount = spec.get('mount')
+        if mount is None and not cameras[camera].fixed_calibration:
+            self.fail(where, "required field 'mount' is missing")
         return Family(name, pattern, camera,
-                      self.mount(self.require(spec, 'mount', where), f'{where}.mount'))
+                      None if mount is None
+                      else self.mount(mount, f'{where}.mount'))
 
     def rig(self, key: str, spec, cameras: Mapping[str, Camera]) -> Rig:
         where = f'rigs[{key!r}]'
@@ -325,8 +366,9 @@ class _Loader:
                 self.fail(f'{where}.eyes[{eye!r}].camera',
                           f'names camera {camera!r}, which is not in cameras')
             pairs.append((eye, camera))
-        accuracy = self.accuracy(self.require(spec, 'prior_accuracy', where),
-                                 f'{where}.prior_accuracy')
+        accuracy = spec.get('prior_accuracy')
+        if accuracy is not None:
+            accuracy = self.accuracy(accuracy, f'{where}.prior_accuracy')
         return Rig(key, tuple(pairs), confirmed, accuracy)
 
     def accuracy(self, spec, where: str) -> PriorAccuracy:
@@ -377,10 +419,12 @@ class _Loader:
                 self.fail(f'cameras[{camera!r}]',
                           f'must belong to exactly one rig, found {owners or "none"}')
 
-        if len(rigs) != 1:
-            self.fail('rigs', 'the pipeline runs one rig and takes its flight-log '
-                      f'prior accuracies from it; found {sorted(rigs) or "none"}')
-        accuracy = next(iter(rigs.values())).prior_accuracy
+        carriers = [rig for rig in rigs.values() if rig.prior_accuracy is not None]
+        if len(carriers) != 1:
+            self.fail('rigs', 'exactly one rig carries the flight-log prior '
+                      'accuracies (prior_accuracy); found '
+                      f'{[rig.key for rig in carriers] or "none"}')
+        accuracy = carriers[0].prior_accuracy
         matchers = tuple((re.compile(f.pattern, re.IGNORECASE), f) for f in families)
         return Registry(MappingProxyType(cameras), families,
                         MappingProxyType(rigs), accuracy, matchers)

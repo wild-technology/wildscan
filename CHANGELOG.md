@@ -18,6 +18,15 @@ cameras captured with Wild Sync. This release is breaking.
   delivered as groups only or not at all.
 - ILX-LR1 camera registry with a node-assignment switch, and the ILX-LR1
   stereo calibration reference data.
+- Voyis Discovery Stereo cameras (`voyis_left`, `voyis_right`) in the
+  registry, recognised by image name (`image_<eye>_..._D<stamp>`, both Voyis
+  stamp forms). Alignment gives every Voyis image its manufacturer
+  calibration LOCKED as a pinhole camera (`perspective`, no lens distortion),
+  without an intake, and refuses Voyis images of another size or in the pool
+  layout. Verified on LilyJean Run_20260414T182828: 606 of 606 registered,
+  0.59 px mean reprojection error, the locked calibration kept under the
+  global Division model. The registry now holds more than one rig; exactly
+  one carries the flight-log prior accuracies.
 - Calibration command-file mode in `AlignZone.bat`, which adds images from a
   command file during alignment.
 - Flight-log writer and camera orientation convention in `modules/flight_logs.py`.

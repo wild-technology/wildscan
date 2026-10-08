@@ -122,7 +122,10 @@ and distortion group, solved by RealityScan) or `off`. The stored calibration
 is applied only when the node assignment is confirmed and the images match its
 aspect ratio and focal length; the August 2026 field runs therefore receive
 `groups`. Alignment uses RealityScan's Division distortion model for every
-camera; the stored calibration is Brown3, so these cameras get `groups`. Details: [The ILX-LR1 stereo rig](docs/ILX-LR1.md).
+camera; the stored calibration is Brown3, so these cameras get `groups`.
+Voyis Discovery Stereo images (rectified, recognised by name) need no
+intake: alignment gives them the manufacturer calibration locked, as a
+pinhole camera. Details: [The ILX-LR1 stereo rig](docs/ILX-LR1.md).
 
 ## Documentation
 

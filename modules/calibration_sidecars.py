@@ -33,6 +33,12 @@ For each camera one of three modes applies (:func:`decide_calibration`):
     an earlier run are removed before alignment. RealityScan reads the focal
     length from the images' own EXIF, which preprocessing keeps.
 
+A camera with a fixed calibration (the Voyis: perspective model, exact
+prior) is not decided by the intake: alignment gives every one of its
+images a ``prior`` sidecar with the calibration LOCKED and no lens
+distortion (:func:`fixed_calibration_modes`). A locked calibration
+overrides RealityScan's global distortion model (verified 2026-10-07).
+
 Whatever the mode, RealityScan receives a starting focal length for every
 image and refines it during alignment (:func:`observe_focal`).
 
@@ -90,7 +96,10 @@ XCR_NAMESPACE = 'http://www.capturingreality.com/ns/xcr/1.1#'
 # 'initial', the value RealityScan's own sample sidecar carries, and the
 # documented token set is initial / exact / locked (RealityScan 2.2 CLI
 # help, XMP export).
-_PRIOR_TOKEN = {'approximate': 'initial'}
+_PRIOR_TOKEN = {'approximate': 'initial', 'exact': 'exact'}
+# Models a prior sidecar can carry: the ILX-LR1's measured Brown3 calibration
+# (adjustable), or a fixed pinhole calibration (locked).
+_PRIOR_MODELS = frozenset({'brown3', camera_registry.FIXED_MODEL})
 
 
 class CalibrationRefused(ValueError):
@@ -293,6 +302,29 @@ def decide_calibration(camera: Camera, rig: Rig,
         f'{_size(cal_size)}; {focal_note}')
 
 
+def fixed_calibration_modes(image_paths: Iterable[str]) -> dict[str, str]:
+    """``{camera key: 'prior'}`` for every camera with a fixed calibration
+    (:attr:`camera_registry.Camera.fixed_calibration`) among ``image_paths``.
+
+    Such a calibration is locked, so it only holds for images of exactly
+    its size: CalibrationRefused names the first image of another size.
+    Images of other cameras, and unrecognised ones, are ignored.
+    """
+    modes: dict[str, str] = {}
+    for path in image_paths:
+        camera = camera_registry.identify(os.path.basename(path))
+        if camera is None or not camera.fixed_calibration:
+            continue
+        geometry = read_image_geometry(path)
+        if (geometry.width, geometry.height) != camera.calibration_image_size:
+            raise CalibrationRefused(
+                f'{camera.key}: {path} is {geometry.width}x{geometry.height}, '
+                f'but its locked calibration is for '
+                f'{_size(camera.calibration_image_size)} images')
+        modes[camera.key] = 'prior'
+    return modes
+
+
 # ------------------------------------------------------- starting focal
 
 @dataclass(frozen=True)
@@ -462,10 +494,10 @@ def sidecar_xmp(camera: Camera, mode: str,
     """
     if mode not in SIDECAR_MODES:
         raise ValueError(f'mode {mode!r} writes no sidecar')
-    if mode == 'prior' and camera.distortion_model != 'brown3':
+    if mode == 'prior' and camera.distortion_model not in _PRIOR_MODELS:
         raise ValueError(
             f'{camera.key}: a prior sidecar carries the measured Brown3 '
-            f'calibration, but the camera aligns with the '
+            f'calibration or a locked pinhole one, but the camera aligns with the '
             f'{camera.distortion_model} model')
     if mode == 'groups':
         return _sidecar_text(camera, mode,
@@ -570,7 +602,7 @@ def is_own_sidecar(content: bytes, camera: Camera) -> bool:
 def _is_own_form(content: bytes, camera: Camera) -> bool:
     if content == _legacy_groups_xmp(camera).encode('utf-8'):
         return True
-    if (camera.distortion_model == 'brown3'
+    if (camera.distortion_model in _PRIOR_MODELS
             and content == sidecar_xmp(camera, 'prior').encode('utf-8')):
         return True
     match = _groups_pattern(camera).fullmatch(content)

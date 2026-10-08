@@ -2,16 +2,22 @@
   "schema_version": 2,
   "_comment": [
     "Camera registry for the two-camera Sony ILX-LR1 stereo rig captured",
-    "with Wild Sync. Loaded and validated by modules/camera_registry.py at",
-    "import time: a malformed entry stops the import with a message naming",
-    "it. Keys starting with '_' are comments; consumers ignore them.",
+    "with Wild Sync, and the Voyis Discovery Stereo. Loaded and validated by",
+    "modules/camera_registry.py at import time: a malformed entry stops the",
+    "import with a message naming it. Keys starting with '_' are comments;",
+    "consumers ignore them.",
     "cameras: one entry per physical camera, with the calibration",
     "RealityScan may receive (modules/calibration_sidecars.py decides when).",
-    "The calibration record is calibration/ilx_lr1_stereo_dive_001.json;",
-    "tests/test_camera_registry.py asserts that both files agree.",
-    "families: Wild Sync filename families, searched in order",
-    "(case-insensitive); the first match wins.",
-    "rigs: the stereo pair, kept as data, and the flight-log prior accuracies (rigs.<rig>.prior_accuracy)."
+    "The ILX-LR1 calibration record is",
+    "calibration/ilx_lr1_stereo_dive_001.json;",
+    "tests/test_camera_registry.py asserts that both files agree. A camera",
+    "with distortion_model perspective and calibration_prior exact (the",
+    "Voyis) is given its calibration locked on every image by alignment.",
+    "families: filename families, searched in order (case-insensitive); the",
+    "first match wins. Wild Sync families carry a mount; Voyis families do",
+    "not (Wild Sync Intake never sees those images).",
+    "rigs: the stereo pairs, kept as data. Exactly one rig carries the",
+    "flight-log prior accuracies (rigs.<rig>.prior_accuracy)."
   ],
   "cameras": {
     "_comment": [
@@ -121,6 +127,84 @@
         0.0
       ],
       "_distortion_comment": "OpenCV order k1, k2, p1, p2, k3; k3 and the tangential terms were held at 0 in the solve. modules/calibration_sidecars.py writes them in RealityScan's Brown slot order, only for a prior-mode sidecar; distortion_model is the model the camera aligns with (Division, owner 2026-10-07), so this camera gets groups-mode sidecars and RealityScan solves its distortion."
+    },
+    "voyis_left": {
+      "_provenance": "Voyis Discovery Stereo, rectified (processed) images: the PINHOLE calibration of resized_sensor.yaml, identical in every LilyJean run and equal to colmap-studio pipeline/common/voyis.py GOLDEN_CALIBRATION (fx = fy = 1895.6747569500258, cx 1444.9779663085938, cy 1386.6773681640625, 2816 x 2816, baseline 0.16969684810099406 m). The images are already undistorted, so the calibration is delivered LOCKED (exact) with the perspective (no lens distortion) model: verified 2026-10-07 on LilyJean Run_20260414T182828 (606 images, 606 registered, 0.59 px mean reprojection error; the locked calibration overrode the global Division model and was exported unchanged). Both eyes share the same intrinsics; each has its own group. No physical focal length or sensor size is known, so neither is recorded.",
+      "calibration_group": "11",
+      "calibration_prior": "exact",
+      "resolution": [
+        2816,
+        2816
+      ],
+      "focal_length_35mm": 24.234478426917942,
+      "principal_point_u": 0.013131380081176758,
+      "principal_point_v": -0.007571957328102805,
+      "intrinsics": [
+        [
+          1895.6747569500258,
+          0.0,
+          1444.9779663085938
+        ],
+        [
+          0.0,
+          1895.6747569500258,
+          1386.6773681640625
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "lens_distortion_group": "11",
+      "lens_distortion_prior": "exact",
+      "distortion_model": "perspective",
+      "opencv_distortion_k1_k2_p1_p2_k3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "voyis_right": {
+      "_provenance": "Voyis Discovery Stereo, rectified (processed) images: the PINHOLE calibration of resized_sensor.yaml, identical in every LilyJean run and equal to colmap-studio pipeline/common/voyis.py GOLDEN_CALIBRATION (fx = fy = 1895.6747569500258, cx 1444.9779663085938, cy 1386.6773681640625, 2816 x 2816, baseline 0.16969684810099406 m). The images are already undistorted, so the calibration is delivered LOCKED (exact) with the perspective (no lens distortion) model: verified 2026-10-07 on LilyJean Run_20260414T182828 (606 images, 606 registered, 0.59 px mean reprojection error; the locked calibration overrode the global Division model and was exported unchanged). Both eyes share the same intrinsics; each has its own group. No physical focal length or sensor size is known, so neither is recorded.",
+      "calibration_group": "12",
+      "calibration_prior": "exact",
+      "resolution": [
+        2816,
+        2816
+      ],
+      "focal_length_35mm": 24.234478426917942,
+      "principal_point_u": 0.013131380081176758,
+      "principal_point_v": -0.007571957328102805,
+      "intrinsics": [
+        [
+          1895.6747569500258,
+          0.0,
+          1444.9779663085938
+        ],
+        [
+          0.0,
+          1895.6747569500258,
+          1386.6773681640625
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "lens_distortion_group": "12",
+      "lens_distortion_prior": "exact",
+      "distortion_model": "perspective",
+      "opencv_distortion_k1_k2_p1_p2_k3": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
     }
   },
   "families": [
@@ -146,6 +230,17 @@
         "pitch_accuracy_deg": 10.0,
         "lever_arm_m": null
       }
+    },
+    {
+      "_comment": "Voyis Discovery Stereo image names, as colmap-studio pipeline/common/naming.py reads them: image_<eye>_..._D<stamp> with the EIVA processed stamp (D2026-06-21T13-20-29-752918) or the raw export stamp (D20260621-132029.752918); the eye is in the name. These images never pass through Wild Sync Intake, so the families carry no mount; alignment gives every Voyis image its locked calibration.",
+      "family": "voyis_left",
+      "pattern": "^image_left_(?:\\w+_)?D(?:\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}(?:-\\d{1,6})?|\\d{8}-\\d{6}(?:\\.\\d{1,6})?)",
+      "camera": "voyis_left"
+    },
+    {
+      "family": "voyis_right",
+      "pattern": "^image_right_(?:\\w+_)?D(?:\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}(?:-\\d{1,6})?|\\d{8}-\\d{6}(?:\\.\\d{1,6})?)",
+      "camera": "voyis_right"
     }
   ],
   "rigs": {
@@ -202,6 +297,19 @@
         ],
         "rotation_deg": 1.827
       }
+    },
+    "voyis_stereo": {
+      "_comment": "The Voyis Discovery Stereo. Its images name their own eye, so the node assignment is confirmed. It carries no prior_accuracy: the flight-log prior accuracies come from the one Wild Sync rig (ilx_lr1_stereo).",
+      "node_assignment_confirmed": true,
+      "eyes": {
+        "L": {
+          "camera": "voyis_left"
+        },
+        "R": {
+          "camera": "voyis_right"
+        }
+      },
+      "stereo_baseline_m": 0.16969684810099406
     }
   }
 }
