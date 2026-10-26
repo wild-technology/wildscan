@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -124,6 +125,10 @@ def test_windows_delivery_licence_evidence_matches_the_inventory():
             evidence.extend(json.loads(package['comment']).get('licence_evidence', []))
     assert sorted(evidence, key=lambda x: (x['package'], x['path'])) == \
         sorted(manifest['files'], key=lambda x: (x['package'], x['path']))
+    tracked = set(subprocess.check_output(
+        ['git', 'ls-files', '-z', 'third_party_licenses'], cwd=REPO
+    ).decode('utf-8').split('\0'))
+    assert {'third_party_licenses/' + record['path'] for record in evidence} <= tracked
     for record in evidence:
         path = Path(record['path'])
         assert not path.is_absolute() and '..' not in path.parts

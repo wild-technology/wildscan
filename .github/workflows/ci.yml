@@ -56,6 +56,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts/generate_sbom.py --verify "${{ runner.temp }}/wildscan-inventory/sbom.spdx.json" --license-dir "${{ runner.temp }}/wildscan-inventory/third_party_licenses"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Save Windows dependency and licence inventory
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-delivery-inventory-${{ matrix.python-version }}
+          path: ${{ runner.temp }}/wildscan-inventory/
+          if-no-files-found: error
+          retention-days: 90
       - name: Run offline tests
         run: python -m pytest -ra --junitxml=test-results.xml
       # Proves only that the package metadata and distributions build. The
@@ -72,11 +79,3 @@ jobs:
           path: test-results.xml
           if-no-files-found: ignore
           retention-days: 7
-      - name: Save Windows dependency and licence inventory
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: windows-delivery-inventory-${{ matrix.python-version }}
-          path: ${{ runner.temp }}/wildscan-inventory/
-          if-no-files-found: error
-          retention-days: 90
