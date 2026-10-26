@@ -4,7 +4,7 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [2.0.0] - Unreleased
+## [2.0.0] - 2026-10-26
 
 The Sony Wild Sync intake is added alongside the existing WCA, Zeuss and other
 registered-camera workflows. This version does not retire video extraction,
@@ -15,8 +15,9 @@ ROV navigation, local-coordinate projects or the existing command-line tools.
 - Optional Wild Sync Intake, with per-camera calibration decisions and manifests.
   Select it explicitly for Sony recordings; normal datasets retain the existing
   extract/georeference/preprocess/batch/alignment chain and saved settings.
-- SPDX 2.3 SBOM, third-party notices, dependency checks and Windows checks on
-  Python 3.12 and 3.13.
+- SPDX 2.3 inventories generated from the installed Windows environments,
+  including transitive dependencies, licence texts and hashes; repeatable
+  dependency checks and Windows checks on Python 3.12 and 3.13.
 - Sony-specific Brown3 alignment settings, chosen for a Wild Sync intake rather
   than replacing the generic alignment template or an explicit operator override.
 - Regression coverage for WCA/Zeuss filename families, mounts, calibration,

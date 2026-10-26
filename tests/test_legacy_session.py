@@ -610,29 +610,57 @@ def test_intake_preview_cache_is_refreshed_before_questions(tmp_path, store, mon
     (source / 'first.mov').write_bytes(b'video')
     scans = []
 
-    def questions(session, scan):
-        scans.append(scan)
-        return []
-
-    monkeypatch.setattr(app_mod, 'build_questions', questions)
-
     async def drive():
+        preview_ready = asyncio.Event()
+        picker_ready = asyncio.Event()
+        questions_ready = asyncio.Event()
+        summary_ready = asyncio.Event()
+        original_refresh = app_mod.SessionScreen._refresh_detection
+        original_mount = app_mod.StagePickScreen.on_mount
+        original_summary_mount = app_mod.SummaryScreen.on_mount
+
+        def refreshed(screen, *args, **kwargs):
+            original_refresh(screen, *args, **kwargs)
+            if len(screen.app.scan.videos) == 1:
+                preview_ready.set()
+
+        def mounted(screen):
+            original_mount(screen)
+            # Screen selection is usable only after on_mount has populated
+            # the list. A screen-stack change alone does not establish this.
+            picker_ready.set()
+
+        def summary_mounted(screen):
+            original_summary_mount(screen)
+            summary_ready.set()
+
+        def questions(session, scan):
+            scans.append(scan)
+            questions_ready.set()
+            return []
+
+        monkeypatch.setattr(app_mod.SessionScreen, '_refresh_detection', refreshed)
+        monkeypatch.setattr(app_mod.StagePickScreen, 'on_mount', mounted)
+        monkeypatch.setattr(app_mod.SummaryScreen, 'on_mount', summary_mounted)
+        monkeypatch.setattr(app_mod, 'build_questions', questions)
         app = app_mod.WildScanApp()
         async with app.run_test(size=(120, 50)) as pilot:
             await pilot.pause()
             screen = app.screen
             screen.query_one('#s-cruise').value = str(source)
             screen.query_one('#s-results').value = str(tmp_path / 'results')
-            await pilot.pause(0.5)
+            await asyncio.wait_for(preview_ready.wait(), timeout=5)
             assert len(app.scan.videos) == 1
             (source / 'second.mov').write_bytes(b'video')
             screen.query_one('#s-continue').press()
-            await pilot.pause()
+            await asyncio.wait_for(picker_ready.wait(), timeout=5)
             assert isinstance(app.screen, app_mod.StagePickScreen)
+            assert app.screen.query_one('#stage-pick').selected
             assert len(app.scan.videos) == 2
             (source / 'third.mov').write_bytes(b'video')
             app.screen.action_confirm()
-            await pilot.pause()
+            await asyncio.wait_for(questions_ready.wait(), timeout=5)
+            await asyncio.wait_for(summary_ready.wait(), timeout=5)
             assert {path.name for path in scans[0].videos} == {
                 'first.mov', 'second.mov', 'third.mov'}
     asyncio.run(drive())

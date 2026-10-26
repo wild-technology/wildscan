@@ -5,3 +5,6 @@
 *.bat text eol=crlf
 # The VBS hook shim is edited by tooling too - same CRLF discipline
 *.vbs text eol=crlf
+
+# Licence evidence is hashed as installed; preserve those exact bytes.
+/third_party_licenses/** -text

@@ -33,6 +33,11 @@ jobs:
           cache-dependency-path: |
             pyproject.toml
             requirements.txt
+      - name: Create clean environment
+        run: |
+          python -m venv .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "$PWD/.venv/Scripts" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Upgrade environment installer
         run: python -m pip install --upgrade "pip>=26.2"
       - name: Install checkout
@@ -44,6 +49,12 @@ jobs:
           wildscan --help
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m wildscan --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Generate Windows dependency and licence inventory
+        run: |
+          python scripts/generate_sbom.py --output "${{ runner.temp }}/wildscan-inventory/sbom.spdx.json" --license-dir "${{ runner.temp }}/wildscan-inventory/third_party_licenses" --source-ref "${{ github.sha }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/generate_sbom.py --verify "${{ runner.temp }}/wildscan-inventory/sbom.spdx.json" --license-dir "${{ runner.temp }}/wildscan-inventory/third_party_licenses"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run offline tests
         run: python -m pytest -ra --junitxml=test-results.xml
@@ -61,3 +72,11 @@ jobs:
           path: test-results.xml
           if-no-files-found: ignore
           retention-days: 7
+      - name: Save Windows dependency and licence inventory
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-delivery-inventory-${{ matrix.python-version }}
+          path: ${{ runner.temp }}/wildscan-inventory/
+          if-no-files-found: error
+          retention-days: 90
