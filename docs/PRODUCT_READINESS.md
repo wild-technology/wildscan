@@ -105,7 +105,7 @@ binaries are published; installation uses the editable source checkout.
 
 The refreshed SBOM records a clean Windows/Python 3.13.16 environment: 61
 installed third-party Python packages plus WildScan and three external
-prerequisites. It includes transitive relationships and 183 supplied licence
+prerequisites. It includes transitive relationships and 175 supplied licence
 payloads with verified hashes. Python-package licence declarations use SPDX
 expressions or preserved custom text. RealityScan and optional niraclient are
 separate installations, not inventoried binaries. Both Windows CI versions
