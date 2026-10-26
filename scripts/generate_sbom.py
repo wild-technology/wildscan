@@ -105,8 +105,9 @@ def _license_files(distribution) -> list[tuple[str, bytes]]:
                               for index, part in enumerate(lower)
                               if part.endswith(('.dist-info', '.egg-info'))), '')
         declared_file = (normalized in declared_paths or metadata_tail in declared_paths
-                         or any(metadata_tail == 'licenses/' + value
-                                for value in declared_paths))
+                         or any(metadata_tail == prefix + value
+                                for value in declared_paths
+                                for prefix in ('licenses/', 'licences/')))
         metadata_license_dir = metadata_tail.startswith(('licenses/', 'licences/'))
         if not (LICENSE_WORD.match(parts[-1]) or declared_file
                 or (metadata_license_dir and suffix in LEGAL_TEXT_SUFFIXES)):
@@ -133,6 +134,11 @@ def _license_files(distribution) -> list[tuple[str, bytes]]:
 
 
 def _decode(data: bytes) -> str:
+    if data.startswith((b'\xff\xfe', b'\xfe\xff')):
+        try:
+            return data.decode('utf-16')
+        except UnicodeDecodeError:
+            pass
     try:
         return data.decode('utf-8-sig')
     except UnicodeDecodeError:
