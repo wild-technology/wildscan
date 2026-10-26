@@ -176,9 +176,12 @@ while the master table spells it `execRSCMD` is weak evidence that parsing is ca
 - `-execRSCMDIndirect <instance|*> <commands.rscmd>` is the delegated twin
   [OFFICIAL: appbasics/allcommands].
 
-**This repository does not use `.rscmd` at all** — every workflow is a `.bat` file issuing
-`-delegateTo` commands one at a time, because per-command error checking and the double-wait pattern
-(§6.3) need control flow between commands.
+**This repository's workflows are `.bat` files issuing `-delegateTo` commands one at a time**,
+because per-command error checking and the double-wait pattern (§6.3) need control flow between
+commands. The one `.rscmd` in use is generated data, not control flow: a file of
+`-addImageWithCalibration` / `-add` lines (one per image) that `AlignZone.bat` runs through
+`-execRSCMD` to add images together with their calibration sidecars
+[VERIFIED-by-inspection: `calibration_sidecars.rscmd_text`, `AlignZone.bat`].
 
 ### 2.4 Quoting — the single most expensive trap
 
@@ -188,7 +191,7 @@ pair silently arrives split. RealityScan then logs
 `Parsing setting key=value 'sfmMergeGeoreferencedComponents' failed [err:7155]` and `'false' failed`,
 **applies nothing**, and the parse failures land in the errors marker file — aborting the workflow
 that carried them. Consequence in this repo: no flag-sweep cell before wave 1f had ever applied its
-flags. [VERIFIED: NA167 B5 / FINDINGS 2026-07-23]
+flags. [VERIFIED: bug B5 / project testing 2026-07-23]
 
 Rules that follow, all mandatory here:
 
@@ -205,25 +208,25 @@ Rules that follow, all mandatory here:
    [VERIFIED: `RS_CLI/Scripts/MergeZoneComponents.bat`]
 3. Lists never cross as arguments — they cross as **files**: `.complist` (component paths, one per
    line) and `.imagelist` (image paths, one per line). This is codified as hard rule 8 in
-   `ARCHITECTURE.md`. [VERIFIED: NA167 B5]
+   `ARCHITECTURE.md`. [VERIFIED: bug B5]
 4. Quote any path that may contain spaces, including inside `appProcessExecCmd`. An unquoted exe
    path in that key silently disabled **all** error detection when the checkout path contained
-   spaces. [VERIFIED: status log overhaul item 4, 2026-07-21]
+   spaces. [VERIFIED: project testing 2026-07-21]
 
 A related encoding trap on the file side: `Set-Content -Encoding utf8` in Windows PowerShell 5.1
 writes a BOM, and a BOM on line 1 of a `.complist` silently invalidates the first entry. Write such
 files from Python (`encoding='utf-8'`, no BOM) or with
 `[System.IO.File]::WriteAllLines($p,$lines,(New-Object System.Text.UTF8Encoding($false)))`.
-[VERIFIED: FINDINGS 2026-07-27]
+[VERIFIED: project testing 2026-07-27]
 
 ### 2.5 `.bat` mechanics that bite (Windows substrate)
 
 | Trap | Effect | Mitigation |
 |---|---|---|
-| LF-only line endings in a `.bat` | cmd's `call :label` search is byte-offset sensitive; the same `call :run` resolved ten times then failed with "The system cannot find the batch label specified - run" | All workflow `.bat` files must be CRLF; this repo's `.gitattributes` pins `*.bat text eol=crlf` **and** `*.vbs text eol=crlf` (the hook shim is edited by tooling too) [VERIFIED: NA167 B10; `.gitattributes`] |
+| LF-only line endings in a `.bat` | cmd's `call :label` search is byte-offset sensitive; the same `call :run` resolved ten times then failed with "The system cannot find the batch label specified - run" | All workflow `.bat` files must be CRLF; this repo's `.gitattributes` pins `*.bat text eol=crlf` **and** `*.vbs text eol=crlf` (the hook shim is edited by tooling too) [VERIFIED: bug B10; `.gitattributes`] |
 | `exit /b N` inside a multi-statement parenthesised block | returns 0 to the process caller | single-line chains or `goto :fail` |
 | MSYS/Git Bash invoking a `.bat` | mangles cmd switches (`/c` → `C:\`) | invoke via PowerShell, `cmd //c`, or (as the Python layer does) `subprocess.Popen([script_path] + args)` with no explicit `cmd /c` prefix [VERIFIED: `realityscan_cli.py` comment] |
-| Console-subsystem children under a windowless parent | each pops a visible console window — hundreds over a long run | `CREATE_NO_WINDOW` on every helper subprocess; a GUI-subsystem host (`wscript.exe`) for hooks fired by RealityScan [VERIFIED: FINDINGS 2026-07-23] |
+| Console-subsystem children under a windowless parent | each pops a visible console window — hundreds over a long run | `CREATE_NO_WINDOW` on every helper subprocess; a GUI-subsystem host (`wscript.exe`) for hooks fired by RealityScan [VERIFIED: project testing 2026-07-23] |
 
 ### 2.6 What happens on argument errors
 
@@ -231,15 +234,15 @@ There is no documented behaviour for malformed arguments. Observed:
 
 | Situation | Observed behaviour | Tag |
 |---|---|---|
-| Unknown command (e.g. `-selectAllComponents`, which does not exist in 2.2) | process result `0x82000060`, reported through the completion hook; the sequence continues | [VERIFIED: NA167 #13 / B2, 2026-07-23] |
-| `-set` pair split by cmd | `err:7155` in `RealityScan.log`, setting **not** applied, failure result code in the errors marker | [VERIFIED: NA167 B5] |
-| Extra/unsupported parameter on a command that takes none (e.g. `-align "params.xml"`) | argument **silently ignored**, command runs on current settings | [VERIFIED: FINDINGS 2026-07-21] |
-| Selection command with a name that does not resolve (e.g. `-selectModel` on a renamed-away model) | `2147942487` = `0x80070057` `E_INVALIDARG`, "in 0 seconds"; `err:5601` in the log | [VERIFIED: FINDINGS 2026-07-29] |
-| Selection/rename/delete command on an empty scene | **silent no-op**, no errors marker at all (except the rename, which reports `E_INVALIDARG`) | [VERIFIED: FINDINGS 2026-07-23/24] |
-| Delegating to an instance that has died | the *delegating* process exits non-zero and the `.bat` prints `ERROR: Failed to delegate command: …` — this is the signature of a dead instance, not a rejected operation | [VERIFIED: FINDINGS 2026-07-26] |
+| Unknown command (e.g. `-selectAllComponents`, which does not exist in 2.2) | process result `0x82000060`, reported through the completion hook; the sequence continues | [VERIFIED: bug B2, 2026-07-23] |
+| `-set` pair split by cmd | `err:7155` in `RealityScan.log`, setting **not** applied, failure result code in the errors marker | [VERIFIED: bug B5] |
+| Extra/unsupported parameter on a command that takes none (e.g. `-align "params.xml"`) | argument **silently ignored**, command runs on current settings | [VERIFIED: project testing 2026-07-21] |
+| Selection command with a name that does not resolve (e.g. `-selectModel` on a renamed-away model) | `2147942487` = `0x80070057` `E_INVALIDARG`, "in 0 seconds"; `err:5601` in the log | [VERIFIED: project testing 2026-07-29] |
+| Selection/rename/delete command on an empty scene | **silent no-op**, no errors marker at all (except the rename, which reports `E_INVALIDARG`) | [VERIFIED: project testing 2026-07-23/24] |
+| Delegating to an instance that has died | the *delegating* process exits non-zero and the `.bat` prints `ERROR: Failed to delegate command: …` — this is the signature of a dead instance, not a rejected operation | [VERIFIED: project testing 2026-07-26] |
 
 **Design consequence:** loop terminals must be file-existence checks, never error checks, because
-the most common terminal states are silent. [VERIFIED: FINDINGS 2026-07-23]
+the most common terminal states are silent. [VERIFIED: project testing 2026-07-23]
 
 ---
 
@@ -294,11 +297,12 @@ hook records, and untested interactions with headless mode are not worth the ris
    changes the outcome. A selection-driven XMP export under `-silent` completed in 0.057 s instead of
    20.5 s and exported **nothing**, because the "Export Selection" dialog was auto-answered while a
    flight-log import had left images selected. `-deselectAllImages` before exports is therefore
-   mandatory. [VERIFIED: FINDINGS 2026-07-23] [UNDOCUMENTED: the Help does not warn that `-silent`
+   mandatory. [VERIFIED: project testing 2026-07-23] [UNDOCUMENTED: the Help does not warn that `-silent`
    silently changes export scope]
 
-Verification that minidumps really land at the `-silent` path: `RealityScanCrash-20260726-054742.dmp`
-(1,477,291 bytes) plus a sibling `RealityScanCrash-20260726-054742.dmp.metadata` are present in
+Verification that minidumps really land at the `-silent` path: after a production crash,
+`RealityScanCrash-20260726-054742.dmp` (1,477,291 bytes) plus a sibling
+`RealityScanCrash-20260726-054742.dmp.metadata` were found in
 `modules/realityscan_interface/RS_CLI/Errors/`, which is exactly the `%ErrorPath%` passed to
 `-silent` at boot. [VERIFIED-by-inspection, 2026-08-04]
 
@@ -318,7 +322,7 @@ The file is namespaced per instance, so parallel instances can never read each o
 `-stdConsole` was **removed from this repo's boot line on 2026-07-23**: it allocates a console
 window per instance boot and nothing reads the instance's stdout — progress comes from
 `-writeProgress`, per-operation results from the completion hook. [VERIFIED: `startRealityScan.bat`
-comment + FINDINGS]. The switch itself is live in the product; the removal is a local policy, not a
+comment; project testing 2026-07-23]. The switch itself is live in the product; the removal is a local policy, not a
 defect.
 
 ### 3.5 `-newScene`, `-load`, and autosave handling
@@ -335,7 +339,7 @@ defect.
   rather than relying on a default.
 - A stale `<name>.rsproj.new` sitting beside a project makes `-load` emit warning-class
   `0x82000017` while still completing — enough to abort an errors-marker-gated workflow.
-  [VERIFIED: FINDINGS 2026-07-29]
+  [VERIFIED: project testing 2026-07-29]
 - Autosave writes `<project_name>.autosave` next to the project **plus** a part in the resource
   cache; for a never-saved project everything goes to the cache at
   `C:\Users\<user>\AppData\Local\Temp\RealityScan` (instance 1), `RealityScan-1` (instance 2),
@@ -348,7 +352,7 @@ defect.
 - Production policy here: `-set "appAutoSaveMode=false"` at boot. Reasons: autosave would race the
   destructive in-session identity loop, and a modal recovery dialog hangs a headless box. No stale
   autosaves appeared in any test run under this setting.
-  [VERIFIED: status log verification checklist item 7, 2026-07-21]
+  [VERIFIED: project testing 2026-07-21]
 
 ---
 
@@ -373,8 +377,8 @@ What that means operationally:
   still end up with a modal on screen and an instance that never completes its queued command.
 - The CLI has no way to observe that state. Detecting it requires a human glance or a screenshot.
   This is the single largest item on this pipeline's blindness list: **semantic and modal state is
-  invisible to the CLI while every command still "succeeds"**. [VERIFIED-as-policy: ARCHITECTURE.md,
-  research working agreement §1.2]
+  invisible to the CLI while every command still "succeeds"**. [VERIFIED-as-policy: project
+  practice]
 
 GUI-visible operation for debugging: this repo's boot script honours `RS_HEADLESS=0`, which blanks
 the `-headless` flag; delegation and monitoring work identically with the UI visible
@@ -416,7 +420,7 @@ Each `-delegateTo` invocation is a **separate, short-lived `RealityScan.exe` pro
 command to the named running instance and exits. Two properties govern everything built on it:
 
 - **Delegated commands are QUEUED, FIFO.** The delegating process returns at hand-over, **not** at
-  completion. [VERIFIED: NA167 notes §1; status log 2026-07-21; corroborated by every production
+  completion. [VERIFIED: earlier multi-camera dataset, 2026-07; project testing 2026-07-21; corroborated by every production
   run]
 - **FIFO ordering is guaranteed**, so an instant command (`-set`) delegated immediately before a long
   one is guaranteed to execute first — no wait is needed between them. This is why the repo can fire
@@ -449,17 +453,14 @@ learn that `-align` failed — the `.bat` exits believing it succeeded. Do not u
 anything unattended. [OFFICIAL: tutorials/commandline_deleg] [VERIFIED-as-inadequate: the `:run`
 pattern in §6.3 exists precisely because this shape was the starting point]
 
-### 5.3 Instance identity is load-bearing — a real incident
+### 5.3 Instance identity is load-bearing
 
-`RS_INSTANCE` was **not** an input to the Python execution layer until 2026-07-28: `RealityScanCLI`
-resolved the instance from constructor arg → `rs_settings.json` → default, and only ever *wrote* the
-env var for the `.bat` layer. A cross-session probe therefore ran on `RS1` while believing it was
-isolated on `RS2`, and could have `-quit` a live production instance.
-[VERIFIED: FINDINGS 2026-07-28]
-
-Current resolution order (fixed): constructor argument → `RS_INSTANCE` env var →
-`rs_settings.json` `realityscan.instance_name` → `RS1`
-[VERIFIED-by-inspection: `realityscan_cli.py:__init__`].
+A layer that resolves the instance name from a different source than the `.bat` layer reads can
+drive a different instance from the one its caller believes it holds, up to and including
+delegating `-quit` to a live instance. The execution layer therefore resolves the name in one
+order, shared with the `.bat` layer through `RS_INSTANCE`: constructor argument → `RS_INSTANCE`
+env var → `rs_settings.json` `realityscan.instance_name` → `RS1`
+[VERIFIED-by-inspection: `realityscan_cli.py:__init__`; project testing 2026-07-28].
 
 **Rule:** before any mutating command, prove which instance you are on. `-getStatus <name>` is the
 only query available (§6.4).
@@ -483,8 +484,8 @@ would match PID 123 against 1234 and silently steal a live lock.
 - **Observed:** it returns **prematurely** when issued *before* the instance has picked the queued
   command up. The delegating process has already returned (§5.2), so a `-waitCompleted` fired
   immediately after can find the instance idle and return at once, and the workflow races ahead of an
-  operation that has not started. Hit in production. [CONTRADICTED / VERIFIED: FINDINGS
-  "RealityScan 2.2 CLI behavior", 2026-07-21; NA167 notes §1]
+  operation that has not started. Hit in production. [CONTRADICTED / VERIFIED: project
+  testing 2026-07-21; earlier multi-camera dataset, 2026-07]
 
 ### 6.2 Why a single wait cannot be repaired by a longer sleep
 
@@ -539,7 +540,7 @@ Element by element:
 **Never gate completion on the results log growing** — RealityScan emits periodic internal heartbeat
 processes through the same completion trigger, so "the results log grew" does not mean "our command
 finished". A completion check built on results-log growth raced ahead of a running `-align` and was
-removed entirely. [VERIFIED: status log 2026-07-21; FINDINGS]
+removed entirely. [VERIFIED: project testing 2026-07-21]
 
 **Never infer completion from process names.** The pre-2.x code polled `tasklist` for
 `RealityCapture.exe` and silently matched nothing once the executable became `RealityScan.exe`.
@@ -558,8 +559,8 @@ Moving rather than deleting preserves the evidence while leaving a clean marker 
 This is the correct pattern for any expected-failure tolerance: match the exact code, never a
 wildcard.
 
-**A third tolerant handler in this repo does not follow that rule, and you should know before you
-copy it.** `ExportDeliverables.bat:try_delete_model` wraps a `-selectModel` / `-deleteSelectedModel`
+**A third tolerant handler in this repo does not follow that rule.**
+`ExportDeliverables.bat:try_delete_model` wraps a `-selectModel` / `-deleteSelectedModel`
 pair and, on *any* non-empty errors marker, moves it to
 `expected_select_<instance>_<model>.txt` / `expected_delete_<instance>_<model>.txt` and continues —
 it never inspects the code. That is deliberate (the residual-model sweep probes names that may or may
@@ -588,15 +589,13 @@ Two distinct uses, one documented and one not:
 - **Undocumented and load-bearing:** **errorlevel is 0 if and only if the instance exists.** This is
   the readiness test at boot and the shutdown verification at teardown.
   [UNDOCUMENTED / VERIFIED: `startRealityScan.bat`, `realityscan_cli.py:is_instance_running`]
-  Note for anyone reading the repo's own notes: the NA167 notes §1 presents this
-  errorlevel contract under the label "Official". It is not — the shipped Help documents `-getStatus`
-  only as returning a progress status, and says nothing about the exit code. The behaviour is real,
-  the provenance label in that file is wrong. [CONTRADICTED, internal to this repo]
+  The shipped Help documents `-getStatus` only as returning a progress status and says nothing
+  about the exit code; the errorlevel contract is observed behaviour, not documented behaviour.
 
 **The teardown/file-handle race.** `-getStatus` reports an instance "gone" **seconds before** the
 process actually exits and releases its file handles — specifically the `-writeProgress` marker.
 The next workflow's marker clear raced that teardown and failed to delete a file Windows still
-considered open. [VERIFIED: NA167 #14 / B3, 2026-07-23]
+considered open. [VERIFIED: bug B3, 2026-07-23]
 
 Mitigation, per marker file, in `RealityScanCLI._clear_markers`: retry deletion for up to **60 s**,
 sleeping 2 s between attempts, and only then raise
@@ -686,9 +685,9 @@ exit /b 0
 ```
 
 `:fail` quits **without saving**, so a failed run leaves the project on disk intact
-[VERIFIED: FINDINGS 2026-07-26]. Quit-without-save leaves an `.rsproj` bundle **byte-stable** across
+[VERIFIED: project testing 2026-07-26]. Quit-without-save leaves an `.rsproj` bundle **byte-stable** across
 load/delete/export cycles — hash-verified twice; this is what makes the destructive in-session
-identity harvest safe. [VERIFIED: FINDINGS, cells U15/U16, 2026-07-23]
+identity harvest safe. [VERIFIED: project testing, cells U15/U16, 2026-07-23]
 
 Shutdown is then **verified**, not assumed: poll `-getStatus` until it reports the instance gone.
 The orchestrator refuses to start the next workflow if verification fails, because a live instance
@@ -709,14 +708,10 @@ may still hold the scene. [VERIFIED-by-inspection: `realityscan_cli.py:wait_for_
 | **Overall operation timeout** | **none, by design** | ARCHITECTURE.md hard rule 3 | [VERIFIED] |
 
 10+ hour operations are normal at production scale: the eight-step model recipe on the 3,738-camera
-H2023 hull component completed in **384.1 min** [VERIFIED: FINDINGS 2026-07-26], and the sequential
+dataset A hull component completed in **384.1 min** [VERIFIED: project testing 2026-07-26], and the sequential
 three-zone grow to 4,131 images (strategy B, 3,906 registered = 94.6 %) took **444 min** against
-**169 min** for the equivalent joint align (strategy C) [VERIFIED: NA167 #19, FINDINGS 2026-07-24].
+**169 min** for the equivalent joint align (strategy C) [VERIFIED: earlier multi-camera dataset, 2026-07, project testing 2026-07-24].
 Startup and shutdown are the only bounds. [ARCHITECTURE.md hard rule 3]
-
-**Internal inconsistency to be aware of:** `ARCHITECTURE.md` documents the shutdown bound as 300 s while
-the code uses 900 s. The code is authoritative for behaviour; the prose is stale.
-[CONTRADICTED, internal to this repo: `realityscan_cli.py` lines 190–191 vs `ARCHITECTURE.md` hard rule 3]
 
 Shutdown timing has only ever been verified on **small** scenes. The bound for a 4,000+ camera scene
 is untested. [OPEN, §18-Q5]
@@ -785,7 +780,7 @@ occurrences, always result 0, always at session boundaries).
 failures; settled by delegating a single `-selectModel` to an idle instance and reading the one
 new progress line]
 
-algIds actually observed in this repo's two shipped progress files, with their documented names
+algIds actually observed in two production progress files (inspected 2026-08-04), with their documented names
 [OFFICIAL: tutorials/processids unless marked]:
 
 | algId | Name | Where seen |
@@ -814,18 +809,18 @@ Empirically established consequences, all [VERIFIED]:
 1. **`#timeout` lines are not activity.** Elapsed keeps ticking and `estimation` becomes garbage, so
    every `#timeout` line differs from the last — which defeats naive line-change stall detection. A
    6-hour `-importComponent` hang produced **zero** stall warnings because the monitor counted each
-   new `#timeout` line as progress. [VERIFIED: NA167 #12 / B4, 2026-07-23]
+   new `#timeout` line as progress. [VERIFIED: bug B4, 2026-07-23]
 2. **`#timeout` does not always mean hung.** Heavy alignment phases legitimately freeze the progress
    fraction for 20+ minutes; a *successful* 94.6 % run emitted **40** `#timeout` lines.
-   [VERIFIED: NA167 #28, 2026-07-24]
+   [VERIFIED: earlier multi-camera dataset, 2026-07-24]
 3. **The pathological signature is `#timeout` from fraction `0.00` with an ever-growing ETA.**
-   [VERIFIED: NA167 #28]
+   [VERIFIED: earlier multi-camera dataset, 2026-07]
 4. **There is a third cause: near-OOM.** RealityScan slows to a crawl *without* crashing and *without*
    spilling to NVMe — in the progress feed this is indistinguishable from a hang.
-   [VERIFIED: FINDINGS 2026-07-24]
+   [VERIFIED: project testing 2026-07-24]
 
 **Policy in force:** stall-**warn** on `#timeout` after 2 h; **never auto-kill an alignment**.
-[VERIFIED-as-decision: NA167 #28]
+[VERIFIED-as-decision: earlier multi-camera dataset, 2026-07]
 
 Implementation of the "not activity" rule [VERIFIED-by-inspection: `realityscan_cli.py:_monitor_loop`]:
 
@@ -905,7 +900,7 @@ as a fourth argument, and this repo passes the instance name for the same reason
 **If the exe path contains spaces it must be double-quoted** [OFFICIAL: appbasics/appsettings] — and
 here it must be *escape*-quoted, because the whole command line is itself the value of a quoted
 `-set` pair. Unquoted, the trigger silently launches nothing and all error detection vanishes.
-[VERIFIED: status log overhaul item 4, 2026-07-21]
+[VERIFIED: project testing 2026-07-21]
 
 ### 9.3 This repo's hook chain
 
@@ -924,13 +919,13 @@ periodic internal heartbeats. Invoking `cmd /c ErrorWriter.bat` directly pops a 
 window each time — hundreds of flashing terminals over a long run. `wscript.exe` is a GUI-subsystem
 host, so the shim runs with no console and shells the real `.bat` hidden and **synchronously**
 (`shell.Run …, 0, True`) to preserve marker-file write ordering.
-[VERIFIED: FINDINGS 2026-07-23; `ErrorWriterLaunch.vbs`]
+[VERIFIED: project testing 2026-07-23; `ErrorWriterLaunch.vbs`]
 
 A quoting hazard already paid for once: the shim's **first** version composed the command line with
 literal escaped quotes inside VBS string constants, producing a malformed line — `ErrorWriter.bat`
 never ran, and **the errors-marker system was inert for every run between the shim's introduction and
 the fix**. The working composition uses `Chr(34)`:
-[VERIFIED: FINDINGS 2026-07-24 review finding]
+[VERIFIED: project testing 2026-07-24 review finding]
 
 ```vbs
 q = Chr(34)
@@ -960,7 +955,7 @@ Design points worth copying:
   `progress_RS1.txt`), so parallel instances can never read each other's state.
 - Result codes `0` **and** `1` are both treated as success (the whitelist comes from Epic's own sample
   script and matches observation: routine `-addFolder` reports result `1`).
-  [OFFICIAL: tutorials/commandline_5 sample; VERIFIED: FINDINGS 2026-07-21]
+  [OFFICIAL: tutorials/commandline_5 sample; VERIFIED: project testing 2026-07-21]
 
 ### 9.4 Real marker-file content
 
@@ -1005,7 +1000,7 @@ An error occurred: process 21859 finished with result code 2147942487 in 0 secon
 
 **The errors marker carries only the numeric result code — never the `err:NNNN` text.** That text
 exists only in `RealityScan.log`. Any tolerant handler must therefore match *codes*, not messages.
-[VERIFIED: FINDINGS 2026-07-23]
+[VERIFIED: project testing 2026-07-23]
 
 ### 9.5 The heartbeat problem
 
@@ -1014,7 +1009,7 @@ RealityScan 2.2 emits periodic internal processes through the same trigger. In t
 **310 of 434** recorded completions (99 + 106 + 105), and `21896` fires at session boundaries with no
 corresponding delegated command. Fewer than one line in four is attributable to a command the
 orchestrator issued. [VERIFIED-by-inspection: `results_RS1.log`, 2026-08-04;
-VERIFIED-as-behaviour: status log 2026-07-21]
+VERIFIED-as-behaviour: project testing 2026-07-21]
 
 Consequences:
 
@@ -1045,14 +1040,14 @@ completion hook (§9). [VERIFIED-as-decision: `startRealityScan.bat`]
 
 | decimal | hex | meaning as established here |
 |---|---|---|
-| `0`, `1` | — | routine success (both) [VERIFIED: FINDINGS 2026-07-21] |
-| `2181038103` | `0x82000017` | warning-class load complaint, e.g. a stale `<name>.rsproj.new` beside the project [VERIFIED: FINDINGS 2026-07-29; observed once in `results_RS1.log`] |
-| `2181038335` | `0x820000FF` | warning class; `-importFlightLog` `err:18002` (log rows not in the scene). Benign, verified by manifest cross-check [VERIFIED: FINDINGS 2026-07-21/25] |
-| `2147549183` | `0x8000FFFF` | **generic** "unexpected program state" — broken `-set` args *and* the zone_14 align failure emit the identical code [VERIFIED: NA167 #16 / B6] |
-| `2147942487` | `0x80070057` | `E_INVALIDARG` — empty/no-op selection paths (`-renameSelectedComponent` on an emptied scene, `-selectModel` on a missing name) [VERIFIED: FINDINGS 2026-07-24/29] |
-| `2147942512` | `0x80070070` | `ERROR_DISK_FULL` — RealityScan's **cache** disk, not necessarily the project disk [VERIFIED: FINDINGS 2026-07-26] |
-| `2181038176` | `0x82000060` | unknown/invalid command (e.g. `-selectAllComponents`) [VERIFIED: NA167 #13 / B2; decimal computed from the hex, not read off a log] |
-| `3` | — | crash; minidump at the `-silent` path [OFFICIAL + VERIFIED: FINDINGS 2026-07-26] |
+| `0`, `1` | — | routine success (both) [VERIFIED: project testing 2026-07-21] |
+| `2181038103` | `0x82000017` | warning-class load complaint, e.g. a stale `<name>.rsproj.new` beside the project [VERIFIED: project testing 2026-07-29; observed once in `results_RS1.log`] |
+| `2181038335` | `0x820000FF` | warning class; `-importFlightLog` `err:18002` (log rows not in the scene). Benign, verified by manifest cross-check [VERIFIED: project testing 2026-07-21/25] |
+| `2147549183` | `0x8000FFFF` | **generic** "unexpected program state" — broken `-set` args *and* the zone_14 align failure emit the identical code [VERIFIED: bug B6] |
+| `2147942487` | `0x80070057` | `E_INVALIDARG` — empty/no-op selection paths (`-renameSelectedComponent` on an emptied scene, `-selectModel` on a missing name) [VERIFIED: project testing 2026-07-24/29] |
+| `2147942512` | `0x80070070` | `ERROR_DISK_FULL` — RealityScan's **cache** disk, not necessarily the project disk [VERIFIED: project testing 2026-07-26] |
+| `2181038176` | `0x82000060` | unknown/invalid command (e.g. `-selectAllComponents`) [VERIFIED: bug B2; decimal computed from the hex, not read off a log] |
+| `3` | — | crash; minidump at the `-silent` path [OFFICIAL + VERIFIED: project testing 2026-07-26] |
 
 Arithmetic that lets you recognise the family in a decimal-only marker file: `0x82000000` =
 **2181038080**, so any decimal in 2181038080–2181038335 is an `0x820000xx` code. The three observed
@@ -1070,7 +1065,7 @@ Codes are `HRESULT`-shaped: the `0x8007xxxx` entries are Win32 errors wrapped by
 `err:NNNN` codes that appear **only** in `RealityScan.log`, never in the markers:
 `err:7155` (setting parse failure), `err:18002` (flight-log rows not in scene),
 `err:5601` (model name not found), and the internal `MSS_STR001` reconstruction failure.
-[VERIFIED: FINDINGS 2026-07-23/29]
+[VERIFIED: project testing 2026-07-23/29]
 
 ### 10.3 Crash artifacts
 
@@ -1079,12 +1074,12 @@ A crash writes `RealityScanCrash-YYYYMMDD-HHMMSS.dmp` plus a sibling
 **binary, not text** — 192 bytes beginning with the ASCII magic `MCRM` — so do not expect to read a
 reason out of it. The dump on hand is 1,477,291 bytes, i.e. a mini-dump, not a full-memory dump.
 [VERIFIED-by-inspection: `RS_CLI/Errors/RealityScanCrash-20260726-054742.dmp{,.metadata}`,
-2026-08-04; FINDINGS 2026-07-26]
+2026-08-04; project testing 2026-07-26]
 
 **The timestamp in the filename is UTC, not local time.** The artifact on disk is
 `RealityScanCrash-20260726-054742.dmp`; its NTFS CreationTime is `2026-07-26 01:47:42` local and its
 LastWriteTime `01:47:43` — a 4-hour offset exactly matching UTC−4 (US Eastern daylight time) on that
-date, and matching the findings log's "written at 01:47:42 local" to the second.
+date.
 [VERIFIED-by-inspection of filename vs. file timestamps, 2026-08-04 — but on **one** artifact from
 **one** machine, so it remains [INFERRED] that the format is UTC rather than a fixed offset baked in
 elsewhere; the next dump on a differently-offset machine settles it at zero cost]
@@ -1094,7 +1089,7 @@ convert. On a UTC−4 box a crash at 21:00 local is filed under the *next* day's
 
 **After a crash, the next delegated command fails at delegation** — `ERROR: Failed to delegate
 command: …` — which is the signature of a dead instance rather than a rejected operation.
-[VERIFIED: FINDINGS 2026-07-26]
+[VERIFIED: project testing 2026-07-26]
 
 ---
 
@@ -1102,22 +1097,22 @@ command: …` — which is the signature of a dead instance rather than a reject
 
 | Property | Value | Tag |
 |---|---|---|
-| Path | `%LOCALAPPDATA%\Temp\RealityScan.log` | [VERIFIED: NA167 #16 / B6] |
+| Path | `%LOCALAPPDATA%\Temp\RealityScan.log` | [VERIFIED: bug B6] |
 | Enabled by | `appLog` (bool, default `true`) — "Log file: enable to write and save the log file in the Windows Temp folder" | [OFFICIAL: appbasics/appsettings, tutorials/setkeyvaluetable] |
-| Lifetime | **truncated on every instance boot** | [VERIFIED: NA167 #16 / B6, 2026-07-23] |
-| Scope | one shared file, **not** per instance | [VERIFIED: FINDINGS 2026-07-27, by the splice below] |
+| Lifetime | **truncated on every instance boot** | [VERIFIED: bug B6, 2026-07-23] |
+| Scope | one shared file, **not** per instance | [VERIFIED: project testing 2026-07-27, by the splice below] |
 
 Two consequences that have each cost a session:
 
 1. **Post-failure snapshots lose the race to the next boot.** A 91-byte capture was recorded once.
    Log copies must happen inside the driver **immediately** after the failing call returns, not at
-   the end of the run. [VERIFIED: NA167 #16 / B6]
+   the end of the run. [VERIFIED: bug B6]
 2. **A saved `rslog.txt` snapshot can be a *different run's* log, spliced mid-file.** Two merge
    drivers overlapped; RealityScan truncated the shared log when the second instance launched, so one
-   snapshot's head and tail belong to different runs — an H2023 attempt's snapshot recorded
-   `importComponent` of eleven H2024 components. **A snapshot must be validated against a run-unique
+   snapshot's head and tail belong to different runs — one dataset's attempt snapshot recorded
+   `importComponent` of eleven components belonging to another dataset. **A snapshot must be validated against a run-unique
    token — e.g. the attempt's own `.complist` paths — before any number is read out of it.**
-   [VERIFIED: FINDINGS 2026-07-27]
+   [VERIFIED: project testing 2026-07-27]
 
 The log is nonetheless the *only* place the human-readable reason for a failure exists (§10.2), so
 it stays load-bearing for post-mortems and `appLog` is deliberately left at its default `true`.
@@ -1136,15 +1131,7 @@ it stays load-bearing for post-mortems and `appLog` is deliberately left at its 
 - `-disableOnlineCommunication` disables any online communication
   [OFFICIAL: tutorials/commandline_4]. Never used here; its interaction with sign-in state and with
   online-dependent commands (`-uploadToSketchfab`) is untested. [OPEN, §18-Q7]
-- The 2.2 binary contains the UTF-16 strings `appActivTokenCLI` and `appActivTokenCLIValid`, plus
-  `appLic`, `appLicDel`, `appLicDelMachine`, `appAutoRenew`, `appLicenseAutoRenew`, `appRenewT` —
-  none of which appear in the Help's settings tables. A CLI activation-token path plausibly exists.
-  [UNDOCUMENTED: direct UTF-16 string scan of
-  `C:\Program Files\Epic Games\RealityScan_2.2\RealityScan.exe` (2.2.0.119430), re-run 2026-08-04;
-  see also `03-settings-keys.md`] [INFERRED: that `appActivTokenCLI` is the headless-activation
-  lever; nothing has been set or observed. Being a key-shaped string in the binary is not evidence
-  that `-set` accepts it]
-- **Empirically: two years of headless production here recorded no licensing/activation interaction,
+- **Empirically: this project's headless production runs recorded no sign-in interaction,
   prompt, or failure.** That is absence of evidence, not evidence of absence.
   [VERIFIED-as-absence; OPEN, §18-Q8]
 
@@ -1183,16 +1170,16 @@ env['CUDA_VISIBLE_DEVICES'] = str(gpu_devices)
 
 - **Single-instance GPU pinning is exercised. Two concurrent instances on different GPUs has never
   been run.** Marker-file isolation is in place by construction (per-instance names) and the lock file
-  is per instance name, but cache contention and licensing behaviour under concurrency are unmeasured.
+  is per instance name, but cache contention and sign-in behaviour under concurrency are unmeasured.
   [OPEN, §18-Q10]
 - Memory is the real constraint at scale, not GPU count: a 4,131-image joint alignment peaked ~165 GB
   on a 192 GB box; a 4,860-camera model run peaked 148.7 GB committed with 0.9 GB available RAM
   remaining. Per-zone aligns stay ≤ ~60 GB. Budget by scene, not by image count — alignment runtime
-  varies ~3× with scene character at equal image count. [VERIFIED: NA167 #19/#20; FINDINGS 2026-07-29]
+  varies ~3× with scene character at equal image count. [VERIFIED: earlier multi-camera dataset, 2026-07; project testing 2026-07-29]
 - **Identify the instance before quoting memory numbers**: a workflow runs multiple `RealityScan.exe`
   processes (the persistent instance plus transient delegation helpers). A "2.2 GB during a
   4,540-image align" reading was a 30 MB transient. Use largest working set or a tracked PID.
-  [VERIFIED: FINDINGS 2026-07-24]
+  [VERIFIED: project testing 2026-07-24]
 
 ---
 
@@ -1237,11 +1224,11 @@ works without a restart cycle. [VERIFIED: `startRealityScan.bat`]
 - **The cache is placed by the drive of the path given and does NOT move when the project moves.**
   `D:\rccache` reached 1,089 GB and refilled 197 GB of freshly-cleaned space within one run, killing
   a model three times, while the **project** drive showed 773.9 GB free.
-  [VERIFIED: FINDINGS 2026-07-26]
+  [VERIFIED: project testing 2026-07-26]
 - A cache-full condition surfaces as result code `2147942512` = `0x80070070` `ERROR_DISK_FULL`
   through the completion hook — **indistinguishable from any other failure** without a cache-drive
   free-space column in the monitor. The instance log said it outright:
-  `Processing failed: Out of disk space..` [VERIFIED: FINDINGS 2026-07-26]
+  `Processing failed: Out of disk space..` [VERIFIED: project testing 2026-07-26]
 - **Epic's guidance: do not hand-delete cache files; free space on the cache disk or change the cache
   disk instead.** Cancelling the warning aborts the running process and its progress is lost.
   [OFFICIAL: appbasics/outofdisk]
@@ -1265,7 +1252,7 @@ No instance name, no progress file, no error hook — suitable only for short, l
 ```bat
 @echo off
 set "RS=C:\Program Files\Epic Games\RealityScan_2.2\RealityScan.exe"
-set "WORK=F:\na156_h2024\zone_3"
+set "WORK=F:\survey\zone_3"
 if not exist "%WORK%\crash" mkdir "%WORK%\crash"
 
 "%RS%" -headless ^
@@ -1295,7 +1282,7 @@ setlocal
 set "RS=C:\Program Files\Epic Games\RealityScan_2.2\RealityScan.exe"
 set "INST=RS1"
 set "ERRPATH=%~dp0Errors"
-set "WORK=F:\na156_h2024\zone_3"
+set "WORK=F:\survey\zone_3"
 if not exist "%ERRPATH%" mkdir "%ERRPATH%"
 
 :: Fresh markers. A leftover errors marker would abort the first :run.
@@ -1434,8 +1421,7 @@ Two conventions in that file are easy to break by accident:
   [VERIFIED-by-inspection: `SetVariables.bat` lines 10–22]
 - **`ErrorsFile` is *not* set here.** Each workflow script defines
   `set "ErrorsFile=%ErrorPath%\errors_%RS_INSTANCE%.txt"` itself
-  (`AlignZone.bat` line 35, `MergeZoneComponents.bat`, `ExportDeliverables.bat` line 42,
-  `AlignImageList.bat` line 21, `AlignImagesFromFolder.bat` line 34). A new workflow that calls
+  (`AlignZone.bat`, `MergeZoneComponents.bat`, `ExportDeliverables.bat`). A new workflow that calls
   `SetVariables.bat` and then uses `:run` without defining `ErrorsFile` gets an empty path, the
   `if exist` test never fires, and **every operation reports success regardless of what happened.**
   [VERIFIED-by-inspection, 2026-08-04]
@@ -1499,7 +1485,7 @@ Every element of the boot line, and why:
 | `%RS_HEADLESS_FLAG%` | `-headless`, or empty when `RS_HEADLESS=0` | [VERIFIED] |
 | `-silent "%ErrorPath%"` | suppress dialogs, redirect minidumps into the marker directory | [OFFICIAL + VERIFIED] |
 | `-setInstanceName %RS_INSTANCE%` | delegation target; one name per GPU set | [OFFICIAL] |
-| `%RS_CACHE_ARGS%` | `appCacheLocation=Custom` + `appCacheCustomLocation` when `RS_CACHE_DIR` is set. Opt-in: unset keeps RealityScan's default | [VERIFIED: FINDINGS 2026-07-26] |
+| `%RS_CACHE_ARGS%` | `appCacheLocation=Custom` + `appCacheCustomLocation` when `RS_CACHE_DIR` is set. Opt-in: unset keeps RealityScan's default | [VERIFIED: project testing 2026-07-26] |
 | `-set "appAutoSaveMode=false"` | autosave would race the destructive in-session identity loop; a recovery modal hangs a headless box | [VERIFIED] |
 | `-set "appQuitOnError=false"` | warning-class results are routine; the orchestrator decides what is fatal, not the app | [VERIFIED] |
 | `-set "appProcessActionTime=0"` | fire the completion hook for **every** process, however short | [VERIFIED] |
@@ -1594,8 +1580,8 @@ Never used here. It presumably conflicts with `-uploadToSketchfab` and possibly 
 *Probe:* boot with the flag, run a trivial align, and check for any new prompt or failure (~5 min);
 a second cell adds `-uploadToSketchfab` with a dummy token and reads the result code.
 
-**Q8 — Can a headless RealityScan 2.2 hit a licence/sign-in prompt that manifests as a silent hang?**
-The Help explicitly names the log-in window as unsuppressable; two years here have never seen one.
+**Q8 — Can a headless RealityScan 2.2 hit a sign-in prompt that manifests as a silent hang?**
+The Help explicitly names the log-in window as unsuppressable; this project's runs have never seen one.
 *Probe (partial, cheap):* sign out in the GUI, then boot headless and delegate `-newScene`; observe
 whether the instance appears via `-getStatus` and whether a window opens. Note this deliberately puts
 the box into the failure state, so run it when no production work is queued.
@@ -1618,7 +1604,7 @@ Unmeasured, and potentially relevant to the relocated-component hang (hard rule 
 then repeat with a relocated copy under a watchdog (~15 min total, small components only).
 
 **Q12 — Is the crash-dump filename timestamp UTC, or a hard-coded offset?**
-Re-measured 2026-08-04: the one dump on disk has filename `…-20260726-054742` and NTFS CreationTime
+Measured 2026-08-04: the one dump inspected has filename `…-20260726-054742` and NTFS CreationTime
 `2026-07-26 01:47:42` local on a UTC−4 machine — exactly 4 h, so "UTC" fits. One machine, one
 timezone, one artifact cannot distinguish "UTC" from any other rule that happens to produce +4 h here.
 *Probe:* compare the next dump's filename against its CreationTime, ideally after a DST change or on

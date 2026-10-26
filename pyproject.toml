@@ -5,15 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "wildscan"
 dynamic = ["version"]
-description = "Subsea photogrammetry pipeline: ROV imagery to georeferenced 3D models via RealityScan 2.2"
+description = "RealityScan 2.2 photogrammetry pipeline for WCA, Zeuss and Sony ILX-LR1 imagery and navigation"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
-authors = [{ name = "Wild Technology", email = "jonathan@wildtechnology.org" }]
+authors = [{ name = "Wild Technologies", email = "jonathan@wildtechnology.org" }]
 keywords = [
-    "photogrammetry", "rov", "subsea", "realityscan",
-    "georeferencing", "3d-reconstruction", "ocean-exploration",
+    "photogrammetry", "rov", "stereo-camera", "ilx-lr1", "realityscan",
+    "wild-sync", "3d-reconstruction", "ocean-exploration",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -27,8 +27,8 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
 
-# Floors start from the H2023/H2024/ON2026 deliverable environment
-# (the HONEYBADGER box, 2026-08-08), with security fixes applied where needed.
+# Floors start from the environment the pipeline was last validated in,
+# with security fixes applied where needed.
 # Keep this list and requirements.txt in step; the latter is maintained by hand.
 #
 # NOTE on the Python floor: numpy>=2.5 and scipy>=1.18 are themselves
@@ -42,7 +42,7 @@ dependencies = [
     "numpy>=2.5",
     "opencv-python>=5.0",    # extract_images / preprocess_images (CLAHE, WB)
     "pandas>=3.0",
-    "Pillow>=12.3",          # georeference_survey.py, georeference, timestamp_rename (EXIF/JPEG)
+    "Pillow>=12.3",          # legacy georeferencing, image utilities and Sony EXIF/calibration
     "pyproj>=3.7",           # cesium_placement - EGM2008 geoid, CRS transforms
     "requests>=2.33.0",      # publish_cesium.py - ion REST
     "rich>=15.0",            # wildscan TUI
@@ -52,12 +52,15 @@ dependencies = [
     "shapely>=2.1",
     "textual>=8.2",          # wildscan TUI
     "tqdm>=4.69",
-    "utm>=0.8",              # georeference_survey.py, georeference - UTM <-> WGS84
+    "utm>=0.8",              # legacy image/navigation georeferencing
 ]
 
 [project.optional-dependencies]
 # Test suite. Windows-only path fixtures mean a subset fails off-Windows.
-dev = ["pytest>=9.1"]
+dev = [
+    "pytest>=9.1",
+    "packaging>=24.2",       # requirement/marker parsing and SPDX licence expressions
+]
 # Compatibility extra; the base project already includes the UI and pipeline.
 tui = ["textual>=8.2", "rich>=15.0"]
 
@@ -84,6 +87,7 @@ packages = [
     "modules.image_batcher",
     "modules.preprocess_images",
     "modules.realityscan_interface",
+    "modules.wildsync_intake",
 ]
 # Native workflows are resources of realityscan_interface, not Python
 # namespace packages. Include only the explicit resource patterns below.

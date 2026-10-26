@@ -25,7 +25,7 @@ content (see `05-metadata-xmp-and-sidecars.md`).
    - 2.1 [The two command names](#21-the-two-command-names)
    - 2.2 [The log file format](#22-the-log-file-format)
    - 2.3 [`flightlogs.xml` — the shipped reader definitions](#23-flightlogsxml--the-shipped-reader-definitions)
-     — including **[CONTRADICTED] Did the pre-2026-07-25 runs import orientation at all?**
+     — including **Did the pre-2026-07-25 runs import orientation at all?**
    - 2.4 [The full `<Variable>` vocabulary](#24-the-full-variable-vocabulary)
    - 2.5 [Name matching is by BASENAME](#25-name-matching-is-by-basename)
    - 2.6 [err:18002 / 0x820000FF — rows not in the scene](#26-err18002--0x820000ff--rows-not-in-the-scene)
@@ -33,7 +33,7 @@ content (see `05-metadata-xmp-and-sidecars.md`).
    - 2.8 [Inert keys and the real binary key names](#28-inert-keys-and-the-real-binary-key-names)
    - 2.9 [Euler angle order, camera mount, camera axes](#29-euler-angle-order-camera-mount-camera-axes)
    - 2.10 [Accuracies: what the numbers mean and what they do](#210-accuracies-what-the-numbers-mean-and-what-they-do)
-   - 2.11 [Per-cruise CRS generation from the log filename](#211-per-cruise-crs-generation-from-the-log-filename)
+   - 2.11 [Per-survey CRS generation from the log filename](#211-per-survey-crs-generation-from-the-log-filename)
    - 2.12 [Side effect: import leaves images SELECTED](#212-side-effect-import-leaves-images-selected)
    - 2.13 [Runnable examples](#213-runnable-examples)
 3. [Coordinate systems](#3-coordinate-systems)
@@ -56,7 +56,7 @@ Every command below is invoked with a leading `-` on the command line and is del
 |---|---|---|---|---|
 | `-importTrajectory` | `flFileName` | `params.xml` | `20598 IMPORT_FLIGHT_LOG` | Import a trajectory (flight log). Documented name. [OFFICIAL: appbasics/allcommands] |
 | `-importFlightLog` | `<log>` | `<params.xml>` | `20598 IMPORT_FLIGHT_LOG` | Same operation; **absent from the 2.2 Help** but works. [UNDOCUMENTED / VERIFIED: in production use here since 2026-07-21, `RS_CLI/Scripts/AlignZone.bat` line 77] |
-| `-addImageWithCalibration` | `image xmp` | — | — | Import one image plus an XMP whose name/folder need not match the image's. [OFFICIAL: tools/xmpalign] Never used here. |
+| `-addImageWithCalibration` | `image xmp` | — | — | Import one image plus an XMP whose name/folder need not match the image's. [OFFICIAL: tools/xmpalign] Used here for calibration sidecars, from a generated `.rscmd`. |
 | `-importGroundControlPoints` | `gcpFileName` | `params.xml` | `20599 IMPORT_GCP` | Import GCP coordinates. [OFFICIAL: appbasics/allcommands] |
 | `-exportGroundControlPoints` | `gcpFileName` | `params.xml` | `21814 EXPORT_GCP` | Export GCPs (selected only, or all if none selected). [OFFICIAL: tools/gcpexport] |
 | `-importControlPointsMeasurements` | `cpmFileName` | `params.xml` | `20600 IMPORT_CP_MEASUREMENTS` | Import per-image 2D measurements of control points. [OFFICIAL] |
@@ -82,7 +82,7 @@ Every command below is invoked with a leading `-` on the command line and is del
 | `-setCamerasGravityDirection` | — | `componentID` | — | Rotate the component so `-z` follows `xcr:Gravity` from the images' XMP. Sparse cloud only. [OFFICIAL] |
 | `-resetGround` | — | — | `21776 RESET_GROUND_PLANE` | Restore the default ground plane. [OFFICIAL] |
 | `-setGroundPlaneFromReconstructionRegion` | — | — | `21778 SET_GROUND_PLANE_BY_RECONSTRUCTION_REGION` | Centre the model on the grid using the reconstruction region, adjusting rotation **and** translation. [OFFICIAL] |
-| `-exportRegistration` | `fileName` | `params.xml` | `20576`, `41061`–`41064` | Export camera positions/orientations in one of the `calibration.xml` formats. **Blocks forever headless without a params XML.** [VERIFIED: FINDINGS 2026-07-21] |
+| `-exportRegistration` | `fileName` | `params.xml` | `20576`, `41061`–`41064` | Export camera positions/orientations in one of the `calibration.xml` formats. **Blocks forever headless without a params XML.** [VERIFIED: project testing 2026-07-21] |
 | `-exportReport` | `outputFileName templateFileName` | `true`\|`false` | — | Render a report template; **the only headless way to read `isGeoreferenced` / `componentMetric`**. [OFFICIAL: appbasics/allcommands] |
 
 Commands that do **not** exist and will fail: `-setGeoreferencedCoordinateSystem`,
@@ -107,10 +107,9 @@ importTrajectory | flFileName | params.xml
 
 This repository has driven `-importFlightLog <log> <params.xml>` in production since
 2026-07-21 across thousands of aligns; it works and is the name baked into every workflow
-`.bat` here — **six call sites**: `AlignZone.bat`, `AlignImageList.bat`, `GrowZone.bat`,
-`MergeZoneComponents.bat`, `SequentialAlignGrow.bat`, `AlignImagesFromFolder.bat`. The
-string `importFlightLog` does not appear anywhere in the 2.2 Help.
-[UNDOCUMENTED / VERIFIED: those six scripts; FINDINGS 2026-07-21; SURVEY_commands.md]
+`.bat` here that imports a trajectory — `AlignZone.bat`, `GrowZone.bat`,
+`MergeZoneComponents.bat`. The string `importFlightLog` does not appear anywhere in the 2.2
+Help. [UNDOCUMENTED / VERIFIED: those scripts; project testing 2026-07-21]
 
 Circumstantial support that they are the same implementation: the process ID for the
 trajectory import is named `20598 IMPORT_FLIGHT_LOG` even though the documented command is
@@ -138,27 +137,18 @@ A trajectory file is a plain text / CSV table, one row per image.
 | Comment | lines beginning `#` are skipped **automatically**, always | [OFFICIAL: tools/flightlogimport] |
 | Header | a single header line may be skipped; controlled by the reader's `showIgnoreFirstline` and the params key `csvFLIgn` | [OFFICIAL + VERIFIED-by-inspection] |
 | Column order | fixed by the selected `<format>` in `flightlogs.xml`, referenced from the params XML by GUID | [OFFICIAL + VERIFIED-by-inspection] |
-| Encoding | UTF-8 without BOM is safe. A UTF-8 BOM on line 1 is a known hazard for RealityScan list inputs generally (a BOM silently invalidated the first `.complist` entry). Not separately tested on flight logs. | [VERIFIED for `.complist`: FINDINGS 2026-07-27] [INFERRED for logs] |
+| Encoding | UTF-8 without BOM is safe. A UTF-8 BOM on line 1 is a known hazard for RealityScan list inputs generally (a BOM silently invalidated the first `.complist` entry). Not separately tested on flight logs. | [VERIFIED for `.complist`: project testing 2026-07-27] [INFERRED for logs] |
 
 This repository's canonical log is **13 columns, `;`-separated, one header line**, written by
-`georeference_survey.py::generate_flight_log` and `modules/georeference/georeference_images.py::__generate_flight_log`:
+`modules/flight_logs.py::write_flight_log` (called by the Wild Sync Intake):
 
 ```
-Name;X (East);Y (North);Alt;X Accuracy;Y Accuracy;Alt Accuracy;Yaw;Pitch;Roll;Yaw Accuracy;Pitch Accuracy;Roll Accuracy
-C231C1034_20231104202628_edt.jpg;594701.482174;2345128.905112;-1523.117000;10.000000;10.000000;1.000000;71.418000;135.220000;-1.930000;15.000000;15.000000;15.000000
+filename;X (East);Y (North);Alt;X Accuracy;Y Accuracy;Alt Accuracy;Yaw;Pitch;Roll;Yaw Accuracy;Pitch Accuracy;Roll Accuracy
 ```
 
-[VERIFIED-by-inspection: `georeference_survey.py::generate_flight_log`, lines 715–770, 2026-08-04]
-
-Two in-repo producers write **different header text** for the identical column layout —
-`georeference_survey.py` writes `Name;…`, the georeference module writes `filename;…`. Functionally
-irrelevant (the header is skipped via `csvFLIgn=true`), but downstream readers must accept
-both: `modules/image_batcher/batch_directory.py` renames `Name` → `filename` on read.
-[VERIFIED-by-inspection, 2026-08-04]
-
-`georeference_survey.py` additionally prefixes the image name with its camera subfolder
-(`Zeuss/HERC/<file>.jpg`); the module writes the bare basename. Both import correctly —
-see §2.5. [VERIFIED-by-inspection]
+Numbers are written with six decimals; a missing value is an empty cell, never 0; the image
+name is the bare file name; line endings are LF. The header is skipped on import
+(`csvFLIgn=true`). [VERIFIED-by-inspection: `modules/flight_logs.py`]
 
 ### 2.3 `flightlogs.xml` — the shipped reader definitions
 
@@ -250,15 +240,15 @@ Facts about this block, all load-bearing:
 - **It is a hand-edit of an Epic-shipped file.** The installed `flightlogs.xml` has mtime
   `2026-07-25 07:31` while every sibling XML in the install root is `2026-07-21 05:07` — the
   merge is visible in the filesystem. It must be re-applied and re-verified after **any**
-  RealityScan update or repair install. [VERIFIED: directory listing + PRIORS_DISTORTION_TEST_PLAN
-  audit item 1, 2026-07-25]
+  RealityScan update or repair install. [VERIFIED: directory listing + project test records,
+  2026-07-25]
 - **Before 2026-07-25 the GUID was referenced but not installed.** `FlightLogParams.xml`
   named `{B438A617…}`; stock 2.2 `flightlogs.xml` did not contain it. Consequence:
   **every import before that date silently dropped yaw/pitch/roll and all per-image
   accuracies**. No error was raised. Any registration or scale result measured before
   2026-07-25 that is attributed to orientation priors or to per-image accuracies is
-  attributing to something that never arrived. [VERIFIED: PRIORS_DISTORTION_TEST_PLAN audit
-  item 1, 2026-07-25]
+  attributing to something that never arrived. [VERIFIED: project test records,
+  2026-07-25; mechanism confirmed 2026-08-23, below]
 - **Its `desc` string is wrong** — it lists 10 names while the parser defines 13 columns and
   omits Yaw/Pitch/Roll from the description. The `desc` is only a dialog label, so this is
   cosmetic, but it makes the format hard to recognise in the GUI list.
@@ -267,51 +257,26 @@ Facts about this block, all load-bearing:
   position accuracies and YPR but no orientation accuracies, and it ships with the product,
   so a machine without a merged `flightlogs.xml` can still import a trajectory by pointing
   `gpsLogFileFormat` at it and letting the global `sfmCameraPriorAccuracyYaw/Pitch/Roll`
-  supply orientation accuracy. [VERIFIED: PRIORS_DISTORTION_TEST_PLAN, "Standing corrections
-  folded in"]
+  supply orientation accuracy. [VERIFIED: project test records, 2026-07-25]
 - The 7-column position-only `{0E9850E2-…}` is what cell **PD-6** used (its cell file is
   `FlightLogParams_4Q.xml`) — the only production cell here that was genuinely
-  orientation-free. [VERIFIED: FINDINGS 2026-07-26, by reading the two params files rather
+  orientation-free. [VERIFIED: project testing 2026-07-26, by reading the two params files rather
   than assuming they matched]
 
-#### [CONTRADICTED] Did the pre-2026-07-25 runs import orientation at all?
+#### Did the pre-2026-07-25 runs import orientation at all?
 
-**Historical competing claims, superseded by the 2026-08-23 comparison below.**
-The original attribution and proposed probe are retained for provenance; use the
-resolved saved-project evidence and
-[current installation check](../SETUP-AND-RUN.md#54-flight-log-import-format)
-when configuring a machine.
+No. Before 2026-07-25 the params file named the 13-column format's GUID while the installed
+`flightlogs.xml` did not contain it (its mtime is `2026-07-25 07:31`). Whether such an
+import still delivered orientation was disputed in the project's records until the
+2026-08-23 measurement below settled it: an unresolvable format GUID imports position only.
+So no align before 2026-07-25 received orientation priors or per-image accuracies through
+that format, and the "orientation priors removed" difference between the 0.175-scale fresh
+run and the 0.981-scale PD-6 cell (§6.5) is not a real difference. For configuring a
+machine, use the [current installation check](../SETUP-AND-RUN.md#54-flight-log-import-format).
 
-Two [VERIFIED] entries in this repo's own record cannot both be true, and the answer decides
-what the H2023 scale collapse (§6.1) can be attributed to.
+#### [RESOLVED 2026-08-23] What an unresolvable format GUID actually does
 
-- **Side A — no.** `PRIORS_DISTORTION_TEST_PLAN` audit item 1 (2026-07-25): the custom
-  13-column format "was NEVER INSTALLED … orientation (YPR) and per-image accuracies were
-  silently dropped on **every import to date**", corroborated by the GUI showing "Global
-  camera prior settings". The installed `flightlogs.xml` mtime is `2026-07-25 07:31`.
-- **Side B — yes.** FINDINGS 2026-07-26, "CORRECTION to the contamination-flag scope":
-  "production `FlightLogParams.xml` → `{B438A617-…}` … with `ifUseOriAcc=true`. So the
-  **2026-07-24 fresh-run aligns (zone_1/2/3) DID import orientation, at the then-current
-  3/5/3 accuracies**." That correction is what added "(c) orientation priors REMOVED" as the
-  third difference between the fresh run (hull scale 0.175) and PD-6 (0.981).
-- **The conflict:** the 2026-07-24 fresh run predates the `flightlogs.xml` merge by a day.
-  If Side A holds, `gpsLogFileFormat` named a GUID the app could not resolve, so no YPR and
-  no per-image accuracy columns reached the solver — and difference (c) evaporates, taking
-  "tight, possibly mis-composed orientation priors" off the candidate list for the 0.175
-  collapse. Side B reasons from the params file's *contents* and never checks whether the
-  named format existed on disk at run time.
-- **Cheapest probe** (~4 min, one boot, and it settles §9 items 2, 3 and 11 partially):
-  temporarily rename the `{B438A617-…}` block out of `flightlogs.xml`, import the 13-column
-  log on the smoke fixture with the production params XML, and `-exportReport` a template
-  emitting `$(inputIsOrientationPrior)` / `$(inputIsPriorAccuracy)` / `$(inputAccuracyYaw)`
-  (§7). Restore the block afterwards. Whatever RealityScan does with an unresolvable format
-  GUID — fall back to a default format, import position only, or fail — is directly readable.
-  Until then, **treat every orientation-prior attribution made on data older than
-  2026-07-25 as unfounded in both directions.**
-
-#### [RESOLVED 2026-08-23 — Side A holds] What an unresolvable format GUID actually does
-
-The probe above was run, on a different dataset and by a different route: a
+Measured on a different dataset and by a direct route: a
 prior-import cell on a 60-image stereo fixture, with `gpsLogFileFormat` naming a GUID
 deliberately absent from `flightlogs.xml`, censused from the saved `.rsproj` (which
 serialises the stored priors as `<input>` attributes) rather than from a report template.
@@ -328,15 +293,14 @@ installed:
 | `absPrior` | `pose` | **`registered`** |
 | exit code | 0 | **0** |
 
-So there is no error, no warning, and no non-zero result code — only the silent loss.
-**Side A is correct**: if `gpsLogFileFormat` named a GUID that was not in the installed
-`flightlogs.xml` at run time, no YPR and no per-image accuracy reached the solver, and
-difference (c) in the §6.1 attribution evaporates.
+So there is no error, no warning, and no non-zero result code — only the silent loss: if
+`gpsLogFileFormat` names a GUID that is not in the installed `flightlogs.xml` at run time,
+no YPR and no per-image accuracy reaches the solver.
 
 **Mechanical check, cheaper than any report template** — grep the saved project:
 `absPrior="registered"` together with absent `absu*` attributes means the format GUID did
 not resolve. `absPrior="pose"` with `absu*` present means it did.
-[VERIFIED: onr2 stereo fixture, RealityScan 2.2.0.119430, 2026-08-23]
+[VERIFIED: stereo fixture, RealityScan 2.2.0.119430, 2026-08-23]
 
 **This failure is live, not historical.** On the machine used for that session the
 installed `flightlogs.xml` had been hand-edited to `{B438A617-2424-5A24-C1B7-58920F28345A}`
@@ -378,8 +342,8 @@ vocabulary. [OFFICIAL for the vocabulary]
 #### [CONTRADICTED 2026-08-23] `FocalLength` in a flight log is accepted and then ignored
 
 Exercised on a 60-image fixture with a custom 14-column `<format>` declaring
-`<FocalLength index="13"/>`, the column populated with COLMAP-solved 35 mm-equivalent
-focals (16.5836 mm / 19.8072 mm for the two eyes):
+`<FocalLength index="13"/>`, the column populated with externally solved 35 mm-equivalent
+focals (16.5836 mm / 19.8072 mm for the two cameras):
 
 - the import succeeds and positions/orientation/accuracies all land normally;
 - **no focal prior is stored.** The saved `.rsproj` carries no `FocalLength35mm`, no
@@ -392,7 +356,7 @@ focals (16.5836 mm / 19.8072 mm for the two eyes):
 The Help lists `FocalLength` as an available flight-log variable, so this is a
 documentation-versus-behaviour contradiction, not a syntax error on our side.
 **Per-image intrinsics must go through XMP sidecars; the flight log cannot deliver them.**
-[VERIFIED: onr2 stereo fixture + full-dataset arms, RealityScan 2.2.0.119430, 2026-08-23]
+[VERIFIED: stereo fixture + full-dataset arms, RealityScan 2.2.0.119430, 2026-08-23]
 
 Only `FocalLength` was exercised. `PrincipalU/V`, `Skew`, `AspectRatio` and the distortion
 coefficients were not, and are assumed to share the behaviour but are **not** measured.
@@ -428,15 +392,11 @@ right to left." [OFFICIAL: tools/flightlogimport]
 
 - **Docs say:** `Image` is the "image name including the whole path and the format
   extension". [OFFICIAL: tools/defineimportformat]
-- **Observed:** bare basenames match. On NA167 zone_13, a log whose first column held only
-  `<file>.jpg` matched images physically living in `wca/` and `zeuss/` subfolders of the
-  scene's added folder — 34 + 904 images, 93.4% subsequently registered. Conversely,
-  `georeference_survey.py` writes `<CameraType>/<file>.jpg` and those logs import too.
-  [VERIFIED: the NA167 log [NA167 #5], 2026-07-22 — "34 wca + 904 zeuss images in
-  subfolders, bare-filename log, 93.4% registered, no err:18002"; and
-  the NA167 notes §`-importFlightLog` — "Name matching is by **basename** and
-  finds images in subfolders (verified: bare filenames matched images living in `wca/` and
-  `zeuss/`)". Prefixed form: `georeference_survey.py` line 752.]
+- **Observed:** bare basenames match. On dataset C zone_13, a log whose first column held only
+  `<file>.jpg` matched images physically living in two per-camera subfolders of the scene's
+  added folder — 34 + 904 images, 93.4% subsequently registered, no `err:18002`. Conversely,
+  logs whose first column carried a camera-folder prefix (`<camera>/<file>.jpg`) imported
+  too. [VERIFIED: earlier multi-camera dataset, 2026-07-22]
 - **Reading:** matching is on the file **basename**, and RealityScan searches the scene's
   images for a basename match regardless of directory depth. A leading path component is
   tolerated and effectively ignored.
@@ -444,7 +404,7 @@ right to left." [OFFICIAL: tools/flightlogimport]
   batcher here **copies** overlap images into two zone folders), one trajectory row cannot
   distinguish them. Measured symptom: `cluster_0`'s merge scene held **4,865 cameras** while
   its union flight log held only **4,227 rows** — a 638-row gap that is exactly the
-  duplicated-basename population. [VERIFIED: status log loose end #6, 2026-07-28] The queued
+  duplicated-basename population. [VERIFIED: project testing 2026-07-28] The queued
   fix is a common image pool (imagelists or hardlinks) instead of copies.
 
 ### 2.6 err:18002 / 0x820000FF — rows not in the scene
@@ -457,14 +417,14 @@ The single most important operational fact about `-importFlightLog`.
   reports the process as FAILED** with `err:18002` — "The file contains N images which are
   not in the current scene". The process result code delivered to the completion hook is
   decimal `2181038335` = hex `0x820000FF`, a warning class.
-  [VERIFIED: FINDINGS 2026-07-21; docs/code-review-2026-07 §"False failure on import"]
+  [VERIFIED: project testing 2026-07-21]
 - **The errors marker carries only the numeric code**, never the `err:NNNN` text — that
   exists only in `RealityScan.log`, which is truncated on every instance boot. Tolerant
-  handlers must match `2181038335`. [VERIFIED: FINDINGS 2026-07-23]
+  handlers must match `2181038335`. [VERIFIED: project testing 2026-07-23]
 - **It is genuinely benign.** Proven by cross-check rather than assumed: all 102 images that
   a union-log import reported as "not found in the current scene" were matched against every
   component manifest — **zero overlap**; they were exactly the unregistered remainder
-  (4,598 log rows − 4,496 cameras = 102). [VERIFIED: FINDINGS 2026-07-25]
+  (4,598 log rows − 4,496 cameras = 102). [VERIFIED: project testing 2026-07-25]
 - **Therefore: filter logs to the scene**, or tolerate the code deliberately. This repo does
   both — `BatchDirectory` writes a per-zone log filtered to that zone's images, and
   `merge_zones.build_union_flight_log` filters the union to the attributed member basenames.
@@ -510,15 +470,12 @@ exit /b 0
 `appIncSubdirs` was not set — the scene has zero images, so *every* log row is "not in the
 scene" and the same `0x820000FF` fires. A 25-second "successful" zone align with
 `Added 0 layer images` in the log is the signature. Always
-`-set "appIncSubdirs=true"` before `-addFolder`. [VERIFIED: FINDINGS 2026-07-23]
+`-set "appIncSubdirs=true"` before `-addFolder`. [VERIFIED: project testing 2026-07-23]
 
-> **Reading the repo's own notes on this:** the NA167 notes, under
-> `-addFolder`, still says "in our 2.2 build subfolders were included **without** setting the
-> key (zone_13: wca/ + zeuss/ both imported)". That line is **SUPERSEDED**. FINDINGS
-> 2026-07-23 reconciles it: "that run had `appIncSubdirs` set by the fixed workflow; **the
-> flag, not the build, is the variable**." Treat recursion as OFF by default and set the key
-> explicitly every time. [CONTRADICTED then RESOLVED: NA167 §`-addFolder` vs
-> FINDINGS 2026-07-23 nuance on [NA167 #5]]
+An earlier reading that subfolders were included **without** setting the key is
+**SUPERSEDED**: that run had `appIncSubdirs` set by the fixed workflow — **the flag, not the
+build, is the variable**. Treat recursion as OFF by default and set the key explicitly every
+time. [CONTRADICTED then RESOLVED: project testing 2026-07-23]
 
 ### 2.7 The params XML: `FlightLogParams.xml` in full
 
@@ -576,10 +533,10 @@ calibration*, *Accuracy settings source*.
 
 ### 2.8 Inert keys and the real binary key names
 
-Method: the 2.2 `RealityScan.exe` string table was extracted and filtered to settings-key
-shape. Presence of a string is weak evidence a key is live; **absence is strong evidence it
-is not**, because a key the binary never compares against cannot be honoured.
-[VERIFIED-by-inspection: scratchpad `exe_keys_u16.txt` / `exe_keys_u16b.txt`, 2026-08-04]
+Method: the key-shaped strings present in the 2.2 `RealityScan.exe` were listed. Presence
+of a string is weak evidence a key is live; **absence is strong evidence it is not**,
+because a key the binary never compares against cannot be honoured.
+[VERIFIED-by-inspection: binary strings, 2026-08-04]
 
 **Three keys in this repo's `FlightLogParams.xml` do not exist in the 2.2 binary at all:**
 
@@ -591,8 +548,7 @@ is not**, because a key the binary never compares against cannot be honoured.
 
 [CONTRADICTED: repo assumption vs binary evidence.] This **supersedes** the long-standing
 in-repo reading that `ifKGrp` and `ifKmode` are "the only plausible carriers of the Euler
-angles order and Camera mount import settings" (FINDINGS 2026-07-26, status log loose ends #5
-and #7). `ifKGrp` is real; `ifKmode` is not, and Euler order and mount are carried
+angles order and Camera mount import settings" (project testing 2026-07-26). `ifKGrp` is real; `ifKmode` is not, and Euler order and mount are carried
 elsewhere.
 
 **The real flight-log import keys present in the 2.2 binary**, none of which appear in any
@@ -629,8 +585,8 @@ Two consequences worth acting on:
    [INFERRED for the key↔variable pairing; the report variables themselves are [OFFICIAL].]
 
    This pipeline instead bakes the lever arm and mount angles into the flight log upstream
-   (`georeference_survey.py::apply_camera_position_offset` and `convert_to_rc_orientation`, driven by the
-   `MOUNTS` table in `modules/georeference/georeference_images.py`). Both approaches are
+   (`modules/wildsync_intake/intake.py::flight_log_prior`, driven by the mounts in
+   `modules/cameras.json`). Both approaches are
    valid; they must not be applied twice. Since `ifOfsifuUseOffset` is not written by this
    repo's params file, whatever the instance last held governs — another reason to pin every
    key you depend on. **And this is now cheaply checkable:** `-exportReport` a template
@@ -642,22 +598,20 @@ Two consequences worth acting on:
    whose Euler order and mount were never set explicitly. Registration counts stand as
    measurements; the *attribution* to "orientation priors" does not. Affected cells: PD-0,
    PD-0b, PD-1b, PD-4, M-DIV-ORI. Not affected: PD-6 (position-only), all scale-oracle
-   results, and rig-internal geometry. [VERIFIED-as-flag: FINDINGS 2026-07-26]
+   results, and rig-internal geometry. [VERIFIED-as-flag: project testing 2026-07-26]
 
 ### 2.9 Euler angle order, camera mount, camera axes
 
 [OFFICIAL: tools/flightlogimport]
 
-- **Euler angles order (YPR)** — "the rotation order around the X (Roll), Y (Pitch), and Z
-  (Yaw) axes in the North-East-Down (NED) coordinate system. **The rotation order is
-  evaluated from right to left.**"
-- **Euler angles order (OPK)** — same, around X (Omega), Y (Phi), Z (Kappa), in
-  **East-North-Up (ENU)**.
-- **Camera mount** — "Specifies how the camera is mounted relative to the coordinate system
-  of the platform on which it is installed. **This option is available when Yaw-Pitch-Roll
-  rotations are included in the file format.**"
-- **Camera coordinate system** — "the convention of the coordinate system axes. Available
-  when Omega-Phi-Kappa rotations are included."
+- **Euler angles order (YPR)** — the order of the rotations about X (Roll), Y (Pitch) and
+  Z (Yaw) in a North-East-Down (NED) frame, **evaluated right to left**.
+- **Euler angles order (OPK)** — the same, about X (Omega), Y (Phi), Z (Kappa), in an
+  **East-North-Up (ENU)** frame.
+- **Camera mount** — how the camera is mounted relative to the platform's frame; **offered
+  only when the format carries Yaw-Pitch-Roll**.
+- **Camera coordinate system** — the camera-axis convention; offered only when the format
+  carries Omega-Phi-Kappa.
 
 The **option values** each dropdown offers are not enumerated anywhere in the Help, and the
 keys that carry them (`gpsLogEulerAnglesOrderYPR`, `gpsLogMount`, `gpsLogCameraAxes`) are not
@@ -667,16 +621,16 @@ order and mount the instance last held.** Three specific consequences, all recor
 1. **Composition order.** This repo's angles are written assuming intrinsic
    Roll → Pitch → Yaw. If the instance's default `gpsLogEulerAnglesOrderYPR` composes in a
    different order, the composition is wrong **even though every individual angle is right**
-   — and nothing reports it. [VERIFIED-as-risk: FINDINGS 2026-07-26]
+   — and nothing reports it. [VERIFIED-as-risk: project testing 2026-07-26]
 2. **Double-applied mount.** The mount is already baked into the exported angles here
-   (`camera_offset` added in `convert_to_rc_orientation`). A non-identity default in the
+   (the mount down tilt in `modules/flight_logs.py::realityscan_orientation`). A non-identity default in the
    *Camera mount* dropdown would apply it a **second** time. [VERIFIED-as-risk:
-   FINDINGS 2026-07-26]
-3. **Near-singular Port geometry.** The Port camera's pitch sits at **~88°**, within 2° of
-   the 90° degeneracy where the roll and yaw axes of this parameterisation collapse
-   (gimbal lock). Small pitch noise then produces large attitude swings — a plausible
-   contributor to the behaviour of any component dominated by Port frames.
-   [VERIFIED: FINDINGS 2026-07-26]
+   project testing 2026-07-26]
+3. **Near-singular geometry.** One fisheye camera of the earlier four-camera rig pitched at
+   **~88°**, within 2° of the 90° degeneracy where the roll and yaw axes of this
+   parameterisation collapse (gimbal lock). Small pitch noise then produces large attitude
+   swings — a plausible contributor to the behaviour of any component dominated by that
+   camera's frames. [VERIFIED: project testing 2026-07-26]
 
 For a rig with a 45° down-looking camera and a horizontal camera on one vehicle none of
 these is a detail: a wrong mount or order maps attitude error into focal and scale error.
@@ -688,19 +642,18 @@ these is a detail: a wrong mount or order maps attitude error into focal and sca
   *Euler angles order (YPR)*, save again, change **only** *Camera mount*, save again — three
   XMLs; diff them. A pure-CLI alternative: align the smoke fixture with orientation priors
   at several `-set`/params values and read the resulting camera attitudes out of the pose
-  XMPs (~2 min per cell). Neither has been run. status log loose ends #5 / #7.
+  XMPs (~2 min per cell). Neither has been run.
 
 **Project decision in force:** orientation priors ON at alignment with a conservative **15°**
 YPR accuracy, with the metric-scale oracle (§6) as the named mitigation. The concern above
-was raised and overruled, and is recorded. [VERIFIED-as-decision: FINDINGS 2026-07-26]
+was raised and overruled, and is recorded. [VERIFIED-as-decision: project testing 2026-07-26]
 
-That decision is empirically supported: **removing orientation priors destroyed two H2024
+That decision is empirically supported: **removing orientation priors destroyed two dataset B
 zones.** A position-only re-alignment of all five zones gave zone_1 0.989 (5 components vs
 8), zone_2 1.014, zone_4 0.904 (3 vs 5) — but **zone_3 and zone_5 registered nothing at
 all**: zero components, empty harvest, `Identity capture finished after 0 component(s)`
 after 12.7 and 32.4 minutes. Orientation priors are load-bearing for registration on this
-data, not harmful. [VERIFIED: status log 2026-07-27; results at
-`F:/na156_h2024/ab_position_only/ab_results.json`]
+data, not harmful. [VERIFIED: project testing 2026-07-27]
 
 ### 2.10 Accuracies: what the numbers mean and what they do
 
@@ -712,7 +665,7 @@ Two independent sources of prior accuracy exist:
 
 | Key | Type | App default | Meaning | Source |
 |---|---|---|---|---|
-| `sfmEnableCameraPrior` | bool | `true` | "Use camera priors for georeferencing" — the master switch that makes priors participate in the bundle adjustment and makes the resulting components georeferenced | [OFFICIAL: tutorials/setkeyvaluetable] [VERIFIED-as-in-use: settings-evaluation §4] |
+| `sfmEnableCameraPrior` | bool | `true` | "Use camera priors for georeferencing" — the master switch that makes priors participate in the bundle adjustment and makes the resulting components georeferenced | [OFFICIAL: tutorials/setkeyvaluetable] [VERIFIED-as-in-use: project test records, 2026-07] |
 | `sfmCameraPriorAccuracyX` | float | `10.0` | position X accuracy, project-CRS units | [OFFICIAL] |
 | `sfmCameraPriorAccuracyY` | float | `10.0` | position Y accuracy | [OFFICIAL] |
 | `sfmCameraPriorAccuracyZ` | float | `20.0` | position Z accuracy | [OFFICIAL] |
@@ -787,42 +740,39 @@ position accuracy triple and the distortion model:
 | `division_loose` (10 / 10 / 1) | 656/665 | **1** | **0.989** |
 | `division_tight` (1 / 1 / 0.1) | 659/665 | 3 | 0.826 |
 
-[VERIFIED: PRIORS_DISTORTION_TEST_PLAN "Bow 2×2", 2026-07-25]
+[VERIFIED: project test records ("Bow 2×2"), 2026-07-25]
 
 Registration barely moved (656–665 in every cell) — which is exactly why a camera-counting
 oracle never caught it. **Over-tight position priors fragment the solve and push metric
 scale away from truth.** The lesson, now written into the code comments of both flight-log
 writers: the accuracy columns want **end-to-end per-image position uncertainty** —
-timestamp matching + nav interpolation + lever arm + dive-long drift — **not the
+timestamp matching + nav interpolation + lever arm + run-long drift — **not the
 instantaneous sensor spec**. A DVL good to ~1 m and a Paro depth sensor good to ~0.1 m do
 not justify writing `1 / 1 / 0.1`.
 
-Values in force in this repo (`georeference_survey.py` lines 723–729,
-`georeference_images.py` lines 540–549):
+Values in force in this repo (`modules/cameras.json` defaults and mounts, Wild Sync Intake
+parameters):
 
 ```python
-pos_x_acc = 10.0   # metres
-pos_y_acc = 10.0   # metres
-alt_acc   = 1.0    # metres
-yaw_acc   = 15.0   # degrees
-roll_acc  = 15.0   # degrees
-pitch_acc = MOUNTS[family]['p_acc']   # 30.0 zeuss, 15.0 wca_port/wca_cinema,
-                                      # 10.0 legacy_camupper/cammid, 5.0 legacy_camlower,
-                                      # 10.0 fallback for an unknown mount
+pos_x_acc = 10.0     # metres; 1000.0 when a run carries one static fix
+pos_y_acc = 10.0     # metres; 1000.0 when a run carries one static fix
+alt_acc   = 1.0      # metres
+yaw_acc   = 15.0     # degrees
+roll_acc  = 15.0     # degrees
+pitch_acc = 15.0     # degrees, per camera mount (families[].mount.pitch_accuracy_deg)
 ```
 
 - [OPEN] The intermediate accuracy ladder (3 / 3 / 0.5 and 5 / 5 / 1) was queued and never
   run. Loose is **proven**, not proven **optimal**. Each cell is a ~70-minute zone_1
-  re-align. status log 2026-07-25 open item 3.
+  re-align. [project testing 2026-07-25]
 
-### 2.11 Per-cruise CRS generation from the log filename
+### 2.11 Per-survey CRS generation from the log filename
 
 **The declared CRS must match the CRS the log's numbers are actually in. A wrong zone
 imports silently and misplaces everything.** The template in this repo once said
-`+proj=utm +zone=4` (EPSG:32604) — stale from an earlier project — while the cruise being
-processed, NA173_H2103a, is UTM **57S** (EPSG:32757): wrong zone **and** wrong hemisphere,
-with no error raised. [VERIFIED: NA167 #6; docs/code-review-2026-07 §"Wrong coordinate
-system"; FINDINGS 2026-07-21/22]
+`+proj=utm +zone=4` (EPSG:32604) — stale from an earlier project — while the survey being
+processed was UTM **57S** (EPSG:32757): wrong zone **and** wrong hemisphere, with no error
+raised. [VERIFIED: earlier multi-camera dataset, 2026-07; project testing 2026-07-21/22]
 
 The fix is to derive the CRS from the flight log's own filename tag, never to hand-edit the
 template. `modules/flight_logs.py` is the single implementation:
@@ -845,12 +795,12 @@ proj     = f'+proj=utm +zone={zone}{south} +datum=WGS84 +units=m +no_defs'   # s
 crs_type = f'epsg:{epsg} - WGS 84 / UTM zone {zone}{hemisphere}'
 ```
 
-Worked examples, all round-tripped through the generator [VERIFIED: FINDINGS 2026-07-22]:
+Worked examples, all round-tripped through the generator [VERIFIED: project testing 2026-07-22]:
 
 | Flight-log filename | zone, band | EPSG | `CoordinateSystemFlightLog` | `CoordinateSystemFlightLogType` |
 |---|---|---|---|---|
 | `flight_log_53N_UTM.txt` | 53, N | 32653 | `+proj=utm +zone=53 +datum=WGS84 +units=m +no_defs` | `epsg:32653 - WGS 84 / UTM zone 53N` |
-| `flight_log_NA173_H2103a_57S_UTM.txt` | 57, S | 32757 | `+proj=utm +zone=57 +south +datum=WGS84 +units=m +no_defs` | `epsg:32757 - WGS 84 / UTM zone 57S` |
+| `flight_log_survey_57S_UTM.txt` | 57, S | 32757 | `+proj=utm +zone=57 +south +datum=WGS84 +units=m +no_defs` | `epsg:32757 - WGS 84 / UTM zone 57S` |
 | `flight_log_4N_UTM.txt` | 4, N | 32604 | `+proj=utm +zone=4 +datum=WGS84 +units=m +no_defs` | `epsg:32604 - WGS 84 / UTM zone 4N` |
 
 The generated PROJ strings are **byte-identical to `epsg.xml`'s own `params` attribute** for
@@ -870,7 +820,7 @@ on disk. It searches every candidate directory for `flight_log*_UTM.txt` first, 
 back to a legacy `flight_log.txt`, and resolves ties lexicographically for determinism. This
 exists because the naming conventions diverged: producers wrote
 `flight_log_<zone>_UTM.txt` while consumers looked for `flight_log.txt`, and the alignment
-stage then **silently aligned without a trajectory at all**. [VERIFIED: NA167 #2; ARCHITECTURE.md]
+stage then **silently aligned without a trajectory at all**. [VERIFIED: earlier multi-camera dataset, 2026-07; ARCHITECTURE.md]
 
 ### 2.12 Side effect: import leaves images SELECTED
 
@@ -879,7 +829,7 @@ selection-driven, and under `-silent` the "Export Selection" dialog is auto-answ
 subsequent XMP or component export silently writes **nothing**. Measured signature: an XMP
 export that normally takes 20.5 s completed in **0.057 s** and produced no files.
 
-**`-deselectAllImages` before every export is mandatory.** [VERIFIED: FINDINGS 2026-07-23]
+**`-deselectAllImages` before every export is mandatory.** [VERIFIED: project testing 2026-07-23]
 [UNDOCUMENTED: the Help nowhere warns that import leaves a selection.]
 
 ### 2.13 Runnable examples
@@ -892,14 +842,14 @@ export that normally takes 20.5 s completed in **0.057 s** and produced no files
 ```bat
 call :run -newScene
 %RealityScan% -delegateTo %RS_INSTANCE% -set "appIncSubdirs=true"
-call :run -addFolder "F:\na156_h2024\batched\zone_3"
-call :run_geoimport -importFlightLog "F:\na156_h2024\batched\zone_3\flight_log_4N_UTM.txt" ^
-                                     "F:\na156_h2024\run\FlightLogParams_4N.xml"
+call :run -addFolder "F:\survey\batched\zone_3"
+call :run_geoimport -importFlightLog "F:\survey\batched\zone_3\flight_log_4N_UTM.txt" ^
+                                     "F:\survey\run\FlightLogParams_4N.xml"
 :: apply sfm*/lis* from AlignmentParams.xml as individual -set commands here
 call :run -align
 call :run -deselectAllImages
 call :run -setMinComponentSize 50
-call :run -save "F:\na156_h2024\components\zone_3\zone_3.rsproj"
+call :run -save "F:\survey\components\zone_3\zone_3.rsproj"
 ```
 
 Order is load-bearing and matches the shipped script: the `-set "appIncSubdirs=true"` is an
@@ -914,15 +864,15 @@ constraints itself, and `-update` is what applies them:
 
 ```bat
 call :run -newScene
-for /f "usebackq delims=" %%F in ("F:\na156_h2024\merged\cluster_0.complist") do call :run -importComponent "%%~F"
+for /f "usebackq delims=" %%F in ("F:\survey\merged\cluster_0.complist") do call :run -importComponent "%%~F"
 call :run_geoimport -importFlightLog "%RS_MERGE_FLIGHT_LOG%" "%RS_MERGE_FLIGHT_LOG_PARAMS%"
 call :run -mergeComponents
 call :run -update
 call :run -deselectAllImages
-call :run -save "F:\na156_h2024\merged\cluster_0.rsproj"
+call :run -save "F:\survey\merged\cluster_0.rsproj"
 ```
 
-[VERIFIED: FINDINGS 2026-07-23 — the missing-georeferencing case was caught by operator GUI
+[VERIFIED: project testing 2026-07-23 — the missing-georeferencing case was caught by operator GUI
 inspection and called a showstopper, then confirmed by re-run.]
 
 **C. Building the union log for a merge scene.** `merge_zones.build_union_flight_log`
@@ -940,8 +890,8 @@ params_path = write_flight_log_params(
     os.path.join(output_dir, f'FlightLogParams_{zone}{band}.xml'), zone, band)
 ```
 
-**Trap in that key choice.** Because the dedupe key is the whole first field, a log written by
-`georeference_survey.py` (`Zeuss/HERC/<file>.jpg`) and one written by the georeference module
+**Trap in that key choice.** Because the dedupe key is the whole first field, a log whose
+first column carries a folder prefix (`cam1/<file>.jpg`) and one carrying the bare name
 (`<file>.jpg`) produce **different keys for the same image**: the union would carry both rows,
 and `only_basenames` — which holds bare basenames from the component manifests — would match
 **neither** of the prefixed ones, silently emptying the filtered union. In practice the
@@ -990,8 +940,8 @@ An `epsg.xml` entry carries three attributes that matter:
 - `paramsWKT` is the ESRI-flavoured WKT.
 
 "RealityScan is shipped with the EPSG database and a local database with Euclidean
-coordinate system… You can create your own coordinate systems easily by editing/adding
-database files (a properly formatted xml file)." [OFFICIAL: appbasics/coordinatesystem]
+coordinate system", and custom coordinate systems can be added by editing or adding such
+XML database files. [OFFICIAL: appbasics/coordinatesystem]
 Adding a custom `<cs>` to a new file with its own `authority=` and importing it makes
 `-setProjectCoordinateSystem <authority>:<id>` work for it. Never exercised here. [INFERRED]
 
@@ -1011,12 +961,10 @@ RealityScan holds more than one coordinate system at a time
 | **Output** coordinate system | `-setOutputCoordinateSystem authority:id`; GUI: same panel ▸ Output coordinate system | model/mesh export; some export dialogs override it locally |
 | **Per-object** coordinate system | the import params XML (`CoordinateSystemFlightLog`) for a trajectory; the import dialog for GCPs; `-editControlPointSelection` per control point | the CRS the *imported numbers* are in; RealityScan converts into the project CRS |
 
-"Even every ground control point can be measured with respect to a different coordinate
-system." [OFFICIAL] But: "It is advisable for all control points to be in the same
-coordinate system as conversions may bring small inaccuracies." [OFFICIAL: appbasics/coordinatesystem]
-Conversion errors "are caused by differences in mathematical models of the particular
-coordinate systems and, in general, it is not possible to convert points with zero error."
-[OFFICIAL: tools/controlpoints]
+Each ground control point may even carry its own coordinate system, but Epic advises
+keeping all control points in one system, because every conversion between coordinate
+systems' mathematical models adds a small, unavoidable error.
+[OFFICIAL: appbasics/coordinatesystem, tools/controlpoints]
 
 **Order matters for imports.** Both the trajectory and the GCP Help pages open with the same
 instruction: *first* set the project coordinate system to the one the incoming data is in,
@@ -1032,9 +980,8 @@ project CRS is evidently not required for a trajectory import to place cameras c
 
 ### 3.3 Local frames, the anchor, and why XMP positions are not UTM
 
-For numerical conditioning, "the components are calculated in coordinates that are kept
-close to zero. **Anchor** (rotation + translation) transforms such a local scene into a
-global Euclidean space":
+For numerical conditioning, components are solved in local coordinates near zero, and the
+**anchor** (a rotation plus a translation) maps that local scene into global Euclidean space:
 
 ```
 EuclideanX = anchor.Rotation * X + anchor
@@ -1048,12 +995,12 @@ This is the documented explanation of the behaviour this repo discovered empiric
 
 - **`xcr:Position` in an exported XMP sidecar is in a grid-anchored LOCAL frame, not UTM**,
   and the lat/long attributes of those sidecars are garbage.
-  [VERIFIED: NA167 §`-exportXMPForSelectedComponent`; confirmed on zone_9 by
+  [VERIFIED: earlier multi-camera dataset, 2026-07; confirmed on zone_9 by
   `poses_to_flight_log.py`, whose module docstring records "xcr:Position is local, the anchor is
   the grid origin, and the lat/long XMP attributes are garbage"]
   [OPEN] Hardening cell **U13** asks whether the same holds for an XMP exported from an
   *original georeferenced zone scene* (as opposed to a merge scene); the evidence above is
-  from the merge/NA167 side. Probe: export XMP in zone_2's own scene and compare positions to
+  from the merge/dataset C side. Probe: export XMP in zone_2's own scene and compare positions to
   that zone's flight log — one boot.
 - `xcr:Position` appears as an **element** (`<xcr:Position>x y z</xcr:Position>`) in current
   exports and in **attribute** form in older ones. Both forms must be parsed. Exactly one
@@ -1061,12 +1008,12 @@ This is the documented explanation of the behaviour this repo discovered empiric
   ```python
   POS_RE = re.compile(r'<xcr:Position>([^<]+)</xcr:Position>|xcr:Position="([^"]+)"')
   ```
-  [VERIFIED: FINDINGS 2026-07-28]
+  [VERIFIED: project testing 2026-07-28]
   **`poses_to_flight_log.py` does not.** Its `POSITION_RE` is
   `re.compile(r'<xcr:Position>([^<]+)</xcr:Position>')` — element form only — so pointed at
   an older attribute-form export it reads **zero cameras** and fails the `MIN_CAMERAS = 3`
   check rather than mis-fitting. Loud, but it is a real coverage gap in the tool nominated as
-  U7 proxy (b). `grow_zone.py`, `modules/camera_registry.py` and
+  U7 proxy (b). `grow_zone.py`, `modules/calibration_sidecars.py` and
   `modules/component_manifest.py` test for the substring `xcr:Position` only, which matches
   both forms. [VERIFIED-by-inspection: repo-wide grep, 2026-08-04]
 - The XMP sample in Epic's own Help shows the element form together with
@@ -1121,9 +1068,9 @@ cloud, and every derived measurement wrong.
 `Export an info file` produces a `.rsinfo` XML "which contains important information about
 the internal coordinate system and relations to the coordinate system in which the models
 coordinates are exported". On re-import, RealityScan looks for `<model>.<ext>.rsInfo` and
-uses it to restore placement. "**WARNING:** If you do not use the info file, then your
-imported model may be shifted, rotated, and scaled in the scene with respect to the original
-model and cameras." [OFFICIAL: tools/export]
+uses it to restore placement; **without the info file an imported model may come back
+shifted, rotated and scaled relative to the original model and cameras.**
+[OFFICIAL: tools/export]
 
 `transformdb.xml` in the install root defines the named DCC **Transformation presets** —
 `Blender`, `3ds Max`, `Maya`, `Maya + Arnold`, `Unity`, `Unreal` — as 24 `<transform>` rows,
@@ -1162,10 +1109,9 @@ What that Z actually is, in this pipeline:
 
 | stage | what happens to Z | where |
 |---|---|---|
-| ROV nav | `kalman_depth`, metres **below the sea surface**, positive down | vehicle telemetry |
-| flight-log build | `DEPTH = -abs(kalman_depth)` — sign flipped to negative-down | `georeference_survey.py:320` |
-| camera offset | `adjusted_altitude = altitude - down_m` (mount lever arm) | `georeference_survey.py:161` |
-| written | as the `Alt` column (`ALTITUDE_EST`) | `georeference_survey.py:816` |
+| platform nav | depth, metres **below the sea surface**, positive down | vehicle telemetry |
+| flight-log build | `-abs(depth) - lever_arm_down` — sign flipped to negative-down, mount lever arm applied | `modules/wildsync_intake/intake.py::altitude_prior` |
+| written | as the `Alt` column | `modules/flight_logs.py::write_flight_log` |
 | imported | Z of a 2D UTM CRS — no vertical datum declared | `FlightLogParams.xml` |
 | exported | unchanged; `MvsExportMoveZ=0.0`, `MvsExportScaleZ=1.0` | every repo preset |
 
@@ -1188,12 +1134,12 @@ leaves for a globe renderer, it is not.
 | Titanic site (−49.9, 41.7) | **+5.15 m** | 5.2 m too deep |
 | Gulf of Mexico (−90, 27) | **−27.05 m** | 27.1 m too **shallow** |
 | Solomon Sea / UTM 57S (156, −9) | **+70.37 m** | 70.4 m too deep |
-| NA168 H2080 (133.63, 3.58) | **+72.69 m** | 72.7 m too deep |
+| an earlier survey site (133.63, 3.58) | **+72.69 m** | 72.7 m too deep |
 
 UTM 57S is the zone the shared `FlightLogParams.xml` template carries, so the
 worst case is not hypothetical. Global range is roughly −106 m to +85 m, and N
 varies ~23.6 m along the Hawaiian chain alone — **it is a per-site lookup, never
-a project constant.** [VERIFIED: FINDINGS 2026-08-31]
+a project constant.** [VERIFIED: project testing 2026-08-31]
 
 The sign rule that matters: `N` is *added* to the negative depth, so a positive
 undulation makes the ellipsoidal height **less negative** — the wreck sits
@@ -1209,7 +1155,7 @@ sign doubles the error rather than removing it.
   back Z unchanged, having quietly selected a *"ballpark vertical
   transformation, without ellipsoid height to vertical height correction"*. No
   exception, no warning. Always pass `allow_ballpark=False`, which raises
-  instead. [VERIFIED: FINDINGS 2026-08-31]
+  instead. [VERIFIED: project testing 2026-08-31]
 - **Only EGM96 and EGM2008 are usable.** PROJ ships grid transformations for
   `EPSG:5773` and `EPSG:3855` only. `EPSG:5714` (MSL height) needs an NGA grid
   that is not redistributable, and `EPSG:5715` (MSL *depth*) has no
@@ -1237,8 +1183,8 @@ Observed, on the same pipeline's data:
 
 | export | `MvsExportTransformationPreset` | `settingsRotation` | `exportCoordinateSystemType` | frame |
 |---|---|---|---|---|
-| `NA168_H2080_20Jan.obj` (manual/GUI) | *(DCC preset)* | `-90 -90 0` | `2` | **local**, vertices ~350 km from the site |
-| `H2024_sub.las` (manual/GUI) | — | `0 0 0` | `1` | global, identity `transformToModel` |
+| `site_e_model.obj` (manual/GUI) | *(DCC preset)* | `-90 -90 0` | `2` | **local**, vertices ~350 km from the site |
+| `survey_sub.las` (manual/GUI) | — | `0 0 0` | `1` | global, identity `transformToModel` |
 | repo `ModelExportParamsOBJ_NiraParts.xml` | `Custom` | rotations `0.0` | `3` | **never yet observed on disk** |
 
 So an export's frame is a property of the *preset it was made with*, and the
@@ -1246,7 +1192,7 @@ repo's own production preset has never written a sidecar anyone has inspected.
 The only safe reading is the one in the file: parse `<transformToModel>` and
 validate it (§9 and `09-xml-parameter-files.md` §1.6.1) rather than trusting
 that "georeferenced export" means "vertices in the CRS".
-[VERIFIED: FINDINGS 2026-08-31]
+[VERIFIED: project testing 2026-08-31]
 
 ## 4. Ground control points and control points
 
@@ -1255,10 +1201,8 @@ section is [OFFICIAL] or [VERIFIED-by-inspection] of shipped schema files; nothi
 [VERIFIED] empirically here. The only adjacent empirical datum is staff-confirmed **absence
 of stereo-rig support** in RealityScan (through Aug 2025), which implies that for a rigid
 multi-camera rig, scale must come from GCPs, distance constraints, or locked XMP poses
-rather than from a declared baseline. [VERIFIED-second-hand: COLMAP fact base F-20260723-27, quoted in the status log §"PENDING
-RECONCILIATION with LilyJean/COLMAP findings" — "No stereo-rig support in RealityScan
-(staff-confirmed through Aug 2025): Voyis-rig scale must come from GCPs/distance
-constraints/locked XMP". Second-hand from another project's fact base; not re-verified here.]
+rather than from a declared baseline. [VERIFIED-second-hand: vendor staff statement
+(through Aug 2025), recorded 2026-07-23; not re-verified here.]
 [OPEN: no GCP has ever been driven here — §9 item 16]
 
 ### 4.1 The three control-point types
@@ -1271,31 +1215,27 @@ constraints/locked XMP". Second-hand from another project's fact base; not re-ve
 | **Ground Control** | `1` | a tie point *plus* a physical coordinate. Participates in the optimisation. |
 | **Ground Test** | `2` | a ground control point **excluded from the optimisation**, used purely to report deviation. |
 
-Ground Test points exist to catch a specific pathology: "especially if a ground control point
-is defined only in 2-3 images, it might happen that rather than a scene is corrected, the
-system will shift those 2-3 images a little bit to make errors look smaller. However, the
-scene will not be corrected and the typical banana effect will remain. Adding test points can
-detect this easily, as their error will grow." Distribute test points evenly.
-[OFFICIAL: tools/controlpoints]
+Ground Test points exist to catch a specific pathology: a ground control point measured in
+only two or three images can be "satisfied" by nudging those few images instead of
+correcting the scene, leaving the scene's bending ("banana effect") in place; the errors of
+evenly distributed test points grow when that happens. [OFFICIAL: tools/controlpoints]
 
 Guidance on counts [OFFICIAL: tutorials/georeferencing, tools/gcpimport, tools/controlpoints]:
 
 - 1 GCP defines the origin; 2 define origin **and scale**; 3 or more define the full
   coordinate system and orientation.
 - Each point should have **at least two** image measurements; **three is recommended**.
-- "RealityScan integrates advanced solvers which can solve the scene scale and orientation
-  just by creating any 5 independent measurements." [OFFICIAL: tutorials/scaling]
-- "Increasing the number of points and images assigned to them will improve the accuracy, but
-  too many of them can also have a negative effect on the alignment."
-- "Discrepancies of coordinates up to 5 cm are tolerable."
+- Any 5 independent measurements are enough for the solver to fix scene scale and
+  orientation. [OFFICIAL: tutorials/scaling]
+- More points and more images per point improve accuracy, but too many can degrade the
+  alignment.
+- Coordinate discrepancies up to 5 cm are tolerable.
 - Add control points **before** alignment where possible.
 
-On weight: "The weight is one way of saying 'use this point and drop all natural points which
-do not agree'. On the other hand, increasing the point weight will make the alignment
-sensitive to errors in positioning of the point in the image. Even with the best efforts, it
-is difficult for a human to place a point with a precision of under 3-4 pixels, while natural
-points are placed with sub-pixel accuracy. **However, it is recommended to leave the default
-weight value.**" [OFFICIAL: tools/controlpoints]
+On weight: a higher weight tells the solver to favour the control point over disagreeing
+natural tie points, but hand-placed points are rarely better than 3–4 px while natural points
+are sub-pixel, so a high weight makes the alignment sensitive to placement error. **Epic
+recommends leaving the weight at its default.** [OFFICIAL: tools/controlpoints]
 
 ### 4.2 `-importGroundControlPoints` and `groundcontrol.xml`
 
@@ -1485,7 +1425,7 @@ about X".
 **`-editInputSelection "inpPose=3"` (Locked) is unusable as a growth anchor.** It takes
 effect, but `-align` then refuses with *"prior set to 'Exact' mode must be all aligned in a
 single run. Incremental adding is not supported."* Checkpoint/rollback remains the primary
-never-shrink mechanism here. [VERIFIED: FINDINGS cell U18 FAIL, 2026-07-23]
+never-shrink mechanism here. [VERIFIED: project testing, cell U18 FAIL, 2026-07-23]
 
 ### 4.5 `-detectMarkers`
 
@@ -1524,7 +1464,7 @@ tool; without it the instance's current settings apply, including the marker typ
 the params file. `-detectMarkers` operates on the **selected images** if a subset is
 selected. [OFFICIAL] Note that `-selectImage` matches **literal full paths only** in this
 build (see `02-command-reference.md`), which makes composing an image subset for detection a
-per-image union loop. [VERIFIED: FINDINGS 2026-07-23, cells U-SEL2…U-SEL8]
+per-image union loop. [VERIFIED: project testing 2026-07-23, cells U-SEL2…U-SEL8]
 
 ### 4.6 GCP export formats
 
@@ -1548,11 +1488,9 @@ Supported tokens [OFFICIAL: tools/gcpexport]: `index` (int), `name` (string),
 
 ## 5. Scale: defining it
 
-"In general, there is a problem to determine the scale of a scene with photogrammetry
-methods. Some other prior information must be provided. In fact, just a single number is
-needed to scale the scene properly. In RealityScan you have the possibility to scale your 3D
-model uniformly in all directions at the same time. **Non-uniform scaling with a separate
-factor for each axis direction is not allowed.**" [OFFICIAL: tutorials/scaling]
+Photogrammetry alone cannot fix a scene's scale; one external number is enough, and
+RealityScan applies it uniformly. **Non-uniform scaling with a separate factor per axis is
+not supported.** [OFFICIAL: tutorials/scaling]
 
 Four mechanisms, in rough order of directness.
 
@@ -1572,7 +1510,7 @@ RealityScan.exe -delegateTo RS1 -defineDistance "cp_bow" "cp_stern" 63.400 "hull
 CLI, form 2 — import from a file:
 
 ```bat
-RealityScan.exe -delegateTo RS1 -defineDistance "F:\na156\distances.csv" "F:\na156\DistanceParams.xml"
+RealityScan.exe -delegateTo RS1 -defineDistance "F:\survey\distances.csv" "F:\survey\DistanceParams.xml"
 ```
 
 `distancedefinitions.xml` ships two formats, `reader="RealityScan.Import.CSVDistanceDefinition"`
@@ -1627,9 +1565,8 @@ Control-point prior accuracies: `sfmControlPointXAccuracy` (`0.05`),
 
 ### 5.3 Camera priors
 
-"If a distance between two or among more cameras is known, then this information can be used
-to scale the scene… Alternatively, camera centers can be known from GPS or flight logs and
-**then the scene will come properly scaled automatically**." [OFFICIAL: tutorials/scaling]
+A known distance between cameras can scale the scene, and camera centres known from GPS or
+a flight log **scale the scene automatically**. [OFFICIAL: tutorials/scaling]
 
 This is the mechanism this pipeline relies on — and §6 is the record of it failing silently
 at a scale of 0.175 on 82% of a delivered assembly's cameras. Prior-driven scale is real but
@@ -1665,13 +1602,13 @@ Two operational facts about this route:
 
 - **Any `-add` of images with `<stem>.xmp` sidecars beside them auto-imports those sidecars,
   and pose-bearing sidecars silently become exact-pose priors.** Clean the tree before any
-  run that must be independent. [VERIFIED: NA167 B7, 2026-07-22]
+  run that must be independent. [VERIFIED: bug B7, 2026-07-22]
 - **`_common.xmp`** — "You can add one XMP file named `_common.xmp` to the folder with your
   images to import all of them with the same XMP information." [OFFICIAL: tools/xmpalign]
   A cheap way to apply one calibration group or one prior mode to a whole folder.
 - `-addImageWithCalibration` imports an image and its XMP where "the two files don't have to
-  have the same name or be placed in the same folder". [OFFICIAL: tools/xmpalign] Never used
-  here.
+  have the same name or be placed in the same folder". [OFFICIAL: tools/xmpalign] Used here
+  for calibration sidecars (`05-metadata-xmp-and-sidecars.md` §1.3).
 
 ### 5.5 Ground plane and gravity
 
@@ -1698,13 +1635,12 @@ The interactive widget is **GUI-only**. The CLI exposes only:
 
 - `appbasics/allcommands`: "Update all components and models by a **rigid transformation** to
   fit the actual constraints and control points."
-- `tools/createcontrolpoints`: "the Update function will just use ground control points and
-  distance constraints to place and **scale** the scene. However, it does not change relative
-  positions of cameras in the scene and thus it can scale and position also all already
-  created models."
-- `tutorials/scaling`: "The Update changes solely the coordinate system of the **currently
-  selected component** and it also updates the scale of all children models, whereas the Align
-  Images button creates a new component."
+- `tools/createcontrolpoints`: Update places and **scales** the scene from ground control
+  points and distance constraints only; it leaves the cameras' relative positions alone, which
+  is why it can also re-place and re-scale models that already exist.
+- `tutorials/scaling`: Update changes only the coordinate system of the **currently selected
+  component** (and the scale of its child models), whereas Align Images creates a new
+  component.
 
 [CONTRADICTED, internal to the Help] — "rigid transformation" excludes scaling; the other two
 pages say it scales. Scope also differs (all components vs the selected one).
@@ -1712,14 +1648,14 @@ pages say it scales. Scope also differs (all components vs the selected one).
 **Observed here:** `-update` is a **similarity** (rigid + uniform scale) fit to the scene's
 imported constraints, applied *after* reconstruction. "It can ROTATE or RESCALE a component
 but cannot stiffen or repair its geometry." Established while diagnosing a bow component's
-45° tilt. [VERIFIED: FINDINGS 2026-07-26] Its process id is `65542 UPDATE_CONSTRAINTS`.
+45° tilt. [VERIFIED: project testing 2026-07-26] Its process id is `65542 UPDATE_CONSTRAINTS`.
 
 Two consequences:
 
 1. `-update` is the step that **georeferences a merged component**, and it is the only reason
    the union flight log must be imported into a merge scene at all. Without constraints in the
    scene there is nothing to fit to; the parents' georeferencing does **not** carry into the
-   fused child. [VERIFIED: FINDINGS 2026-07-23]
+   fused child. [VERIFIED: project testing 2026-07-23]
 2. `-update` is also the step that can **set scale on the deliverable** — and it runs *after*
    the last point at which this pipeline can measure scale. See §6.5.
 
@@ -1733,7 +1669,7 @@ Every automated check in this pipeline before 2026-07-25 measured **quantity** �
 registered, components produced. A component can register 97% of its images, produce one
 clean component, look correct in the 3D viewer, and be at **one fifth of true scale**.
 
-The finding that forced the issue: fresh-run zone_1 of H2023 solved
+The finding that forced the issue: fresh-run zone_1 of dataset A solved
 
 | component | cameras | scale | IQR |
 |---|---|---|---|
@@ -1742,7 +1678,7 @@ The finding that forced the issue: fresh-run zone_1 of H2023 solved
 | c2 (bow) | 665 | 1.011 | — |
 
 Two components holding **82% of the delivered assembly's cameras** were 5.7× and 4.5× smaller
-than reality. [VERIFIED: FINDINGS 2026-07-25]
+than reality. [VERIFIED: project testing 2026-07-25]
 
 Three independent confirmations, deliberately chosen so that no two share an assumption:
 
@@ -1751,17 +1687,17 @@ Three independent confirmations, deliberately chosen so that no two share an ass
    error, not drift, fold, or accumulation.
 2. **Implied vehicle speed.** The hull solve implies an ROV speed of 0.01 m/s (implausible on
    a 64 m hull); nav says 0.08 m/s. On the bow, solve 0.22 m/s ≈ nav 0.21 m/s.
-3. **The rig as an independent ruler.** The fixed Cinema–Port baseline measures 1.11–1.21 m in
+3. **The rig as an independent ruler.** The fixed baseline between two of the rig's cameras measures 1.11–1.21 m in
    metrically sound components but **0.22 m** in hull c0 — 0.20×, agreeing with the
    nav-derived 0.175× **without using nav at all**.
 
 "A uniform scale error is INVISIBLE in the viewer — 'all components look good' was true and
-still is, locally." [VERIFIED: FINDINGS 2026-07-25]
+still is, locally." [VERIFIED: project testing 2026-07-25]
 
 **It is not a chronic property of the pipeline.** The *older* production run's zone_1
 components measure **0.77–1.01**. Something about the fresh run's zone_1 solve specifically
 lost scale, which is why §6.5 still lists the cause as unestablished rather than "fixed".
-[VERIFIED: FINDINGS 2026-07-25]
+[VERIFIED: project testing 2026-07-25]
 
 Three further consequences were mis-attributed before the oracle existed, and each is a
 diagnostic signature worth recognising: the reported "high residuals" (position priors in
@@ -1769,15 +1705,15 @@ metres cannot be satisfied by a 5.7×-shrunken solve); the c0+c1 fusion camera d
 (the merge was asked to rigidly fuse two bodies whose scales differ by 26%, geometrically
 impossible without a similarity transform — the never-shrink gate that rejected it was right
 for a deeper reason than was known at the time); and the 0.55 m merge deformation.
-[VERIFIED: FINDINGS 2026-07-25]
+[VERIFIED: project testing 2026-07-25]
 
-The failure **reproduced on a different dataset**: H2024 `zone_3_c0`, 1,192 cameras at scale
+The failure **reproduced on a different dataset**: dataset B `zone_3_c0`, 1,192 cameras at scale
 **0.236** (IQR 0.217–0.253), on the first production run with orientation priors enabled, in a
 run where registration looked entirely healthy (8,709 cameras, 82–93% per zone, `Success:
 True` on every zone). Principal-axes scales 0.229 / 0.248 / 0.238 — cloud shape preserved to a
-few percent, i.e. a faithful 1:4.24 model. Intrinsics were exonerated: zone_3 solved cinema
-16.408 / port 15.481, within 0.2% of the sound zone_5's 16.448 / 15.506.
-[VERIFIED: FINDINGS 2026-07-26; status log 2026-07-27]
+few percent, i.e. a faithful 1:4.24 model. Intrinsics were exonerated: zone_3 solved its two
+cameras at 16.408 / 15.481, within 0.2% of the sound zone_5's 16.448 / 15.506.
+[VERIFIED: project testing 2026-07-26; project testing 2026-07-27]
 
 ### 6.2 The stem-paired oracle
 
@@ -1813,7 +1749,7 @@ wide IQR       not a similarity error - drift, fold, or mixed bodies
 
 **The oracle was validated in both directions before use** — against a known-bad case and a
 known-good case. Its self-test reproduces the hand-derived fresh-zone_1 figures exactly
-(c0 0.175 / c1 0.221 / c2 1.009). [VERIFIED: FINDINGS 2026-07-25]
+(c0 0.175 / c1 0.221 / c2 1.009). [VERIFIED: project testing 2026-07-25]
 
 ### 6.3 The gate
 
@@ -1841,7 +1777,7 @@ deliberate exception.
 accepted, persisted, and printed in `EVALUATION_READY` as the authoritative band — and never
 passed into `measure_input_scales`. Every verdict was baked at the 0.90–1.10 defaults, so
 *tightening* the gate silently did nothing while the report claimed otherwise. Fixed 2026-07-28.
-[VERIFIED: FINDINGS audit #5, 2026-07-28] A gate that reports a threshold it does not apply is
+[VERIFIED: project testing 2026-07-28] A gate that reports a threshold it does not apply is
 a monitor grading its own homework.
 
 ### 6.4 The correspondence-free quantile method
@@ -1850,7 +1786,7 @@ The stem oracle **cannot measure a fused component**, by construction: a merge-s
 `-exportXMPForSelectedComponent` writes **ordinal** sidecars (`00000.xmp`, `00001.xmp`, …)
 with no image identity, so there is nothing to join on. In the final-assembly run all three
 fused components came back UNMEASURED while every unfused original passed — the gate did its
-job, and it would have left the hull unmodelled. [VERIFIED: FINDINGS 2026-07-28]
+job, and it would have left the hull unmodelled. [VERIFIED: project testing 2026-07-28]
 
 `quantile_ratio_scale(solved, nav)` closes that hole:
 
@@ -1866,7 +1802,7 @@ are rigid-invariant and the scale factor is exactly the thing being measured.
 
 **Validated in both directions:** known-good `zone_1_c1` measures **1.045** against the stem
 oracle's 1.023 — same verdict, 2.2% apart; the hull's 0.236-shrunk cloud measures **0.235**.
-[VERIFIED: FINDINGS 2026-07-28]
+[VERIFIED: project testing 2026-07-28]
 
 **Two traps, both hit in practice:**
 
@@ -1887,60 +1823,60 @@ different things in the two scene types.
 | **ALIGN** scene (`AlignZone.bat`) | **cumulative** — the stems of laps K..end | `stems(rK) − stems(rK+1)` (successive difference) |
 | **MERGE** scene (`MergeZoneComponents.bat`) | component K **alone** | the directory itself |
 
-[VERIFIED: FINDINGS 2026-07-28] `component_members()` implements the successive difference.
+[VERIFIED: project testing 2026-07-28] `component_members()` implements the successive difference.
 
 ### 6.5 Results of record, and the standing blindness
 
 | dataset / component | cameras | scale | verdict |
 |---|---|---|---|
-| H2023 fresh zone_1 c0 | 3,026 | 0.175 | FAIL |
-| H2023 fresh zone_1 c1 | 714 | 0.220 | FAIL |
-| H2023 fresh zone_1 c2 (bow) | 665 | 1.011 | pass |
-| H2023 fresh zone_2 | 852 | 0.902 | pass |
-| H2023 fresh zone_3 | 124 | 0.965 – 0.991 | pass |
-| H2023 PD-6 c0 (corrected config) | 3,738 | **0.981** (IQR 0.949–1.027) | pass |
-| H2023 PD-6 c1 | 656 | 1.076 | pass |
-| H2024 baseline zone_1 (8 components) | — | 0.937 – 1.119 | mixed |
-| H2024 baseline zone_2 | — | 1.086 | pass |
-| H2024 baseline **zone_3_c0** | 1,192 | **0.236** (IQR 0.217–0.253) | FAIL |
-| H2024 baseline zone_4 (5 components) | — | 0.983 – 1.196 | mixed |
-| H2024 baseline zone_5 | — | 1.023 | pass |
-| H2024 **v2** zone_3_c0 | — | **0.969** (IQR width 0.147 — inside the band but above the 0.15 call-out threshold's neighbourhood) | pass |
-| H2024 v2 zone_1_c2 | — | 1.127 → 1.081 | pass |
-| H2024 v2 zone_4_c2 | — | 1.196 → 0.919 | pass |
-| H2024 `cluster_0_a2_c0` (hull, fused) | 4,860 | **0.997** (IQR width 0.014) | pass — quantile method |
-| H2024 `cluster_1_a1_c0` (fused) | 880 | **1.000** (IQR 0.029) | pass — quantile method |
-| H2024 `cluster_4_a1_c0` (fused) | 133 | **0.980** (IQR 0.077) | pass — quantile method |
+| dataset A fresh zone_1 c0 | 3,026 | 0.175 | FAIL |
+| dataset A fresh zone_1 c1 | 714 | 0.220 | FAIL |
+| dataset A fresh zone_1 c2 (bow) | 665 | 1.011 | pass |
+| dataset A fresh zone_2 | 852 | 0.902 | pass |
+| dataset A fresh zone_3 | 124 | 0.965 – 0.991 | pass |
+| dataset A PD-6 c0 (corrected config) | 3,738 | **0.981** (IQR 0.949–1.027) | pass |
+| dataset A PD-6 c1 | 656 | 1.076 | pass |
+| dataset B baseline zone_1 (8 components) | — | 0.937 – 1.119 | mixed |
+| dataset B baseline zone_2 | — | 1.086 | pass |
+| dataset B baseline **zone_3_c0** | 1,192 | **0.236** (IQR 0.217–0.253) | FAIL |
+| dataset B baseline zone_4 (5 components) | — | 0.983 – 1.196 | mixed |
+| dataset B baseline zone_5 | — | 1.023 | pass |
+| dataset B **v2** zone_3_c0 | — | **0.969** (IQR width 0.147 — inside the band but above the 0.15 call-out threshold's neighbourhood) | pass |
+| dataset B v2 zone_1_c2 | — | 1.127 → 1.081 | pass |
+| dataset B v2 zone_4_c2 | — | 1.196 → 0.919 | pass |
+| dataset B `cluster_0_a2_c0` (hull, fused) | 4,860 | **0.997** (IQR width 0.014) | pass — quantile method |
+| dataset B `cluster_1_a1_c0` (fused) | 880 | **1.000** (IQR 0.029) | pass — quantile method |
+| dataset B `cluster_4_a1_c0` (fused) | 133 | **0.980** (IQR 0.077) | pass — quantile method |
 
-[VERIFIED: FINDINGS 2026-07-25 … 2026-07-28; status log]
+[VERIFIED: project testing 2026-07-25 … 2026-07-28]
 
 **The crisis closed, but the cause was never established.** All 14 v2 components pass the
 0.90–1.10 band. The v2 re-align changed several things at once (restored calibration sidecars,
 fresh solve, code changes) and fragmentation is already nondeterministic, so no controlled cell
-explains either the collapse or the repair. Similarly, PD-6's repair of the H2023 hull differs
+explains either the collapse or the repair. Similarly, PD-6's repair of the dataset A hull differs
 from its baseline in **three** ways — Brown3→Division, accuracy columns actually being imported
 for the first time, and orientation priors removed (PD-6's cell params name the 7-column
 position-only `{0E9850E2-…}`; production named the 13-column `{B438A617-…}`) — so the scale
 repair must not be attributed to the distortion model alone.
-[VERIFIED-as-outcome, ATTRIBUTION OPEN: FINDINGS 2026-07-26/27]
+[VERIFIED-as-outcome, ATTRIBUTION OPEN: project testing 2026-07-26/27]
 **Caveat on that count:** differences (b) and (c) both presuppose that the baseline run
-actually received what `{B438A617-…}` describes, which the §2.3 [CONTRADICTED] entry disputes
-— the format was not installed on the baseline's run date. If it was not resolvable, the
-baseline was *also* effectively position-only and the real count is **one** (the distortion
-model) plus a global-vs-per-image accuracy change. §9 item 14 is the probe.
+actually received what `{B438A617-…}` describes. §2.3 shows it did not — the format was not
+installed on the baseline's run date, so the baseline was *also* effectively position-only
+and the real count is **one** (the distortion model) plus a global-vs-per-image accuracy
+change.
 
 **Standing blindness: the oracle cannot see the deliverable.** It needs pose XMPs; assemble
 mode saves and quits without exporting any. So scale is measured on the assembly's **inputs**
 while `-update` — a similarity fit to the nav constraints, i.e. precisely the step that can
 *set* scale — runs afterwards unobserved. Closing it means porting the successive-difference
 harvest to a dated **copy** of the assembly project, which also yields per-component
-membership. [OPEN: FINDINGS 2026-07-25; status log open item 2]
+membership. [OPEN: project testing 2026-07-25]
 
 **Running it:**
 
 ```bat
-py -3.13 modules\scale_oracle.py F:\na156_h2024\components\zone_3 ^
-                                 F:\na156_h2024\batched\zone_3\flight_log_4N_UTM.txt
+".venv\Scripts\python.exe" modules\scale_oracle.py F:\survey\components\zone_3 ^
+                                 F:\survey\batched\zone_3\flight_log_4N_UTM.txt
 ```
 
 Output, one line per component, maximal first:
@@ -1955,7 +1891,7 @@ c0:  1192 cams  scale 0.236  IQR 0.217-0.253
 
 **This is the longest-standing open item in the repo** (hardening cell **U7**, open since
 2026-07-23). Today the assembly project's georeferencing is verified by an operator opening it in
-the GUI and taking a screenshot. [OPEN: FINDINGS/ALIGN_MERGE_HARDENING_PLAN U7]
+the GUI and taking a screenshot. [OPEN: hardening cell U7]
 
 Three candidate proxies were listed. The survey work for this manual establishes that the
 first one is far more tractable than the repo believed, because **`-exportReport` takes a
@@ -1965,9 +1901,9 @@ plain template file, not a GUI-exported params XML**:
 exportReport | outputFileName templateFileName | true|false
 ```
 
-"Export a report into a file (`outputFileName` including the path and the `.html` extension)
-using a template (`templateFileName` including the path). The default templates are stored in
-the installation folder\Reports." [OFFICIAL: appbasics/allcommands]
+It renders a report to `outputFileName` (full path, `.html`) from the template
+`templateFileName` (full path); the default templates live in the installation's `Reports`
+folder. [OFFICIAL: appbasics/allcommands]
 
 Shipped templates in `C:\Program Files\Epic Games\RealityScan_2.2\Reports\`:
 `Overview.html`, **`ComponentAccuracyReport.html`**, `SelectedComponent.html`,
@@ -2053,7 +1989,7 @@ The other two U7 proxies, for completeness:
   `{720A2EC9-3EE9-4645-BD4D-36A613EA3F13}` position-only. Exporting one and diffing against
   the input flight log is a direct georeference check. **Blocked**: `-exportRegistration`
   without a params XML blocks forever headless, and no params file has been saved from the
-  GUI dialog. [VERIFIED: FINDINGS 2026-07-21]
+  GUI dialog. [VERIFIED: project testing 2026-07-21]
 - **`poses_to_flight_log.py` local→UTM fit residuals.** A georeferenced component should fit near
   identity with residuals on the order of the nav error (§3.3). Already implemented; not yet
   wired into the acceptance path.
@@ -2067,16 +2003,16 @@ Caution when reading `-printReport`: it "does not work with delegation".
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Zone align "succeeds" in ~25 s; every log row reported not in the scene | `-addFolder` did not recurse; the scene is empty | `-set "appIncSubdirs=true"` before every `-addFolder` [VERIFIED: FINDINGS 2026-07-23] |
+| Zone align "succeeds" in ~25 s; every log row reported not in the scene | `-addFolder` did not recurse; the scene is empty | `-set "appIncSubdirs=true"` before every `-addFolder` [VERIFIED: project testing 2026-07-23] |
 | Import reports failure, result `2181038335` / `0x820000FF`, but the log says `Trajectory imported successfully.` | `err:18002` — rows reference images not in the scene | filter the log to the scene, or use the tolerant runner of §2.6 |
 | Everything imports cleanly but the scene sits in the wrong place on Earth | `CoordinateSystemFlightLog` zone/hemisphere ≠ the log's actual zone | generate the params XML from the log filename tag (§2.11); never hand-edit |
 | Orientation priors and per-image accuracies have no effect | `gpsLogFileFormat` names a GUID absent from `flightlogs.xml`, or the format has no YPR/accuracy columns | verify the GUID exists in the installed `flightlogs.xml`; re-verify after every RealityScan update |
-| A subsequent export writes zero files in ~0.05 s | flight-log import left images selected; `-silent` auto-answered "Export Selection" | `-deselectAllImages` before every export [VERIFIED: FINDINGS 2026-07-23] |
-| Merged component is not georeferenced | the merge scene held no constraints; parents' georeferencing does not carry | import the union log into the merge scene, then `-update` [VERIFIED: FINDINGS 2026-07-23] |
-| Union log has far fewer rows than the scene has cameras | duplicated basenames from copied overlap images | one trajectory row cannot serve two cameras; move to a common image pool [VERIFIED: status log #6] |
+| A subsequent export writes zero files in ~0.05 s | flight-log import left images selected; `-silent` auto-answered "Export Selection" | `-deselectAllImages` before every export [VERIFIED: project testing 2026-07-23] |
+| Merged component is not georeferenced | the merge scene held no constraints; parents' georeferencing does not carry | import the union log into the merge scene, then `-update` [VERIFIED: project testing 2026-07-23] |
+| Union log has far fewer rows than the scene has cameras | duplicated basenames from copied overlap images | one trajectory row cannot serve two cameras; move to a common image pool [VERIFIED: project testing 2026-07-28] |
 | Component registers 97% and looks perfect but is 1/5 scale | over-tight position priors and/or an unpinned orientation convention | measure with the scale oracle before modelling; loosen accuracies to end-to-end uncertainty (§2.10, §6) |
 | Scale gate reports every fused component UNMEASURED | merge-scene XMP exports are ordinal | use `quantile_ratio_scale` (§6.4) |
-| Components silently missing from selection and from XMP export | `-setMinComponentSize` default threshold is 5 | `-setMinComponentSize 1` before exports. The command is itself **deprecated in 2.2** ("will be removed in the next release" warning in `RealityScan.log`) but still required. [VERIFIED: FINDINGS [NA167 #22], 2026-07-24] |
+| Components silently missing from selection and from XMP export | `-setMinComponentSize` default threshold is 5 | `-setMinComponentSize 1` before exports. The command is itself **deprecated in 2.2** ("will be removed in the next release" warning in `RealityScan.log`) but still required. [VERIFIED: bug B11, 2026-07-24] |
 
 **Pre-flight checklist for any georeferenced run:**
 
@@ -2114,7 +2050,7 @@ Each item states the question and the cheapest probe that answers it.
    defaults, then after changing **only** *Euler angles order (YPR)*, then after changing
    **only** *Camera mount*; diff the three XMLs. Probe B (pure CLI, ~2 min per cell): align
    the smoke fixture with orientation priors under different values and read camera attitudes
-   out of the pose XMPs. status log loose ends #5 / #7. (§2.8, §2.9)
+   out of the pose XMPs. (§2.8, §2.9)
 
 3. **Which flight-log axis convention is correct?** `tools/flightlogimport` says NED with
    Yaw=Z / Pitch=Y / Roll=X; `tools/defineimportformat` and `appbasics/reports_fav_images` say
@@ -2129,8 +2065,8 @@ Each item states the question and the cheapest probe that answers it.
 
 5. **Does the hand-merged `{B438A617-…}` format survive a RealityScan update?**
    After any update or repair, verify that the installed dictionary contains exactly
-   one format whose **complete ID** matches `gpsLogFileFormat` in both
-   `FlightLogParams.xml` and `FlightLogParamsLocal.xml`. Searching only for the
+   one format whose **complete ID** matches `gpsLogFileFormat` in
+   `FlightLogParams.xml`. Searching only for the
    `B438A617` prefix misses the measured two-place mismatch. Use the read-only
    [installation check](../SETUP-AND-RUN.md#54-flight-log-import-format), then
    inspect the parser and validate the imported priors on a small copied fixture. (§2.3)
@@ -2165,17 +2101,17 @@ Each item states the question and the cheapest probe that answers it.
 
 10. **Is the intermediate accuracy ladder better than loose?** 3 / 3 / 0.5 and 5 / 5 / 1 were
     queued and never run; loose (10 / 10 / 1) is proven, not proven optimal. Each cell is a
-    ~70-minute zone_1 re-align. status log 2026-07-25 open item 3. (§2.10)
+    ~70-minute zone_1 re-align. (§2.10)
 
-11. **What caused the H2024 metric-scale collapse and its repair?** Both `zone_3_c0` 0.236 →
-    0.969 and the H2023 PD-6 hull repair changed several variables at once. No controlled cell
+11. **What caused the dataset B metric-scale collapse and its repair?** Both `zone_3_c0` 0.236 →
+    0.969 and the dataset A PD-6 hull repair changed several variables at once. No controlled cell
     exists. Probe: a single-variable cell on `zone_3` — restore the v1 configuration and change
     **only** the calibration-sidecar state — ~30 min. (§6.5)
 
 12. **Measure the DELIVERABLE's scale, not its inputs.** Assemble mode exports no XMPs, so
     `-update` runs unobserved after the last measurement. Probe: port the
     successive-difference harvest to a dated **copy** of the assembly project; also yields
-    per-component membership. status log open item 2. (§6.5)
+    per-component membership. (§6.5)
 
 13. **CLOSED (2026-08-04), kept for the record.** "Is `measurementsimport.xml`'s
     `{6E9D6C7D-…}` accuracy mapping a shipped bug?" — no. Both `XAccuracy` and `YAccuracy`
@@ -2184,27 +2120,16 @@ Each item states the question and the cheapest probe that answers it.
     For anisotropic or oriented (`RotationAccuracy`) uncertainty, define a private format with
     `YAccuracy index="5"`. (§4.3)
 
-14. **SUPERSEDED 2026-08-23 — the proposed probe is retained below as historical evidence;
-    see the resolved comparison in §2.3.**
-    **[CONTRADICTED, unresolved] Did any align before 2026-07-25 receive orientation priors
-    or per-image accuracies at all?** The custom 13-column format was not installed until
-    `flightlogs.xml` mtime `2026-07-25 07:31`, yet `FlightLogParams.xml` had been naming its
-    GUID all along. `PRIORS_DISTORTION_TEST_PLAN` audit item 1 says YPR and accuracies were
-    "silently dropped on every import to date"; FINDINGS 2026-07-26 says the 2026-07-24 fresh
-    run "DID import orientation, at the then-current 3/5/3 accuracies". Both are tagged
-    established. The answer decides whether "orientation priors removed" is a real third
-    difference between the 0.175-scale fresh run and the 0.981-scale PD-6 — and therefore
-    whether item 11 has three candidate causes or two. **Probe:** rename the
-    `{B438A617-…}` block out of `flightlogs.xml`, import the 13-column log on the smoke
-    fixture with the production params XML, `-exportReport` `$(inputIsOrientationPrior)` /
-    `$(inputIsPriorAccuracy)` / `$(inputAccuracyYaw)` / `$(inputCS)`, restore the block. ~4
-    min, one boot. This is the cheapest unrun probe in the document and it also partly settles
-    items 2, 3 and 11. (§2.3, §2.10, §6.5)
+14. ~~**Did any align before 2026-07-25 receive orientation priors or per-image accuracies
+    at all?**~~ **ANSWERED 2026-08-23 — NO.** An import whose `gpsLogFileFormat` names a GUID
+    absent from the installed `flightlogs.xml` stores position only (§2.3), and the 13-column
+    format was not installed before 2026-07-25. Item 11 therefore has two candidate causes,
+    not three. (§2.3, §6.5)
 
 15. **Does an instance-held lever arm double-apply the one already baked into the log?**
     `ifOfsX/Y/Z` + `ifOfsRR/RP/RY` + `ifOfsifuUseOffset` exist in the binary and are not
-    written by this repo's params file, while `georeference_survey.py` bakes the lever arm into the log
-    itself. Probe: after an import, `-exportReport` `$(inputIsInsOffsetValid)` and
+    written by this repo's params file, while the Wild Sync Intake bakes the lever arm into the
+    log itself (`modules/wildsync_intake/intake.py::altitude_prior`). Probe: after an import, `-exportReport` `$(inputIsInsOffsetValid)` and
     `$(inputInsOfsZ)`. Non-zero means it is being applied twice. One boot, ~1 min.
     (§2.8, §7)
 

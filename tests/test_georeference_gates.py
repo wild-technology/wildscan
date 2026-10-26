@@ -472,3 +472,28 @@ def test_a_mixed_rig_of_measured_and_unmeasured_cameras_still_runs(tmp_path):
         # ... and the unmeasured rows are still reported, not hidden.
         assert result['Rows Without Pitch Prior'] == \
             sum(1 for n in names if n.startswith('S'))
+
+@pytest.mark.parametrize('node', ['Cam1', 'Cam2'])
+def test_wildsync_images_are_not_given_legacy_vehicle_navigation(tmp_path, node):
+    raw = tmp_path / 'raw_images'
+    raw.mkdir()
+    (raw / f'{node}_20260820_192544.42.card.JPG').write_bytes(b'not decoded')
+    nav = _nav(tmp_path / 'nav.csv', 1)
+    module = _module(geo_input_image_dir=str(raw),
+                     geo_input_flight_log=str(nav), geo_input_type='All',
+                     output_dir=str(tmp_path))
+    ok, reason = module.validate_parameters()
+    assert not ok
+    assert 'Wild Sync Intake' in reason
+    assert list(raw.iterdir()) == [raw / f'{node}_20260820_192544.42.card.JPG']
+
+
+def test_non_image_wildsync_notes_do_not_block_a_legacy_dataset(tmp_path):
+    raw = tmp_path / 'raw_images'
+    raw.mkdir()
+    (raw / 'Cam1_notes.txt').write_text('notes', encoding='utf-8')
+    nav = _nav(tmp_path / 'nav.csv', 1)
+    module = _module(geo_input_image_dir=str(raw),
+                     geo_input_flight_log=str(nav), geo_input_type='All',
+                     output_dir=str(tmp_path))
+    assert module.validate_parameters() == (True, None)

@@ -2,8 +2,8 @@
 """Pure component-set analysis over alignment manifests (schema v1).
 
 No RealityScan interaction happens here. Input is the JSON manifests
-written next to each exported .rsalign at zone-align time (see
-docs/merge-growth-strategy-2026-07.md "Bookkeeping layer"):
+written next to each exported .rsalign at zone-align time
+(modules/component_manifest.py):
 
     {"schema": 1, "zone": str, "component": str, "rsalign": str,
      "images": [basenames], "camera_count": int,
@@ -11,7 +11,7 @@ docs/merge-growth-strategy-2026-07.md "Bookkeeping layer"):
      "quality": {"mean_reproj_px": float or null},
      "created": iso8601, "history": [{"event": str, "at": iso8601}]}
 
-Policy (FINDINGS "Twin components across zones"):
+Policy (twin components across zones):
 - A component with NO unique images (its image set fully covered by the
   union of the other components in its twin group) is discardable.
 - A component with ANY unique images must NEVER be dropped.
@@ -343,7 +343,7 @@ def merge_plan(manifests: Sequence[dict],
     """Full analysis pass: twins resolved first, then border-gated
     cross-zone merge candidates ordered largest-first.
 
-    Steps (mirrors docs/merge-growth-strategy-2026-07.md steps 5-9):
+    Steps:
     1. find_twins + choose_keeper per group -> discard list (only
        components with zero unique images relative to their group).
     2. Survivors are border-tested (bbox + margin; null bbox pairs with

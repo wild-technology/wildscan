@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for the Batch Directory reuse guard (batch_inputs.json).
 
-Regression cover for two near-misses on 2026-07-26:
+Regression cover for two reuse failures:
 
 1. The zone folders silently held a BLEND of two zonings - 12,679 images on
    disk against 9,834 reported - because a changed flight log was allowed to
@@ -212,3 +212,37 @@ def test_status_is_not_compared_as_an_input(tmp_path):
 
 if __name__ == '__main__':
     sys.exit(pytest.main([__file__, '-v']))
+
+
+def _legacy_marker(tmp_path):
+    raw = _images(tmp_path / 'raw_images', ['P231C0001_20260720120000.jpg'])
+    log = _flight_log(tmp_path / 'flight_log_4Q_UTM.txt')
+    mod = _module(tmp_path, raw)
+    out = _zone_tree(tmp_path, ['P231C0001_20260720120000.jpg'])
+    mod._write_fingerprint(str(out), str(log), status='complete')
+    marker = out / BatchDirectory.FINGERPRINT_NAME
+    saved = json.loads(marker.read_text())
+    saved['params'].pop('batch_single_zone_below')
+    saved['params'].pop('batch_xmp_priors')
+    marker.write_text(json.dumps(saved))
+    return mod, out, log, marker
+
+
+def test_legacy_wca_batch_marker_resumes_with_historical_defaults(tmp_path):
+    mod, out, log, marker = _legacy_marker(tmp_path)
+    previous = marker.read_bytes()
+    assert mod._check_reuse_is_safe(str(out), str(log)) == (True, None)
+    assert marker.read_bytes() == previous  # read-only migration
+    assert (out / 'zone_1/P231C0001_20260720120000.jpg').is_file()
+
+
+@pytest.mark.parametrize('parameter,value', [
+    ('batch_single_zone_below', 4000), ('batch_xmp_priors', True)])
+def test_legacy_marker_refuses_new_nondefault_policies(tmp_path, parameter, value):
+    mod, out, log, marker = _legacy_marker(tmp_path)
+    previous = marker.read_bytes()
+    mod.params[parameter].set_value(value)
+    safe, reason = mod._check_reuse_is_safe(str(out), str(log))
+    assert not safe
+    assert 'params' in reason
+    assert marker.read_bytes() == previous

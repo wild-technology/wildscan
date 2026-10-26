@@ -1,5 +1,5 @@
 """Compatibility shim - the census implementation moved to
-modules/workspace_census.py (2026-08-07, consolidation step 8).
+modules/workspace_census.py.
 
 WHY: run_models.py (a repo-root driver) needed the Workspace census, and
 the layering rule is that wildscan may import modules, never the reverse -

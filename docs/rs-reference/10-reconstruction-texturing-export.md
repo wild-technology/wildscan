@@ -58,7 +58,7 @@ A model is always computed **for one component**. Nothing in this document
 works until a component is selected. The selection primitives are
 `-selectMaximalComponent`, `-selectComponent <name>` and
 `-selectComponentWithLeastReprojectionError` (`-selectAllComponents` does not
-exist in 2.2 and fails `0x82000060`) [VERIFIED: NA167 B2 / FINDINGS
+exist in 2.2 and fails `0x82000060`) [VERIFIED: bug B2 / project testing
 2026-07-23]. Component selection semantics are in the components sibling
 document.
 
@@ -81,10 +81,10 @@ Two global cautions that bite hardest in this stage:
   repeated operational rule. A command can complete "successfully" and write
   nothing — the canonical case is a selection-driven export under `-silent`,
   where the auto-answered "Export Selection" dialog turned a 20.5 s XMP export
-  into a 0.057 s no-op [VERIFIED: FINDINGS 2026-07-23].
+  into a 0.057 s no-op [VERIFIED: project testing 2026-07-23].
 - **The cache disk, not the project disk, is what fills.** Three consecutive
   hull-model failures were all `ERROR_DISK_FULL` on RealityScan's cache volume
-  while the project volume showed 773.9 GB free [VERIFIED: FINDINGS
+  while the project volume showed 773.9 GB free [VERIFIED: project testing
   2026-07-26]. See §12.
 
 ---
@@ -240,7 +240,7 @@ OFFICIAL: tutorials/commandline_2]. The *paused* form
 the project was saved before closing — but this pipeline never pauses. The
 existing recovery mechanism is instead `:fail` → quit **without saving**, which
 was verified to leave the assembly intact (project parses, no zero-byte files,
-previously-built models present) after the hull crash [VERIFIED: FINDINGS
+previously-built models present) after the hull crash [VERIFIED: project testing
 2026-07-26].
 
 ### 3.1 Splitting depth maps from meshing across machines
@@ -341,7 +341,7 @@ to this pixel budget. Binary candidates: `MvsPreviewUndistMaxPixels`,
 | Key | Type | Default | Values | Controls |
 |---|---|---|---|---|
 | `MvsGeometryGpuAccel` | bool | `true` | `true` `false` | GPU acceleration for meshing. |
-| `MvsGeometryMarginStyle` | bool | `false` | `true` `false` | Remove marginal triangles at mesh time → non-watertight mesh. **This repo leaves it at the default and removes marginal triangles post hoc instead**, with `-selectMarginalTriangles` + `-removeSelectedTriangles` in `GenerateModel.bat` `[2/8]` [VERIFIED-by-inspection: the key appears in no repo file; the post-hoc filter is the specified recipe, docs/settings-evaluation-2026-07 §7]. The two routes were never compared — **the key is not mentioned anywhere in the repo's settings evaluation** [OPEN]. |
+| `MvsGeometryMarginStyle` | bool | `false` | `true` `false` | Remove marginal triangles at mesh time → non-watertight mesh. **This repo leaves it at the default and removes marginal triangles post hoc instead**, with `-selectMarginalTriangles` + `-removeSelectedTriangles` in `GenerateModel.bat` `[2/8]` [VERIFIED-by-inspection: the key appears in no repo file; the post-hoc filter is the specified recipe, project test records, 2026-07]. The two routes were never compared — **the key is not mentioned anywhere in the repo's settings evaluation** [OPEN]. |
 | `mvsMinSampleDistance` | float | `0.0` | ≥ 0, in project CRS units | Minimal distance between two vertices = final model density. **Only meaningful on a scaled/georeferenced scene**; Epic warns to reset it per project. |
 | `mvsPreviewMeshStrategy` | enum | `sfm` | `sfm`, `vertexCount` | Preview strategy: use the sparse cloud, or target a vertex count. |
 | `mvsPreviewMaxVetrexCountInModel` *(sic)* | int | `10000000` | int > 0 | Preview max vertex count; only with `vertexCount`. |
@@ -403,26 +403,26 @@ re-select of `<tag>_Simplified`) or where an arbitrary name is targeted (the
 cleanup loop, the export workflow).
 
 In this pipeline a filter or simplify step leaves a **default-named residual**
-behind: the six-component H2024 assembly ended up with exactly **one**
+behind: the six-component dataset B assembly ended up with exactly **one**
 `Model 1` in the whole project, not one per component as had been hypothesised
-[VERIFIED: FINDINGS 2026-07-29 export probe]. Both `GenerateModel.bat` and
+[VERIFIED: project testing 2026-07-29 export probe]. Both `GenerateModel.bat` and
 `ExportDeliverables.bat` therefore sweep `"Model 1"`…`"Model 9"` tolerantly
 before saving — the sweep range is headroom, not an observed count.
 
 ### 5.3 `-selectModel` matches exactly — the prefix hazard is not real
 
 `<tag>_HighPoly` does **not** match `<tag>_HighPoly_Textured`. The Help says
-only "Select a model with the specified name"; empirically, on the H2023 PD6
+only "Select a model with the specified name"; empirically, on the dataset A PD6
 deliverable the cleanup loop deleted `<tag>_HighPoly` and all three kept models
 survived [OFFICIAL: appbasics/allcommands "selectModel modelName"; VERIFIED:
-FINDINGS 2026-07-28]. (That same H2023 observation is one side of the
+project testing 2026-07-28]. (That same dataset A observation is one side of the
 `_HighPoly_Raw` conflict in §5.4 — it is good evidence for exact matching and
 inconclusive about raw-model survival.)
 
 Selecting a name that does not exist produces **`err:5601` "model name not
 found"**, surfaced through the process trigger as **`2147942487`
 (`0x80070057`, `E_INVALIDARG`)** — the generic empty/no-op-selection code
-[VERIFIED: FINDINGS 2026-07-29; SURVEY_empirical §1 result-code table].
+[VERIFIED: project testing 2026-07-29; SURVEY_empirical §1 result-code table].
 
 ### 5.4 Renaming rewrites identity — the defect class
 
@@ -433,40 +433,37 @@ production consequences, both paid for:
    filter steps fire.** Mechanism: step `[2/8]` renames the selected model to
    `_Cleanup1` as soon as the marginal-triangle filter produces a model, so the
    raw name leaves the project, and `_Cleanup1` is then deleted by the cleanup
-   loop. Probed directly on the H2024 assembly:
+   loop. Probed directly on the dataset B assembly:
    `-selectModel cluster_4_a1_c0_HighPoly_Raw` → `err:5601` 'not found'. **The
    models that actually persist per component there are `_HighPoly_Textured`,
    `_Simplified_Textured`, plus one default-named residual**
-   [VERIFIED: FINDINGS 2026-07-29].
+   [VERIFIED: project testing 2026-07-29].
    *Queued fix if raw retention is wanted:* `-duplicateSelectedModel`
    immediately after `[1/8]`, before the filter chain touches it.
 
    **The survival is conditional, and the repo record still disagrees with
    itself** [CONTRADICTED, internal]: `:try_filter` skips its rename when the
    selection is empty (§11), so on a mesh with no marginal triangles the raw
-   name is never consumed. The H2023 PD6 deliverable is recorded as keeping all
-   three models including `_HighPoly_Raw` [FINDINGS 2026-07-28, status log
-   2026-07-29 §"THE DELIVERABLE"], while the H2024 probe found it absent
-   [FINDINGS 2026-07-29]. **Do not assume either outcome — check by
-   `-selectModel` before depending on the name.** Both the status log ("Three
-   kept models each: `_HighPoly_Raw`, …") and the `GenerateModel.bat` docstring
-   ("Models kept … `<comp>_HighPoly_Raw`") **still state the unconditional
-   version and are still wrong as shipped** [VERIFIED-by-inspection:
-   `GenerateModel.bat` lines 26–30, the status log line 38, 2026-08-04].
+   name is never consumed. The dataset A PD6 deliverable is recorded as keeping all
+   three models including `_HighPoly_Raw` [project testing 2026-07-28 and 2026-07-29],
+   while the dataset B probe found it absent [project testing 2026-07-29]. **Do not
+   assume either outcome — check by `-selectModel` before depending on the name.** The
+   `GenerateModel.bat` header ("Models kept … `<comp>_HighPoly_Raw`") states the
+   unconditional version [VERIFIED-by-inspection: `GenerateModel.bat` header].
 2. **Fixed model names across a per-component loop against one shared project
    created duplicate names**, and name-resolved steps (`-reprojectTexture`,
    delete-by-name) then crossed components with a clean exit status — one
    component's texture could be reprojected onto another's mesh. Every model
-   name now carries a per-component `%model_tag%` [VERIFIED: FINDINGS
+   name now carries a per-component `%model_tag%` [VERIFIED: project testing
    2026-07-25].
 
 ### 5.5 The benign empty-selection code
 
 **`-selectModel <tag>_HighPoly` reports result code `2147942487` in every
-component's cleanup loop** — six for six on H2024. It is whitelisted, the
+component's cleanup loop** — six for six on dataset B. It is whitelisted, the
 delete is skipped, evidence is filed as
 `expected_select_RS1_<component>_HighPoly.txt`, and the recipe continues,
-leaving one cosmetic `_HighPoly` intermediate [VERIFIED-as-observation: FINDINGS
+leaving one cosmetic `_HighPoly` intermediate [VERIFIED-as-observation: project testing
 2026-07-29].
 
 The repo's own log carries **two readings of the cause**, in two entries of the
@@ -518,8 +515,7 @@ its sweep targets `"Model 1"`…`"Model 9"`.
 single short wait could return before the instance picked the select up, so a
 no-op `-selectModel` on a missing intermediate left the **previous** selection
 live — which at loop entry is the final textured model — and the following
-`-deleteSelectedModel` targeted the deliverable [VERIFIED: FINDINGS 2026-07-29,
-audit #4].
+`-deleteSelectedModel` targeted the deliverable [VERIFIED: project testing 2026-07-29].
 
 ---
 
@@ -546,12 +542,12 @@ appbasics/reconselection]
 determines the shape of the recipe: the marginal and large-triangle steps
 select what should go and filter directly, and **only** the
 keep-largest-component step needs `-invertTrianglesSelection` first
-[VERIFIED: FINDINGS 2026-07-23].
+[VERIFIED: project testing 2026-07-23].
 
 **`-selectLargeTrianglesRel <t>` is in multiples of average edge length, not
 pixels.** The GUI's "30 px" intuition does not transfer. The production value
 of `30` (the third argument of `GenerateModel.bat`) **has never been visually
-validated on a real model** [VERIFIED: FINDINGS 2026-07-23; [OPEN]].
+validated on a real model** [VERIFIED: project testing 2026-07-23; [OPEN]].
 
 Filtering "does not modify the reference model" — the original stays in the
 project [OFFICIAL: tools/filter]. In this recipe that would mean ~15 live
@@ -575,7 +571,7 @@ Model** "fix[es] issues with non-manifold vertices/edges, holes, and isolated
 vertices identified by the Check Topology tool". So the CLI substitute for the
 *repair* half is `-cleanModel` (+ `-closeHoles` for holes above Clean Model's
 small-hole limit) — the mapping this repository adopted
-[VERIFIED: mapping exercise against the GUI tool docs, FINDINGS 2026-07-23] —
+[VERIFIED: mapping exercise against the GUI tool docs, project testing 2026-07-23] —
 and there is **no CLI substitute for the reporting half**, which is why hole
 and non-manifold counts never enter the build record (§18.6). `closeholes`
 adds: use Check Topology to find out how many holes a model has.
@@ -608,7 +604,7 @@ Params key space (`mvsFlt*` / `simpl*`), Configuration id
 | `mvsFltReprojectNormal` | int | `0` | `0` | Reproject the normal layer. GUI offers a third "Automatic" option. |
 | `mvsFltUnwrapTexCount` | int | `0` | `0` | GUI "Maximal texture count" for the simplified model: same as source, or a custom value (`0` = same as source) [OFFICIAL: tools/simplify]. |
 | `mvsFltUnwrapTexSide` | int | `0` | `0` | GUI "Texture resolution" for the simplified model (`0` = same as source). The GUI exposes a **custom minimal *and* maximal** resolution when not "same as source"; only one key is present in any repo or Epic file, so the second is [OPEN] — `mvsFltUnwrapMinTexSideCustom` / `mvsFltUnwrapMaxTexSideCustom` exist as binary strings [INFERRED; see `03-settings-keys.md` §8.1]. |
-| `simplPreserveParts` | enum int | `0` | `2` | GUI "Part merging": Disable / Enable / Create a singleton. Ordinal mapping [OPEN] — but value `2` is **not** "Create a singleton", because a `_Simplified_Textured` model produced under it exported as **4 parts** [VERIFIED: FINDINGS 2026-07-29]. |
+| `simplPreserveParts` | enum int | `0` | `2` | GUI "Part merging": Disable / Enable / Create a singleton. Ordinal mapping [OPEN] — but value `2` is **not** "Create a singleton", because a `_Simplified_Textured` model produced under it exported as **4 parts** [VERIFIED: project testing 2026-07-29]. |
 | `simplEqualizeDensity` | bool | *absent* | `true` | Density equalization across parts (prevents visible seams; costs time). Present only in the repo files. [UNDOCUMENTED as a key; the GUI control is [OFFICIAL: tools/simplify]] |
 
 Repo presets, all derived from a single 50 % GUI export:
@@ -625,8 +621,7 @@ Repo presets, all derived from a single 50 % GUI export:
 `SimplifyNoise_Params.xml` (70 % rel) and `SimplifySmooth_80per_Params.xml`
 (80 % rel) are **placeholders derived from the 50 % template**; if custom GUI
 presets for "noise" and "smooth" simplification exist they should be exported
-over these files [VERIFIED-as-caveat: docs/settings-evaluation-2026-07 §7;
-[OPEN] standing self-audit item].
+over these files [VERIFIED-as-caveat: project test records, 2026-07] [OPEN].
 
 Four 80 % passes compound to `0.8⁴ ≈ 40.96 %` of the post-`SimplifyNoise`
 count, i.e. ≈ `0.70 × 0.4096 ≈ 28.7 %` of the raw high-poly triangle count
@@ -772,7 +767,7 @@ literal full paths only in this build** — bare regexp, `.*`-wrapped regexp,
 glob and regexp with an explicit `set` modifier all silently select nothing, so
 composition is a per-image union loop at ~0.1–0.3 s/image
 [CONTRADICTED: Help documents `selectImage <imagePath|regexp> [set|union|sub|intersect|toggle]`;
-observed by bisection probes U-SEL2…U-SEL8, FINDINGS 2026-07-23]. For a
+observed by bisection probes U-SEL2…U-SEL8, project testing 2026-07-23]. For a
 thousand-image texturing subset that is minutes of pure selection.
 
 ### 8.2 Texturing and coloring algorithm keys
@@ -811,13 +806,13 @@ imagery that is textured — including its amplified marine snow and lifted
 water-column haze. RealityScan **Image Layers**
 (`.geometry` / `.texture` / `.mask`) is agreed as the eventual mechanism but is
 **not adopted** and **has never been exercised through this CLI**
-[VERIFIED-as-decision: status log 2026-07-26; [OPEN]].
+[VERIFIED-as-decision: project testing 2026-07-26; [OPEN]].
 
 ### 8.3 Texture after hole-closing — the decision and its mechanism
 
 The production recipe textures **after** `-closeHoles` + `-cleanModel`, not
 before. The reasoning was tested against the alternatives
-[VERIFIED-as-design-decision with mechanism: docs/settings-evaluation-2026-07 §7]:
+[VERIFIED-as-design-decision with mechanism: project test records, 2026-07]:
 
 | Strategy | Result |
 |---|---|
@@ -894,17 +889,20 @@ of the optimal texel size**, texel size [OFFICIAL: tools/texturing_part2].
 
 ### 9.2 Production presets and the texture budget
 
-**Texture budget in force: max 4 textures at 16384×16384 in BOTH texture
-passes** [VERIFIED-as-config: status log 2026-07-29; `GenerateModel.bat`].
+**Texture budget in force: max 4 textures at 8192×8192 in BOTH texture
+passes** [VERIFIED-by-inspection: `GenerateModel.bat`]. The 2026-07-29 production runs used the
+4 × 16384 pair, which remains in the folder as an alternative.
 
 | File | Style | Count | Max res | Gutter | LargeTriRemovalThr | Extra | Used by |
 |---|---|---|---|---|---|---|---|
-| `Texturing_MaxTextureCount4_16k.xml` | `MaxTexturesCount` | 4 | 16384 | 2 | 1000 | `unwrapFillTextures=0x1` | **`-calculateTexture` in `GenerateModel.bat` `[6/8]`** |
-| `Unwrapping_Simplified_4x16k.xml` | `MaxTexturesCount` | 4 | 16384 | 2 | 10 | `unwrapMinTexResolution=512`, `unwrapMethod=Geometric`, `unwrapFillTextures=0x0` | **`-unwrap` in `GenerateModel.bat` `[8/8]`** |
+| `Texturing_MaxTextureCount4_8k.xml` | `MaxTexturesCount` | 4 | 8192 | 2 | 1000 | `unwrapFillTextures=0x1` | **`-calculateTexture` in `GenerateModel.bat` `[6/8]`** |
+| `Unwrapping_Simplified_4x8k.xml` | `MaxTexturesCount` | 4 | 8192 | 2 | 10 | `unwrapMinTexResolution=512`, `unwrapMethod=Geometric`, `unwrapFillTextures=0x0` | **`-unwrap` in `GenerateModel.bat` `[8/8]`** |
+| `Texturing_MaxTextureCount4_16k.xml` | `MaxTexturesCount` | 4 | 16384 | 2 | 1000 | `unwrapFillTextures=0x1` | alternative (production 2026-07-29) |
+| `Unwrapping_Simplified_4x16k.xml` | `MaxTexturesCount` | 4 | 16384 | 2 | 10 | `unwrapMinTexResolution=512`, `unwrapMethod=Geometric`, `unwrapFillTextures=0x0` | alternative (production 2026-07-29) |
 | `Texturing_HighPolyTexture.xml` | `MaxTexturesCount` | 2 | 16384 | 2 | 1000 | — | superseded (was `[6/8]`) |
 | `Texturing_SimplifiedTexture.xml` | `MaxTexturesCount` | 2 | 16384 | 2 | 1000 | — | unused |
 | `Unwrapping_Simplified.xml` | `MaxTexturesCount` | 1 | 16384 | 2 | 10 | `Geometric`, min 512 | superseded (was `[8/8]`) |
-| `Texturing_MaxTextureCount1_8k.xml` / `1_16k` / `4_8k` | `MaxTexturesCount` | 1 / 1 / 4 | 8192 / 16384 / 8192 | 2 | 1000 | — | alternatives |
+| `Texturing_MaxTextureCount1_8k.xml` / `1_16k` | `MaxTexturesCount` | 1 / 1 | 8192 / 16384 | 2 | 1000 | — | alternatives |
 | `Texturing_FixedTexelSize100perQuality.xml` | `FixedTexelSize` | — | 8192 | 10 | 400 | `unwrapFixedTexelSizeType=0` (optimal) | alternatives |
 | `Texturing_FixedTexelSize50perQuality.xml` | `FixedTexelSize` | — | 8192 | 10 | 400 | `unwrapFixedTexelSizeType=1` (2× optimal) | alternatives |
 
@@ -959,7 +957,7 @@ in a fraction of the time of a fresh `-calculateTexture`
 **It resolves both operands by NAME.** With duplicate model names in a shared
 project it will silently map the wrong component's texture onto this
 component's mesh — a real defect that shipped and was fixed by namespacing
-every model name with the component tag [VERIFIED: FINDINGS 2026-07-25].
+every model name with the component tag [VERIFIED: project testing 2026-07-25].
 
 Params key space, Configuration id `{8F3517E3-5632-40FE-BD10-9967EA8F299F}`:
 
@@ -996,12 +994,12 @@ Specified, 2026-07-23; the literal step order and model names as shipped
       + -removeSelectedTriangles                             -> rename <tag>_Cleanup3
 [5/8] -closeHoles ; -cleanModel                              -> rename <tag>_Manifold
 [6/8] -simplify SimplifyNoise_Params.xml                     -> rename <tag>_HighPoly
-      -calculateTexture Texturing_MaxTextureCount4_16k.xml   -> rename <tag>_HighPoly_Textured
+      -calculateTexture Texturing_MaxTextureCount4_8k.xml    -> rename <tag>_HighPoly_Textured
       (if RS_PROJECTS_DIR+RS_PROJECT_LABEL: -save <dated copy>  <-- all intermediates live)
 [7/8] 4 x ( -simplify SimplifySmooth_80per_Params.xml -> <tag>_SimplifyPassNRaw
             -cleanModel                                -> <tag>_SimplifyPassN )
       last pass renames to <tag>_Simplified
-[8/8] -unwrap Unwrapping_Simplified_4x16k.xml
+[8/8] -unwrap Unwrapping_Simplified_4x8k.xml
       -reprojectTexture <tag>_HighPoly_Textured <tag>_Simplified ReprojectionParams.xml
       -selectModel <tag>_Simplified -> rename <tag>_Simplified_Textured
 delete intermediates: Cleanup1, Cleanup2, Cleanup3, Manifold, HighPoly,
@@ -1019,10 +1017,10 @@ Facts a pipeline author must carry:
 
 - **`%model_tag%` = the component name** (or `maximal`). Every model name is
   namespaced by it. This is what makes running the recipe once per component
-  against **one shared project** safe [VERIFIED: FINDINGS 2026-07-25].
+  against **one shared project** safe [VERIFIED: project testing 2026-07-25].
 - **Three models were intended to persist; only two do.**
   `_HighPoly_Textured` and `_Simplified_Textured` survive; `_HighPoly_Raw` does
-  not (§5.4), plus one default-named residual [VERIFIED: FINDINGS 2026-07-29].
+  not (§5.4), plus one default-named residual [VERIFIED: project testing 2026-07-29].
 - **Steps `[2/8]` and `[3/8]` are tolerant.** `:try_filter` whitelists result
   codes `2147942487` and `2181038335`, files the evidence as
   `expected_select_<instance>.txt`, sets `step_skipped` and continues — a clean
@@ -1030,7 +1028,7 @@ Facts a pipeline author must carry:
   skipped step also skips its rename, so the model name chain shortens
   [VERIFIED-by-inspection].
 - **`:fail` quits WITHOUT saving**, so a failed model run leaves the assembly
-  intact [VERIFIED: FINDINGS 2026-07-26].
+  intact [VERIFIED: project testing 2026-07-26].
 - **The scene itself (`-save "%scene_path%"`) is saved only after the cleanup
   loop**, deliberately: saving with ~15 live models is inordinately slow and
   large (§12.5). The deliverable is protected across the loop by the double
@@ -1057,7 +1055,7 @@ ending with **one** dated project copy through `SaveProjectCopy.bat`
 **The scale gate is upstream of modelling and it is not optional.** Two
 components holding 82 % of a delivered assembly's cameras were once at ~1/5
 true scale, and a uniform scale error is **invisible in the viewer** — "all
-components look good" was true and still is, locally [VERIFIED: FINDINGS
+components look good" was true and still is, locally [VERIFIED: project testing
 2026-07-25]. Modelling a metrically invalid component wastes hours and produces
 an unusable deliverable. The oracle lives in the georeferencing sibling
 document.
@@ -1076,20 +1074,20 @@ including `ram_avail_gb`, `commit_used_gb`, `commit_total_gb`, `disk_free_gb`,
 
 | Component | Cameras | Scale | Model wall clock | Peak commit | Min available RAM |
 |---|---:|---:|---:|---:|---:|
-| `cluster_0_a2_c0` (H2024 HULL) | 4,860 | 0.997 | 338.3 min | **148.7 GB** | **0.9 GB** |
+| `cluster_0_a2_c0` (dataset B HULL) | 4,860 | 0.997 | 338.3 min | **148.7 GB** | **0.9 GB** |
 | `zone_1_c0` | 1,634 | 1.084 | 249.3 min | 139.9 GB | 2.0 GB |
 | `cluster_1_a1_c0` | 880 | 1.000 | 122.8 min | 138.6 GB | 2.8 GB |
 | `zone_4_c0` | 576 | 0.947 | 106.1 min | 116.8 GB | 3.0 GB |
 | `zone_1_c1` | 392 | 1.023 | 97.4 min | 107.1 GB | 3.5 GB |
 | `cluster_4_a1_c0` | 133 | 0.980 | 40.1 min | 96.2 GB | 25.9 GB |
-| `pd6_zone_1_c0` (H2023 hull, attempt 4) | 3,738 | 0.982 | 384.1 min | 142.3 GB | 0.3 GB |
+| `pd6_zone_1_c0` (dataset A hull, attempt 4) | 3,738 | 0.982 | 384.1 min | 142.3 GB | 0.3 GB |
 
-[VERIFIED: FINDINGS 2026-07-26 and 2026-07-29]
+[VERIFIED: project testing 2026-07-26 and 2026-07-29]
 
-The H2023 hull run also recorded CPU 100 %, minimum free **project** disk
+The dataset A hull run also recorded CPU 100 %, minimum free **project** disk
 672.6 GB and minimum free **cache** disk 6,900.5 GB — the cache headroom being
 the only variable that changed from three failures to success
-[VERIFIED: FINDINGS 2026-07-26].
+[VERIFIED: project testing 2026-07-26].
 
 ### 12.2 The envelope does not plateau
 
@@ -1097,7 +1095,7 @@ The apparent plateau at ~140 GB across 392–1,634 cameras **was an artifact of
 that range**. The 4,860-camera hull pushed ~9 GB past it and completed with
 **under a gigabyte of headroom** on a 93.6 GB box. **Treat anything materially
 larger than ~5,000 cameras as at risk, not as covered by precedent**
-[VERIFIED: FINDINGS 2026-07-29].
+[VERIFIED: project testing 2026-07-29].
 
 Planning consequences:
 
@@ -1105,7 +1103,7 @@ Planning consequences:
 |---|---|
 | Can I model a 10,000-camera component here? | Unknown and unsupported. Nothing above 4,860 has been run; the trend is still rising at that point. Split the component or get more RAM/commit. |
 | How long will it take? | Not linear in camera count and not predictable from it. 133 → 4,860 cameras is 36× the cameras and 8.4× the time; 576 → 880 is 1.5× the cameras and 1.2× the time. Budget per component from a neighbour of similar size, not from a formula. |
-| What will it peak at? | Commit, not working set, is the binding resource. RealityScan's own working set peaked at **62.5 GB** while commit charge was 105 GB — the rest is Windows growing the commit limit (99.5 → ~120 GB observed) to absorb it [VERIFIED: FINDINGS 2026-07-26]. |
+| What will it peak at? | Commit, not working set, is the binding resource. RealityScan's own working set peaked at **62.5 GB** while commit charge was 105 GB — the rest is Windows growing the commit limit (99.5 → ~120 GB observed) to absorb it [VERIFIED: project testing 2026-07-26]. |
 | What is the abort criterion? | `run_models.py` uses a **50 GB free-disk floor** on the workspace drive (`MIN_FREE_GB = 50.0`) checked before each component. `RealityScanCLI` warns below **4 GB available RAM** (`LOW_MEMORY_WARN_GB = 4.0`). There is deliberately **no overall timeout**. |
 
 ### 12.3 The memory profile of `-calculateHighModel`
@@ -1115,7 +1113,7 @@ minutes**; commit charge went 19.6 → 105 GB; Windows grew the commit limit fro
 99.5 GB to ~120 GB; the run then oscillated at 87–105 GB committed with 7–32 GB
 free for the next half hour. Verified doing real work rather than hanging: 9.1
 cores busy and 33 % GPU over a 20 s window
-[VERIFIED: FINDINGS 2026-07-26].
+[VERIFIED: project testing 2026-07-26].
 
 **These figures are a memory profile, not the cause of any failure.**
 [SUPERSEDED] the earlier reading "memory exhaustion intrinsic to this mesh" —
@@ -1126,12 +1124,12 @@ longer than the bow's entire recipe), and the pagefile is only 6.9 GB.
 There is a **third cause of persistent `#timeout`** in the progress feed that
 matters here: near-OOM. RealityScan slows to a crawl without crashing and
 without spilling to NVMe — indistinguishable in the progress feed from a hang
-[VERIFIED: FINDINGS 2026-07-24].
+[VERIFIED: project testing 2026-07-24].
 
 ### 12.4 The failure that actually happens: the cache disk
 
-All three H2023 hull-model failures were the **cache disk**, not memory and not
-the project disk [VERIFIED: FINDINGS 2026-07-26]:
+All three dataset A hull-model failures were the **cache disk**, not memory and not
+the project disk [VERIFIED: project testing 2026-07-26]:
 
 | Attempt | Symptom | Reading at the time |
 |---|---|---|
@@ -1143,7 +1141,7 @@ the project disk [VERIFIED: FINDINGS 2026-07-26]:
 Epic's own guidance confirms the mechanism and forbids the obvious workaround:
 processing cannot continue without freeing space, the process is aborted and
 the progress is lost, and **"don't delete the files from your cache folder"**
-[OFFICIAL: Epic "Out of Disk Space" page, quoted in FINDINGS 2026-07-26]. The
+[OFFICIAL: Epic "Out of Disk Space" page, quoted in project testing 2026-07-26]. The
 sanctioned levers are freeing space on the cache disk or changing the cache
 disk:
 
@@ -1155,14 +1153,14 @@ disk:
 | `-clearCache` | command | Requires the project be **saved first**. |
 
 [OFFICIAL for the enum values: tutorials/setkeyvaluetable;
-VERIFIED-as-applied: FINDINGS 2026-07-26]
+VERIFIED-as-applied: project testing 2026-07-26]
 
 **Instrumentation lesson, recorded three times in one session:** a resource
 trace built around one hypothesis will confirm or refute *that hypothesis* and
 tell you nothing else. The trace faithfully recorded RAM falling to 3.1 GB and
 was silent about the disk that killed the run; the disk column added afterwards
 pointed at the **project** drive, not the cache. `cache_free_gb` is now its own
-column [VERIFIED: FINDINGS 2026-07-26].
+column [VERIFIED: project testing 2026-07-26].
 
 ### 12.5 Save cost
 
@@ -1172,16 +1170,16 @@ column [VERIFIED: FINDINGS 2026-07-26].
 | Same component class with `RS_PROJECTS_DIR` unset (skips both copies) | `cluster_4_a1_c0` cost **6.8 GB** end to end |
 | **One** dated copy of the finished six-component project via `SaveProjectCopy.bat` | **13.1 min / 95.2 GB** |
 
-[VERIFIED: FINDINGS 2026-07-29]
+[VERIFIED: project testing 2026-07-29]
 
 **The per-component scene save must stay** — the workflow loads/models/quits
 per component, so the models would be lost otherwise
-[VERIFIED-as-constraint: FINDINGS 2026-07-29].
+[VERIFIED-as-constraint: project testing 2026-07-29].
 
 Related load hazard: **a stale `<name>.rsproj.new` beside the project makes the
 next headless `-load` emit warning-class `0x82000017` while still completing** —
 enough to abort an errors-marker-gated workflow. An interrupted GUI save is the
-source; renaming the temp aside cleans the load [VERIFIED: FINDINGS 2026-07-29].
+source; renaming the temp aside cleans the load [VERIFIED: project testing 2026-07-29].
 
 ---
 
@@ -1233,7 +1231,7 @@ Format-conditional options:
 ### 13.3 Where a params XML comes from
 
 **The only way to obtain a valid params XML for a tool is to export it from
-that tool's GUI dialog once** [VERIFIED-as-practice: FINDINGS 2026-07-21]. For
+that tool's GUI dialog once** [VERIFIED-as-practice: project testing 2026-07-21]. For
 model export there is a second, documented route
 [OFFICIAL: tools/export]:
 
@@ -1268,11 +1266,11 @@ probe in `02-command-reference.md` §12.2. [UNDOCUMENTED / OPEN]
 
 | Target | Requirement | Source |
 |---|---|---|
-| Nira | "Save mesh by parts: **Yes**" is Nira's documented recommendation for RealityScan photogrammetry exports | [VERIFIED-as-guidance: help.nira.app article 5591333681307, recorded in `publish_nira.py` and status log 2026-07-29] |
+| Nira | "Save mesh by parts: **Yes**" is Nira's documented recommendation for RealityScan photogrammetry exports | [VERIFIED-as-guidance: help.nira.app article 5591333681307, recorded in `publish_nira.py` and project testing 2026-07-29] |
 | Very large models generally | A singleton mesh must fit one contiguous structure in the consumer; parts also let a viewer stream. Epic recommends "Create a singleton" in Simplify **only for models smaller than a few million triangles** | [OFFICIAL: tools/simplify] |
 
 **Verified output layout of the production by-parts exports** (133-camera
-component, ~35–38 s each) [VERIFIED: FINDINGS 2026-07-29]:
+component, ~35–38 s each) [VERIFIED: project testing 2026-07-29]:
 
 ```
 exports\<component>\obj\
@@ -1323,7 +1321,7 @@ Structural rules observed across all **eleven** repo export presets
 | `MvsMeshExportColors` | `false`, `true` | Write vertex colors. **`true` only in `ModelExportParamsPLY_DensePoints.xml`.** |
 | `MvsMeshExportTexturing` | `-1`, `0`, `true` | Write textures (`0` in the PLY preset). |
 | `MvsMeshExportTexOneFile` | `0` | "Export to a single texture file". `0` = No, which is what makes the Tile type options apply. |
-| `MvsMeshExportTileType` | `0`, `1`, `2` | Tile type when `TexOneFile=0`. Repo filenames + the verified `u1_v1` output make the mapping **`0` = `_u1_v1`, `1` = `(u,v)`, `2` = `UDIM`** [VERIFIED-by-inspection + FINDINGS 2026-07-29 file naming]. Note this **corrects** a reading of `0` as "single texture" — the single-file switch is `MvsMeshExportTexOneFile`, a different key. |
+| `MvsMeshExportTileType` | `0`, `1`, `2` | Tile type when `TexOneFile=0`. Repo filenames + the verified `u1_v1` output make the mapping **`0` = `_u1_v1`, `1` = `(u,v)`, `2` = `UDIM`** [VERIFIED-by-inspection + project testing 2026-07-29 file naming]. Note this **corrects** a reading of `0` as "single texture" — the single-file switch is `MvsMeshExportTexOneFile`, a different key. |
 | `MvsMeshExportTexImgFormat[_<layer>]` | `jpg`, `png`, `jpeg` | Texture image format. |
 | `MvsMeshExportTexPixFormat[_<layer>]` | `24bppBGR`, `32bppBGRA` | Texture pixel format (the dialog also offers 64-bit RGBA). |
 | `MvsMeshExportTexAlpha` | `false`, `0` | Export texture alpha mask. |
@@ -1386,9 +1384,9 @@ part. Per component, names read one-per-line from a list file:
 
 ```bat
 cmd /c modules\realityscan_interface\RS_CLI\Scripts\ExportDeliverables.bat ^
-    "F:\na156_h2024_v2\final_assembly\assembly\H2024_Final_Assembly.rsproj" ^
-    "F:\na156_h2024_v2\exports" ^
-    "F:\na156_h2024_v2\exports\components.names"
+    "F:\survey_v2\final_assembly\assembly\SURVEY_Final_Assembly.rsproj" ^
+    "F:\survey_v2\exports" ^
+    "F:\survey_v2\exports\components.names"
 ```
 
 1. `-load`, sweep `"Model 1"`…`"Model 9"` residuals, `-save` **once**.
@@ -1403,7 +1401,7 @@ cmd /c modules\realityscan_interface\RS_CLI\Scripts\ExportDeliverables.bat ^
 
 **KNOWN DEFECT, unfixed as shipped:** step 4 selects
 `<name>_HighPoly_Raw`, which **the model recipe does not reliably leave in the
-project** (§5.4) — on the H2024 assembly it was probed absent. When it is
+project** (§5.4) — on the dataset B assembly it was probed absent. When it is
 absent, `-selectModel` reports `err:5601` / `2147942487`, and unlike the
 tolerant `:try_delete_model`, `:export_component` calls the strict `:run`
 subroutine three times with `|| exit /b 1` — so the PLY step **aborts the whole
@@ -1411,7 +1409,7 @@ export**, taking the remaining components with it (the caller's
 `call :export_component "%%N" || goto :fail` unwinds to `:fail` and quits). The
 finding records the intended fallback: **use `_HighPoly_Textured`, the densest
 model guaranteed to exist**, or `-duplicateSelectedModel` right after `[1/8]`
-[VERIFIED: FINDINGS 2026-07-29; the OBJ and FBX steps were verified end to end
+[VERIFIED: project testing 2026-07-29; the OBJ and FBX steps were verified end to end
 on the 133-camera component, the PLY step was not]. Because the OBJ and FBX
 exports for a component run *before* its PLY step, an abort mid-list leaves a
 partially-populated `exports\` tree — check for `ply\<name>_dense.ply` per
@@ -1420,7 +1418,7 @@ component before assuming the set is complete.
 The names file must be **BOM-free**: `Set-Content -Encoding utf8` in Windows
 PowerShell 5.1 writes a BOM, and a BOM on line 1 of a list file silently
 invalidates the first entry (the same class of bug that invalidated a
-`.complist`) [VERIFIED: FINDINGS 2026-07-27]. `wildscan.session.export_names_file`
+`.complist`) [VERIFIED: project testing 2026-07-27]. `wildscan.session.export_names_file`
 writes it with Python and CRLF line endings.
 
 ---
@@ -1520,12 +1518,12 @@ Epic's own end-to-end example — note that **both** files are required and both
 come from the GUI [OFFICIAL: tutorials/commandline_3]:
 
 ```bat
-RealityScan.exe -load "F:\na156_h2024_v2\aligned\zone_1.rsproj" ^
+RealityScan.exe -load "F:\survey_v2\aligned\zone_1.rsproj" ^
   -selectMaximalComponent ^
   -calculateNormalModel ^
   -calculateOrthoProjection "F:\rs_params\params.rsortho" ^
   -exportOrthoProjection "F:\out\ortho.tiff" "F:\rs_params\exportOrthoParams.xml" ^
-  -save "F:\na156_h2024_v2\aligned\zone_1.rsproj" -quit
+  -save "F:\survey_v2\aligned\zone_1.rsproj" -quit
 ```
 
 (That last `-exportOrthoProjection` is **form 3** — `fullPath params.xml`,
@@ -1701,10 +1699,10 @@ images) [OFFICIAL: tools/undistort]:
 `-exportRegistration`) belong to the alignment/metadata sibling document. Two
 facts must be repeated here because they bite during export sessions:
 `-exportRegistration` **without a params XML blocks forever headless**
-[VERIFIED: FINDINGS 2026-07-21], and **flight-log import leaves the matched
+[VERIFIED: project testing 2026-07-21], and **flight-log import leaves the matched
 images actively selected**, after which selection-driven exports under
 `-silent` export nothing — always `-deselectAllImages` before exporting
-[VERIFIED: FINDINGS 2026-07-23].
+[VERIFIED: project testing 2026-07-23].
 
 ---
 
@@ -1728,7 +1726,7 @@ Sketchfab upload can silently decimate the deliverable to fit a plan quota.
 **Only Sketchfab has a CLI command.** `-uploadToSketchfab <APIToken>`
 (process ids `21802 EXPORT_SKETCHFAB`, `24576 UPLOAD_TO_SKETCHFAB`). Cesium ion
 and Nira uploads are **GUI-only** — verified against the official command list
-[VERIFIED: `publish_cesium.py` docstring 2026-07-29; status log 2026-07-29:
+[VERIFIED: `publish_cesium.py` docstring 2026-07-29; project testing 2026-07-29:
 "neither platform's in-app share is scriptable"]. Both therefore go through
 each platform's own API from outside RealityScan.
 
@@ -1736,7 +1734,7 @@ each platform's own API from outside RealityScan.
 
 | Fact | Detail | Source |
 |---|---|---|
-| Preferred format | **OBJ, not FBX** | [VERIFIED-as-guidance: help.nira.app article 5591333681307, recorded in `publish_nira.py` + status log 2026-07-29] |
+| Preferred format | **OBJ, not FBX** | [VERIFIED-as-guidance: help.nira.app article 5591333681307, recorded in `publish_nira.py` + project testing 2026-07-29] |
 | Mesh by parts | **Yes** | same |
 | Vertex colors | **No** | same |
 | Number precision | **decimal-6** (`MvsMeshExportNumberFormat=6`) | same |
@@ -1799,7 +1797,7 @@ current tiler** [VERIFIED-as-guidance: `publish_cesium.py` docstring,
 publish path that consumes it.)
 
 **[CONTRADICTED — the long-standing "Cesium ignores depth" belief is wrong.]**
-A live probe (ion asset `5171554`, `scripts/validation/probe_cesium_depth.py`,
+A live probe (ion asset `5171554`, a project probe script,
 2026-08-31) uploaded a 435-byte OBJ box with
 `position=[133.634688, 3.584574, -512.46]` and read it back from the asset's
 own `tileset.json` at **h = −512.46 m, error −0.000 m**. ion neither refuses
@@ -1811,17 +1809,16 @@ sea-surface asset on this account:
    level. Read back live, the three pre-existing assets sit at ellipsoidal
    heights **+2.1 m** (`2017323`), **+0.0 m** (`2335997`) and **+23.7 m**
    (`2336618`, described "Created in RealityCapture by Capturing Reality"),
-   all deep-water sites [VERIFIED: FINDINGS 2026-08-31].
+   all deep-water sites [VERIFIED: project testing 2026-08-31].
 2. **Even when placement IS carried, the vertical datum is wrong.** The
    project CRS is 2D (`+proj=utm +zone=53 +datum=WGS84 +units=m +no_defs`) and
    declares no vertical datum, while the Z it carries is the flight log's
-   `ALTITUDE_EST` — negative metres below the **sea surface** (`georeference_survey.py:320`
-   writes `-abs(kalman_depth)`). Cesium reads every height as metres above the
+   `ALTITUDE_EST` — negative metres below the **sea surface** (the georeference stage
+   writes `-abs(depth)`). Cesium reads every height as metres above the
    **WGS84 ellipsoid**. Nothing in the chain converts between them, so the
-   asset sinks or floats by the geoid undulation N: **+72.69 m** at the NA168
-   H2080 site, +70.4 m in the Solomon Sea, −27.1 m in the Gulf of Mexico,
+   asset sinks or floats by the geoid undulation N: **+72.69 m** at the an earlier survey site site, +70.4 m in the Solomon Sea, −27.1 m in the Gulf of Mexico,
    +4.5 m at Papahanaumokuakea. The correction is `h = H + N` with `H = −depth`
-   [VERIFIED: FINDINGS 2026-08-31].
+   [VERIFIED: project testing 2026-08-31].
 
 `publish_cesium.py` (rewritten 2026-08-31) closes both. It reads the export's
 `.rsInfo` for the CRS and `transformToModel`, resolves the mesh into that
@@ -1876,9 +1873,9 @@ transformation". Every transformer in `modules/cesium_placement.py` passes
 
 ```bat
 py -3.13 publish_cesium.py --name "IN-401 hull" ^
-    --dir F:/na156_h2024_v2/exports/cluster_0_a2_c0/obj ^
-    --flight-log F:/na156_h2024_v2/raw_images/flight_log_4N_UTM.txt ^
-    --description "NA156 H2024 hull" --poll --verify
+    --dir F:/survey_v2/exports/cluster_0_a2_c0/obj ^
+    --flight-log F:/survey_v2/raw_images/flight_log_4N_UTM.txt ^
+    --description "dataset B dataset B hull" --poll --verify
 ```
 
 ### 17.3 Sketchfab
@@ -1903,7 +1900,7 @@ running both in one command sequence. Never exercised here.
 `publish_cesium.py` / `publish_nira.py` per component. Each destination
 activates only when its credential env var is present (`CESIUM_ION_TOKEN`,
 `NIRACLIENT_DIR`); `--dry-run` previews every command without uploading.
-It resolves the cruise flight log itself and forwards it as the INDEPENDENT
+It resolves the survey's flight log itself and forwards it as the INDEPENDENT
 nav check on each mesh placement, and runs every Cesium publish with
 `--verify`. Results land in `<workspace>/publish_report.json`
 [VERIFIED-by-inspection: `publish_batch.py`].
@@ -1975,7 +1972,7 @@ Registering a custom template — add between the `<Report>` tags of
 **This is a modification of an Epic-shipped file in Program Files.** The same
 class of edit was already made here once — `flightlogs.xml` was hand-edited to
 add a 13-column flight-log format — and it must be re-checked after any app
-update [VERIFIED: PRIORS_DISTORTION_TEST_PLAN, 2026-07-25]. `-exportReport`
+update [VERIFIED: project test records, 2026-07-25]. `-exportReport`
 takes the template **path** directly, so a custom template does **not** have to
 be registered in `report.xml` to be used from the CLI; registration is only
 needed for the GUI dialog [INFERRED from the command signature — the parameter
@@ -2050,7 +2047,7 @@ assembly — the longest-standing open item, open since 2026-07-23, with operato
 GUI screenshots as the interim proxy), and **`componentMedianError` /
 `componentMeanError` are the candidate answer to U14** (per-component
 reprojection error headless, needed for twin-keeper choice)
-[VERIFIED-as-candidate: `docs/validation/alignment_merge_hardening_plan.md` U7/U14].
+[VERIFIED-as-candidate: project test records, 2026-07 U7/U14].
 [OPEN] — the blocker is that `-exportReport` has **never been run here**, and
 the sibling `-exportRegistration` is known to block forever headless without a
 params file, so the cell explicitly flags a blocking risk. Note that both cells
@@ -2196,7 +2193,7 @@ will see downstream of alignment [OFFICIAL: tutorials/processids]:
 `#timeout` does **not** always mean hung: a successful 94.6 % align emitted 40
 `#timeout` lines; the pathological signature is `#timeout` from fraction 0.00
 with an ever-growing ETA. Adopted policy: warn at 2 h, never auto-kill
-[VERIFIED: NA167 B4/#28]. In this stage the near-OOM case of §12.3 is a third
+[VERIFIED: bug B4/#28]. In this stage the near-OOM case of §12.3 is a third
 generator of the same signature.
 
 ---
@@ -2210,13 +2207,13 @@ generator of the same signature.
 | `2181038335` | `0x820000FF` | Warning class | Whitelisted alongside the above in the filter steps |
 | `2147942512` | `0x80070070` `ERROR_DISK_FULL` | **RealityScan's CACHE disk full**, not necessarily the project disk | `-calculateTexture` / `-simplify` on a large component (§12.4) |
 | `2147549183` | `0x8000FFFF` | Generic "unexpected program state" | Broken `-set` arguments; also a real reconstruction failure |
-| `3` | — | Process exit code for a crash [OFFICIAL: see `01-cli-fundamentals.md`]. What was actually *observed* here is the aftermath: a minidump `RealityScanCrash-20260726-054742.dmp` in the `-silent` directory, and **the NEXT delegated command failing with `ERROR: Failed to delegate command: -renameSelectedModel "pd6_zone_1_c0_Manifold"`** — the signature of a dead instance, not a rejected operation. Under delegation the crashing instance's exit code is never seen by the driver at all | `closeHoles`/`cleanModel` (`[5/8]`) on the 3,738-camera hull [VERIFIED: FINDINGS 2026-07-26] |
-| — | `0x82000017` | Warning-class load complaint from a stale `<name>.rsproj.new` beside the project — the load **still completes**, but an errors-marker-gated workflow aborts on it. Fix: rename the temp aside (reversible) | `-load` at the start of a model or export run [VERIFIED: FINDINGS 2026-07-29] |
-| — | `0x82000060` | Unknown / invalid command | `-selectAllComponents`, which does not exist in 2.2 [VERIFIED: NA167 B2] |
+| `3` | — | Process exit code for a crash [OFFICIAL: see `01-cli-fundamentals.md`]. What was actually *observed* here is the aftermath: a minidump `RealityScanCrash-20260726-054742.dmp` in the `-silent` directory, and **the NEXT delegated command failing with `ERROR: Failed to delegate command: -renameSelectedModel "pd6_zone_1_c0_Manifold"`** — the signature of a dead instance, not a rejected operation. Under delegation the crashing instance's exit code is never seen by the driver at all | `closeHoles`/`cleanModel` (`[5/8]`) on the 3,738-camera hull [VERIFIED: project testing 2026-07-26] |
+| — | `0x82000017` | Warning-class load complaint from a stale `<name>.rsproj.new` beside the project — the load **still completes**, but an errors-marker-gated workflow aborts on it. Fix: rename the temp aside (reversible) | `-load` at the start of a model or export run [VERIFIED: project testing 2026-07-29] |
+| — | `0x82000060` | Unknown / invalid command | `-selectAllComponents`, which does not exist in 2.2 [VERIFIED: bug B2] |
 | — | `err:5601` | "model name not found" — visible only in `RealityScan.log`, never in the errors marker | `-selectModel` |
-| — | `err:7155` | "Parsing setting … failed" — an unquoted `key=value` split into two `.bat` arguments; the setting is **silently not applied** | any `-set` on this stage's keys [VERIFIED: NA167 B5] |
+| — | `err:7155` | "Parsing setting … failed" — an unquoted `key=value` split into two `.bat` arguments; the setting is **silently not applied** | any `-set` on this stage's keys [VERIFIED: bug B5] |
 
-[VERIFIED: FINDINGS 2026-07-23 … 2026-07-29; SURVEY_empirical §1]
+[VERIFIED: project testing 2026-07-23 … 2026-07-29; SURVEY_empirical §1]
 
 **The errors marker carries only the numeric result code, never the `err:NNNN`
 text** — that exists only in `RealityScan.log`, which is **truncated on every
@@ -2224,7 +2221,7 @@ instance boot**. Copy the log inside the driver immediately after the failing
 call returns, and validate any saved snapshot against a run-unique token before
 reading numbers out of it: two overlapping drivers once produced a snapshot
 whose head and tail belonged to different runs
-[VERIFIED: FINDINGS 2026-07-23, 2026-07-27].
+[VERIFIED: project testing 2026-07-23, 2026-07-27].
 
 ---
 
@@ -2235,16 +2232,16 @@ whose head and tail belonged to different runs
 ```bat
 set "MD=C:\tools\wildscan\modules\realityscan_interface\RS_CLI\Metadata"
 
-RealityScan.exe -load "F:\na156_h2024_v2\aligned\zone_1.rsproj" ^
+RealityScan.exe -load "F:\survey_v2\aligned\zone_1.rsproj" ^
   -selectMaximalComponent ^
   -setReconstructionRegionAuto ^
   -calculateHighModel ^
   -closeHoles ^
   -cleanModel ^
-  -calculateTexture "%MD%\Texturing_MaxTextureCount4_16k.xml" ^
+  -calculateTexture "%MD%\Texturing_MaxTextureCount4_8k.xml" ^
   -renameSelectedModel "zone_1_High" ^
   -exportModel "zone_1_High" "F:\out\zone_1.obj" "%MD%\ModelExportParamsOBJ_NiraParts.xml" ^
-  -save "F:\na156_h2024_v2\aligned\zone_1.rsproj" ^
+  -save "F:\survey_v2\aligned\zone_1.rsproj" ^
   -quit
 ```
 
@@ -2271,13 +2268,13 @@ second way to launch or monitor RealityScan.
 set RS_INSTANCE=RS1
 set RS_CACHE_DIR=E:\rscache
 REM RS_PROJECTS_DIR / RS_PROJECT_LABEL deliberately NOT set - see §11, §12.5
-py -3.13 run_models.py --workspace F:\na156_h2024_v2
+py -3.13 run_models.py --workspace F:\survey_v2
 ```
 
 Smallest component first, scale-gated, resumable, one dated project copy at the
 end. Expect the table in §12.1 for timings.
 
-`RS_CACHE_DIR` is the one variable that turned three H2023 hull failures into a
+`RS_CACHE_DIR` is the one variable that turned three dataset A hull failures into a
 success (§12.4) — set it to a volume with room for hundreds of GB and keep it
 off the project drive. Add `set RS_HEADLESS=0` **only** when you want the
 instance's GUI visible for a live look at the mesh; delegation and monitoring
@@ -2293,13 +2290,13 @@ and silently invalidates the first component.
 
 ```bat
 python modules/export_deliverables.py ^
-    --project "F:\na156_h2024_v2\final_assembly\assembly\H2024_Final_Assembly.rsproj" ^
-    --exports "F:\na156_h2024_v2\exports" ^
-    --names "F:\na156_h2024_v2\exports\components.names"
+    --project "F:\survey_v2\final_assembly\assembly\SURVEY_Final_Assembly.rsproj" ^
+    --exports "F:\survey_v2\exports" ^
+    --names "F:\survey_v2\exports\components.names"
 
 set "CESIUM_ION_TOKEN=YOUR_TOKEN"
 set "NIRACLIENT_DIR=C:\tools\niraclient"
-python publish_batch.py --workspace F:\na156_h2024_v2 --prefix "IN-401"
+python publish_batch.py --workspace F:\survey_v2 --prefix "IN-401"
 ```
 
 Note the known defect in the PLY step (§13.7) before running the export
@@ -2342,7 +2339,7 @@ Each with the cheapest probe that answers it.
 |---|---|---|
 | 1 | Does `-exportReport` complete headless under delegation, and does it emit georeferencing status and reprojection residuals? (hardening cells **U7**, **U14** — U7 open since 2026-07-23) | The custom one-line CSV template in §21.4, delegated with a watchdog on the smoke fixture. Minutes. |
 | 2 | Is the `-selectLargeTrianglesRel 30` threshold right for this imagery? Never visually validated. | Run `[3/8]` at 15 / 30 / 60 on the 133-camera component and inspect the three results in the GUI. ~2 h total. |
-| 3 | Why does `-selectModel <tag>_HighPoly` return `2147942487` in every cleanup loop? The FINDINGS 2026-07-29 reading is that `[6/8]`'s second `-renameSelectedModel` consumed the name into `_HighPoly_Textured`, i.e. the loop is looking for a name that by then does not exist — which would make the code correct behaviour, not a defect. | Delegate `-selectModel <tag>_HighPoly` twice inside `[6/8]`: once immediately after the first rename, once after `-calculateTexture` + the second rename, comparing the errors marker each time. Seconds; also the input to the queued error-whitelist redesign. |
+| 3 | Why does `-selectModel <tag>_HighPoly` return `2147942487` in every cleanup loop? The project testing 2026-07-29 reading is that `[6/8]`'s second `-renameSelectedModel` consumed the name into `_HighPoly_Textured`, i.e. the loop is looking for a name that by then does not exist — which would make the code correct behaviour, not a defect. | Delegate `-selectModel <tag>_HighPoly` twice inside `[6/8]`: once immediately after the first rename, once after `-calculateTexture` + the second rename, comparing the errors marker each time. Seconds; also the input to the queued error-whitelist redesign. |
 | 4 | Does the shipped `ExportDeliverables.bat` PLY step abort, as §13.7 predicts? | Run it on the 133-camera component. ~2 min to the failure point. Fix by switching to `_HighPoly_Textured` or duplicating after `[1/8]`. |
 | 5 | `ModelExportFormatVersion` — FBX format-version selector or params-file schema version? | Export an FBX from the GUI at `FBX201100` and again at `FBX202000`; diff the two params files. |
 | 6 | `MvsExportcoordinatesystemtype` ordinal → label mapping (`0`, `3` observed against four documented options). | Set each of Grid plane / Project Output / Shifted project output / Same as XMP in the GUI export dialog, export params, read the value. |
@@ -2361,11 +2358,11 @@ Each with the cheapest probe that answers it.
 | 19 | Does the model-tool stack behave differently on `-calculateNormalModel`? Only High has ever been run here. | One `-calculateNormalModel` on the 133-camera component; compare time, triangle count and the filter-step outcomes. |
 | 20 | Which of `txtFillInUntextoredParts` (Epic's typo) and `txtFillInUntexturedParts` is live in 2.2? Both strings are in the binary. | `-set` each and check for `err:7155` in `RealityScan.log`. Seconds. |
 | 21 | Does `-exportReport` accept an unregistered template path directly, or must the template be registered in `report.xml` first? | Falls out of #1 — §21.4 passes an unregistered path deliberately. |
-| 22 | Would pinning the ten `txt*`/`col*` texturing keys (§9.3) change the delivered textures, and what were the instance defaults during the H2023/H2024 deliveries? | `-set` them explicitly before `-calculateTexture` on the 133-camera component and compare against its existing texture. Also removes a provenance hole at zero runtime cost. |
+| 22 | Would pinning the ten `txt*`/`col*` texturing keys (§9.3) change the delivered textures, and what were the instance defaults during the dataset A/dataset B deliveries? | `-set` them explicitly before `-calculateTexture` on the 133-camera component and compare against its existing texture. Also removes a provenance hole at zero runtime cost. |
 | 23 | Does classification (`-dtmClassify`) produce a usable ground/artificial split on ROV bathymetry, and which `modelType` fits a wreck on a seabed? | `-dtmClassify` on the 133-camera component; non-destructive (creates a new classification object). |
 | 24 | Is `-uploadToSketchfab` incompatible with `-disableOnlineCommunication`? | Run both in one command sequence and read the result code. |
 | 25 | Does `-importCache` (split GPU/CPU depth-map workflow) interact correctly with `RS_GPU_DEVICES` instance pinning? | Smoke fixture across two instances; ~10 min. |
-| 26 | **Does `<tag>_HighPoly_Raw` survive when step `[2/8]` is skipped?** The 2026-07-29 mechanism says the rename is what consumes the name, and `:try_filter` skips the rename on an empty selection — which would explain why H2023 PD6 kept the model and H2024's `cluster_4_a1_c0` did not (§5.4). Until settled, the status log and the `GenerateModel.bat` docstring are both stating an unconditional claim that is at best conditional. | On any modelled component, read the `expected_select_*.txt` evidence files to see whether `[2/8]` fired, then `-selectModel <tag>_HighPoly_Raw` and compare. Seconds, no recomputation. |
+| 26 | **Does `<tag>_HighPoly_Raw` survive when step `[2/8]` is skipped?** The 2026-07-29 mechanism says the rename is what consumes the name, and `:try_filter` skips the rename on an empty selection — which would explain why dataset A PD6 kept the model and dataset B's `cluster_4_a1_c0` did not (§5.4). Until settled, the `GenerateModel.bat` header states an unconditional claim that is at best conditional. | On any modelled component, read the `expected_select_*.txt` evidence files to see whether `[2/8]` fired, then `-selectModel <tag>_HighPoly_Raw` and compare. Seconds, no recomputation. |
 | 27 | `unwrapMinTexelSize` / `unwrapMaxTexelSize` are each documented **twice** with different types (0–5 enum for `AdaptiveTexelSize`, float for custom `FixedTexelSize`) — are they one setting whose parse depends on `unwrapStyle`, or two binary settings the Help's table merged? Writing metres where ordinals are expected would silently produce a wrong texel budget. | Set `unwrapStyle=AdaptiveTexelSize` in the GUI Unwrap tool, export the params, read what is written for both keys; repeat with `FixedTexelSize` + type `5`. Minutes. |
 | 28 | `mvsFltUnwrapTexSide` is one key, but the GUI Simplify tool exposes **custom minimal *and* maximal** texture resolution. Which key carries the second? (`mvsFltUnwrapMinTexSideCustom` / `mvsFltUnwrapMaxTexSideCustom` are binary strings.) | Set a custom resolution range in the Simplify tool, export params, diff against `Simplify50Per_Params.xml`. Minutes. |
 | 29 | Would `MvsGeometryMarginStyle=true` (drop marginal triangles at mesh time) beat the post-hoc `[2/8]` filter on runtime or quality? Never compared; the key appears in no repo file and in no settings evaluation. | One `-set "MvsGeometryMarginStyle=true"` + `-calculateHighModel` on the 133-camera component against its 40.1 min baseline, then compare against a `[2/8]`-filtered run. ~80 min. |

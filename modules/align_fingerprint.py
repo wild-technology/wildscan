@@ -1,4 +1,4 @@
-"""Per-zone alignment-input fingerprint (PRODUCT_READINESS must-fix 2).
+"""Per-zone alignment-input fingerprint.
 
 Records the alignment inputs needed for retries and downstream verification:
 - a RETRY after a settings/nav change was messaged identically to a
@@ -6,7 +6,7 @@ Records the alignment inputs needed for retries and downstream verification:
   component (align had no equivalent of the batcher's batch_inputs.json);
 - resume logic (any driver's zone_done) was nav-blind: any .rsalign +
   .json = skip, even when the components were built from a superseded
-  flight log (the two-frames incident class, C-20260805-01);
+  flight log;
 - merged deliverables carried no record of frame/settings unanimity
   across their input zones.
 
@@ -25,10 +25,12 @@ import json
 import os
 import subprocess
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 from module_base.scene_checkpoint import scene_bundle
 
+from . import calibration_sidecars, camera_registry
 from .flight_logs import utm_zone_from_flight_log_name
 
 FINGERPRINT_NAME = "align_inputs.json"
@@ -119,16 +121,44 @@ def _file_identity(path: str | None) -> dict | None:
             "bytes": os.path.getsize(path)}
 
 
+def calibration_sidecar_hashes(calibration: Mapping[str, str],
+                               starting_focals: Mapping[str, float] | None
+                               ) -> dict[str, str]:
+    """{camera: sha256 of the sidecar text calibration_sidecars writes for
+    it} for every camera whose mode writes one (prior or groups); a groups
+    camera takes its starting focal from ``starting_focals``."""
+    hashes = {}
+    for key, mode in sorted(calibration.items()):
+        if mode not in calibration_sidecars.SIDECAR_MODES:
+            continue
+        text = calibration_sidecars.sidecar_xmp(
+            camera_registry.CAMERAS[key], mode, (starting_focals or {}).get(key))
+        hashes[key] = hashlib.sha256(text.encode('utf-8')).hexdigest()
+    return hashes
+
+
 def build_fingerprint(flight_log: str | None,
                       flight_log_params: str | None,
                       align_settings_xml: str | None,
                       min_component_size: int,
-                      rs_executable: str | None = None) -> dict:
+                      rs_executable: str | None = None,
+                      calibration: Mapping[str, str] | None = None,
+                      starting_focals: Mapping[str, float] | None = None
+                      ) -> dict:
     """Identity of everything that determines a zone's aligned output.
 
     align_settings_xml is the RS_ALIGN_PARAMS override when set, else the
     canonical Metadata/AlignmentParams.xml - i.e. whatever AlignZone.bat
-    will actually apply.
+    will actually apply. ``frame`` is ``"utm"`` for a zone-tagged flight
+    log and None when the zone aligned without one. ``calibration`` is the
+    {camera: mode} map of a zone aligned with calibration sidecars; it is
+    recorded only when given, so a zone aligned without sidecars keeps the
+    fingerprint it always had; likewise ``starting_focals``, the
+    {camera: starting 35 mm-equivalent focal} its groups sidecars carry.
+    With ``calibration`` the fingerprint also records, per prior/groups
+    camera, the sha256 of the sidecar text the zone was aligned with
+    (``calibration_sidecar_sha256``): the mode and focal alone do not
+    change when a prior in cameras.json is edited, the sidecar text does.
     """
     frame = ("utm" if (flight_log and utm_zone_from_flight_log_name(flight_log))
              else "local_euclidean")
@@ -142,6 +172,12 @@ def build_fingerprint(flight_log: str | None,
         "min_component_size": int(min_component_size),
         "repo_sha": _repo_sha(),
     }
+    if calibration is not None:
+        fp["calibration"] = dict(sorted(calibration.items()))
+        fp["calibration_sidecar_sha256"] = calibration_sidecar_hashes(
+            calibration, starting_focals)
+    if starting_focals is not None:
+        fp["starting_focal_35mm"] = dict(sorted(starting_focals.items()))
     if rs_executable and os.path.isfile(rs_executable):
         st = os.stat(rs_executable)
         fp["realityscan"] = {"path": os.path.abspath(rs_executable),
@@ -185,6 +221,31 @@ def diff_fingerprints(old: dict | None, new: dict) -> list[str]:
             f"min_component_size changed: {old.get('min_component_size')} -> "
             f"{new.get('min_component_size')} (export threshold; small "
             "pockets appear/disappear)")
+    if old.get("calibration") != new.get("calibration"):
+        changes.append(
+            f"calibration delivery changed: {old.get('calibration') or 'none'}"
+            f" -> {new.get('calibration') or 'none'}")
+    if old.get("starting_focal_35mm") != new.get("starting_focal_35mm"):
+        changes.append(
+            "starting focal of the groups sidecars changed: "
+            f"{old.get('starting_focal_35mm') or 'none'} -> "
+            f"{new.get('starting_focal_35mm') or 'none'}")
+    old_sidecars = old.get("calibration_sidecar_sha256")
+    new_sidecars = new.get("calibration_sidecar_sha256")
+    if old_sidecars != new_sidecars:
+        # A fingerprint written before the sidecar text was recorded has
+        # no entry at all: that is reported as a change of every camera,
+        # never silently treated as the same sidecars.
+        old_sidecars = old_sidecars if isinstance(old_sidecars, dict) else {}
+        new_sidecars = new_sidecars if isinstance(new_sidecars, dict) else {}
+        for camera in sorted(set(old_sidecars) | set(new_sidecars)):
+            o, n = old_sidecars.get(camera), new_sidecars.get(camera)
+            if o != n:
+                changes.append(
+                    f"calibration sidecar text of {camera} CHANGED: "
+                    f"{o or 'not recorded'} -> {n or 'none'} (the prior in "
+                    "cameras.json or the starting focal differs from what "
+                    "this zone was aligned with)")
     return changes
 
 

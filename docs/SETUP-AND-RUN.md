@@ -27,6 +27,42 @@ Contents:
 
 ---
 
+## Choose the input workflow
+
+Existing WCA and Zeuss datasets keep their video extraction, navigation CSV,
+camera profiles and saved settings. Select the normal extraction/georeferencing
+stages for those inputs. Existing still images and prepared workspaces can also
+skip stages as before. Local-coordinate flight logs and existing command-line
+entry points remain supported.
+
+For a Sony recording produced by Wild Sync, select **Wild Sync Intake** instead
+of extraction/georeferencing, then continue through the shared stages. Do not
+select both input paths in one run. See [the Sony intake guide](ILX-LR1.md) for
+its calibration, missing-navigation and validation rules. Sony-specific
+alignment settings apply to a workspace with an intake manifest; they do not
+change the generic WCA/Zeuss settings.
+
+Sony calibration defaults to **groups**: RealityScan solves each camera's
+intrinsics using the observed starting focal. Applying measured calibration
+requires an explicit `auto` or `prior` selection until its conversion is
+validated. Older saved `auto` defaults do not select that mode for a new intake.
+
+Generic preprocessing keeps its historical JPEG output. Sony intake preserves
+EXIF automatically; use `--p_preserve_exif true` to request that behavior for
+another source. Changing that policy regenerates processed copies and may
+change which camera metadata RealityScan reads.
+
+Before Python alignment, growth or merge, existing XMP files are copied and
+verified under the operation's output folder at
+`pre_existing_sidecars/<unique-snapshot>/`, with a hash manifest. Working XMP
+files can still be changed by RealityScan. Directly running the low-level
+`.bat` utilities bypasses this backup step: use a separate working copy.
+
+Batching refuses to put more than the configured maximum zone size into one
+scene when positions are missing or static. Supply a track, reduce the input,
+or deliberately enable **Allow Large Scene Without a Track**
+(`--b_allow_positionless_scene true`). Small scenes keep their existing behavior.
+
 ## 1. What you need
 
 **Machine**
@@ -145,6 +181,18 @@ Upgrade the environment installer before resolving dependencies. The commands
 invoke the environment's Python directly. They work without
 activation or a PowerShell execution-policy change. Run them from the checkout
 folder; use the full quoted executable path with `&` from another directory.
+
+To reproduce the Python package versions recorded by the Windows/Python 3.13
+checks, install with the optional snapshot constraints instead:
+
+```powershell
+& ".\.venv\Scripts\python.exe" -m pip install -c constraints-windows-py313.txt -e ".[dev]" build
+```
+
+Those constraints describe the tested software environment, not the historical
+survey-processing environment. RealityScan, CUDA and the original project data
+are separate. See [third-party notices](../THIRD_PARTY_NOTICES.md) for the full
+inventory, licence evidence and regeneration commands.
 
 - **Only Python 3.12 installed?** Use `py -3.12 -m venv .venv` to meet the
   declared package floor; 3.13+ remains recommended for native validation.

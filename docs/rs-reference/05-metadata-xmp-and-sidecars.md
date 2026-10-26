@@ -21,8 +21,8 @@ Build under description: `RealityScan.exe` FileVersion `2.2.0.119430.RS`, Produc
 `2.2.0.119430`, 45,211,352 bytes, installed at
 `C:\Program Files\Epic Games\RealityScan_2.2\`. Several facts below are established by
 scanning that binary for both **single-byte ASCII** and **UTF-16LE** string literals
-(re-measured 2026-08-04); those are tagged `[UNDOCUMENTED: RealityScan.exe string pool]`
-and carry two standing caveats: the presence of a string proves the identifier exists in
+(re-measured 2026-08-04); those are tagged `[UNDOCUMENTED: binary strings]` and carry
+two standing caveats: the presence of a string proves the identifier exists in
 the build, **not** that a given parser accepts it; and a *count* of a short string is
 meaningless unless it is NUL-delimited, because it also matches inside longer words.
 Counts quoted below are NUL-delimited unless stated otherwise.
@@ -38,7 +38,7 @@ Counts quoted below are NUL-delimited unless stated otherwise.
 5. [Rotation and Position: conventions and frames](#5-rotation-and-position-conventions-and-frames)
 6. [Prior semantics: what each mode actually fixes](#6-prior-semantics-what-each-mode-actually-fixes)
 7. [Calibration groups and lens groups](#7-calibration-groups-and-lens-groups)
-8. [The production calibration sidecar in this repo — and the doubt about it](#8-the-production-calibration-sidecar-in-this-repo--and-the-doubt-about-it)
+8. [The element-form calibration sidecar — and the doubt about it](#8-the-element-form-calibration-sidecar--and-the-doubt-about-it)
 9. [Exporting XMP](#9-exporting-xmp)
 10. [The auto-import trap and the cleaning protocol](#10-the-auto-import-trap-and-the-cleaning-protocol)
 11. [Measured effect of priors](#11-measured-effect-of-priors)
@@ -62,7 +62,7 @@ the file must be `Image01.xmp`.
 
 | image file | sidecar RealityScan reads | sidecar RealityScan ignores |
 |---|---|---|
-| `C231C1034_20231104201530_edt.jpg` | `C231C1034_20231104201530_edt.xmp` | `C231C1034_20231104201530_edt.jpg.xmp` |
+| `Cam1_20260820_191034.00.jpg` | `Cam1_20260820_191034.00.xmp` | `Cam1_20260820_191034.00.jpg.xmp` |
 
 The binding is to the **stem alone, not the image extension** — Epic's reuse-alignment
 tutorial says so explicitly, assuming that "the corresponding images from Images1 and
@@ -71,7 +71,7 @@ Images2 have the same names, but may differ in their extension" and copying one 
 `image.jpg.xmp` cannot work: its stem is `image.jpg`, and no image is named `image.jpg.jpg`.
 
 **`image.jpg.xmp` is ignored SILENTLY — no warning, no log line, no error code.**
-[VERIFIED: NA167 #3 / B7, 2026-07-22] This is a real and expensive bug class, not a
+[VERIFIED: bug B7, 2026-07-22] This is a real and expensive bug class, not a
 theoretical one: an image batcher in this repo wrote sidecars as
 `f"{image_filename}.xmp"`, so **every calibration prior written before 2026-07-22 was
 never loaded by any run.** The defect was invisible for months because nothing fails —
@@ -87,7 +87,7 @@ A folder holding both naming forms will show roughly 2× the image count.
 :: Audit of a batched zone tree (Windows PowerShell 5.1). Run-verified 2026-08-04
 :: on a fixture of a.jpg b.jpg a.xmp b.jpg.xmp -> "images=2 xmp=2 doubleext=1".
 powershell -NoProfile -Command ^
-  "$r='F:\na156_h2024\batched_images_by_zone\zone_1'; " ^
+  "$r='F:\survey\batched_images_by_zone\zone_1'; " ^
   "$f=@(Get-ChildItem -LiteralPath $r -Recurse -File); " ^
   "$img=$f.Where({ $_.Extension -in '.jpg','.jpeg','.png' }).Count; " ^
   "$xmp=$f.Where({ $_.Extension -eq '.xmp' }).Count; " ^
@@ -110,42 +110,40 @@ counts on the fixture. `-Include` is the broken one.
 Note the second trap in that snippet: `Get-ChildItem -Recurse` in Windows PowerShell 5.1
 does **not** descend into the children of a directory junction, so a zone tree assembled
 out of junctions reports `0` sidecars while Python's `os.walk` over the same path reports
-all of them (0 vs 9,835 on the same tree). [VERIFIED: FINDINGS 2026-07-27] The decisive
+all of them (0 vs 9,835 on the same tree). [VERIFIED: project testing 2026-07-27] The decisive
 detail is **where enumeration starts**: PowerShell *does* resolve a junction it is pointed
 at directly, so `AlignZone.bat` — handed the zone folder itself — enumerated correctly,
 while `MergeZoneComponents.bat` — handed the *parent* of the zone folders — saw the
 junctions as children and skipped them. Same tree, same tool, opposite outcome.
-[VERIFIED: FINDINGS 2026-07-27] See §9.5 and §15.
+[VERIFIED: project testing 2026-07-27] See §9.5 and §15.
 
 ### 1.2 `_common.xmp` — folder-wide defaults
 
 A single file named `_common.xmp` placed in the image folder applies the same XMP
 information to **all** images in that folder. [OFFICIAL: tools/xmpalign, "TIP"] The
-literal string `_common.xmp` is present in `RealityScan.exe` (UTF-16LE, one occurrence, in
-a filename/mask run reading `… .imagelist | *.* | _common.xmp | .rclicense | …`),
-confirming it is a real compiled-in filename and not a doc artifact.
-[UNDOCUMENTED: RealityScan.exe string pool]
+literal string `_common.xmp` is present in `RealityScan.exe`, confirming it is a real
+compiled-in filename and not a doc artifact. [UNDOCUMENTED: binary strings]
 
 The Help does not state the precedence rule when both `_common.xmp` and `<stem>.xmp`
 exist, nor whether `_common.xmp` recurses into subfolders.
 [OPEN — see [Open questions](#open-questions), Q1/Q2]
 
 Practical use: a rig with per-camera subfolders can carry one `_common.xmp` per camera
-folder instead of one sidecar per image. For the four-camera rig this repo drives, that
-would be 4 files instead of 9,835. It has never been exercised here.
+folder instead of one sidecar per image — on a two-camera rig, two files instead of one per
+image. It has never been exercised here.
 
 ```
-F:\na156_h2024\batched_images_by_zone\zone_1\
-    cinema\   _common.xmp        <- calibration group 3, focal 16.0
-    port\     _common.xmp        <- calibration group 2, focal 16.0
+F:\survey\batched_images_by_zone\zone_1\
+    cam1\   _common.xmp        <- calibration group of camera 1
+    cam2\   _common.xmp        <- calibration group of camera 2
 ```
 
 ### 1.3 `-addImageWithCalibration` — decoupled naming
 
 ```bat
 RealityScan.exe -delegateTo RS1 -addImageWithCalibration ^
-  "F:\images\C231C1034_20231104201530_edt.jpg" ^
-  "F:\priors\cinema_group3.xmp"
+  "F:\images\Cam1_20260820_191034.00.jpg" ^
+  "F:\priors\cam1_calibration.xmp"
 ```
 
 Imports one image plus one XMP; the two files need **not** share a name or a folder. Use
@@ -153,16 +151,17 @@ whole paths for both. [OFFICIAL: appbasics/allcommands; tools/xmpalign] This is 
 mechanism that breaks the name/location coupling, and it is the correct answer when
 priors must live outside a read-only or hard-linked image tree.
 
-Cost note: it is one command per image. At 8,000+ images that is 8,000 delegated
-commands; the repo has never used it and has no timing for it.
-[OPEN — Q3]
+Cost note: it is one command per image. This repo issues those commands from one
+generated `.rscmd` run through `-execRSCMD` (`calibration_sidecars.rscmd_text`), so they
+execute inside the instance rather than as one delegated process each; no per-image timing
+has been recorded. [OPEN — Q3]
 
 ### 1.4 Auto-import on every add
 
 `-add`, `-addFolder` and (by construction) `-addImageWithCalibration` all consume the
 sidecar. The critical, undocumented consequence: **any `<stem>.xmp` sitting beside an
 image at add time becomes a prior, including pose priors left behind by an earlier
-export.** [VERIFIED: NA167 B7, 2026-07-22] See §10 for the full trap and the cleaning
+export.** [VERIFIED: bug B7, 2026-07-22] See §10 for the full trap and the cleaning
 protocol.
 
 ---
@@ -200,18 +199,14 @@ Reproduced from the shipped Help, which is the only official statement of the sc
 | `xcr` | `http://www.capturingreality.com/ns/xcr/1.1#` | [OFFICIAL] |
 
 `http://www.capturingreality.com/ns/xcr/1.1#` is **the only** `capturingreality.com/ns/…`
-URI present anywhere in `RealityScan.exe` — one occurrence, ASCII, zero in UTF-16LE. In
-particular there is **no** `.../ns/xcr/1.0/` and **no** `.../ns/camera/1.0/`.
-[UNDOCUMENTED: RealityScan.exe string pool] Honest caveat: that single occurrence sits in
-the *licence-certificate* writer's string group (beside `<certificates>`, `xmlns:xcr` and
-`<xcr:Cert id="%s">`, see §3), not in a distinct XMP-sidecar string group — the same URI
-constant is evidently shared. The Help sample is what fixes it for sidecars
-[OFFICIAL: tools/xmpalign]; the binary only establishes that no *other* xcr URI exists.
+URI present anywhere in `RealityScan.exe`. In particular there is **no**
+`.../ns/xcr/1.0/` and **no** `.../ns/camera/1.0/`. [UNDOCUMENTED: binary strings] The Help
+sample is what fixes the URI for sidecars [OFFICIAL: tools/xmpalign]; the binary only
+establishes that no *other* xcr URI exists.
 
-The binary also contains the literal element path `x:xmpmeta\rdf:RDF\rdf:Description`
-(ASCII, immediately adjacent to the XMP value-token pool of §4), which is the reader's
-navigation target: RealityScan looks for its attributes on the `rdf:Description` element
-beneath `x:xmpmeta/rdf:RDF`. [UNDOCUMENTED: RealityScan.exe string pool]
+The binary also contains the literal element path `x:xmpmeta\rdf:RDF\rdf:Description`,
+consistent with the reader looking for its attributes on the `rdf:Description` element
+beneath `x:xmpmeta/rdf:RDF`. [UNDOCUMENTED: binary strings] [INFERRED: the reader's use of it]
 
 Note that the URI ends in `#`, not `/`. Anything a producer writes bound to a different
 URI is, under any conforming XMP/RDF parser, a *different* property.
@@ -227,7 +222,7 @@ sample and in RealityScan's own writer. `Position` is written as a **child eleme
 
 However, **older exports of this same product wrote `xcr:Position` as an attribute**
 (`xcr:Position="x y z"`), so any parser that must read historical sidecars has to accept
-both forms. [VERIFIED: FINDINGS 2026-07-28] This bit an in-repo scale oracle; the fix is
+both forms. [VERIFIED: project testing 2026-07-28] This bit an in-repo scale oracle; the fix is
 the alternation used in `modules/scale_oracle.py`:
 
 ```python
@@ -265,7 +260,7 @@ POS_RE = re.compile(r'<xcr:Position>([^<]+)</xcr:Position>|xcr:Position="([^"]+)
 ROT_RE = re.compile(r'<xcr:Rotation>([^<]+)</xcr:Rotation>|xcr:Rotation="([^"]+)"')
 ```
 
-[VERIFIED: onr2 arms A_opk / L_all_levers / E_overlap_high, sidecars written by
+[VERIFIED: stereo-fixture arms A_opk / L_all_levers / E_overlap_high, sidecars written by
 RealityScan with no input sidecar present, 2026-08-23]
 
 #### [Q4 — PARTIALLY ANSWERED 2026-08-23] the reader DOES accept attribute form for `Rotation`
@@ -279,7 +274,7 @@ attribute-form `Rotation` even though its own writer uses element form.
 
 Still open: element form for the *other* attributes (`FocalLength35mm`, `CalibrationGroup`,
 …), which was not exercised — every sidecar in that session wrote those as attributes.
-[VERIFIED for `Rotation`: onr2 arm N_colmap_locked, 2026-08-23] [OPEN — Q4, remainder]
+[VERIFIED for `Rotation`: stereo-fixture arm N_colmap_locked, 2026-08-23] [OPEN — Q4, remainder]
 
 #### [VERIFIED 2026-08-23] a rewritten sidecar comes back in a different form than it went in
 
@@ -293,13 +288,12 @@ global `sfmDistortionModel=Brown3`.
 
 ### 2.4 Encoding
 
-The Help sample carries no XML declaration. The sidecars this repo writes begin with
-`<?xml version="1.0" encoding="UTF-8"?>` and are written UTF-8 **without BOM**
-(`open(..., 'w', encoding='utf-8')` in `modules/camera_registry.py`). No BOM-related
+The Help sample carries no XML declaration, and neither do the sidecars this repo writes;
+they are written UTF-8 **without BOM** (`modules/calibration_sidecars.py`). No BOM-related
 sidecar failure has been observed — but a BOM on line 1 of a `.complist` **does** silently
 invalidate the first entry, and Windows PowerShell 5.1's `Set-Content -Encoding utf8`
 emits one, so never author sidecars with `Set-Content -Encoding utf8`.
-[VERIFIED: FINDINGS 2026-07-27] Use
+[VERIFIED: project testing 2026-07-27] Use
 `[System.IO.File]::WriteAllLines($p,$lines,(New-Object System.Text.UTF8Encoding($false)))`
 if PowerShell must write them.
 
@@ -307,47 +301,20 @@ if PowerShell must write them.
 
 ## 3. The complete `xcr:` attribute set
 
-The table below is the **union** of (a) Epic's sample, (b) the `xcr:`-prefixed identifier
-table extracted from `RealityScan.exe`, and (c) attributes referenced elsewhere in the
-Help. The binary holds **29** distinct `xcr:` identifiers in total. **26** of them form one
-contiguous, NUL-separated ASCII pool — the XMP reader/writer name table — verbatim in
-order (each also present once as UTF-16LE):
-
-```
-xcr:Rig  xcr:Version  xcr:RigPoseIndex  xcr:RigInstance  xcr:InMeshing  xcr:InTexturing
-xcr:ComponentId  xcr:PosePrior  xcr:Rotation  xcr:Coordinates  xcr:DistortionModel
-xcr:Position  xcr:FocalLength35mm  xcr:DistortionCoeficients  xcr:AspectRatio  xcr:Skew
-xcr:PrincipalPointV  xcr:PrincipalPointU  xcr:CalibrationGroup  xcr:CalibrationPrior
-xcr:ExportCoordinateSystemType  xcr:DistortionGroup  xcr:longitude  xcr:latitude
-xcr:altitude  xcr:version
-```
-
-The other three — `xcr:Gravity`, `xcr:InColoring` (both UTF-16LE only) and `xcr:Cert`
-(ASCII only, 4 occurrences) — live elsewhere in the binary and are **not** members of that
-pool. [UNDOCUMENTED: RealityScan.exe string pool]
-
-Immediately adjacent to the reader's navigation string `x:xmpmeta\rdf:RDF\rdf:Description`
-is a second contiguous ASCII pool holding the XMP **value** tokens, in order:
-
-```
-perspective  brown4  brown3t2  division  brown3  rationalP2D1T2
-[x:xmpmeta\rdf:RDF\rdf:Description]  brown4t2  rationalP2D1
-relative  rigid  locked  absolute
-```
-
-That is the whole XMP value vocabulary the writer can emit for `xcr:DistortionModel`
-(8 tokens, §4.3) and `xcr:Coordinates` (`relative` / `rigid` / `absolute`), plus `locked`
-for the prior fields. `initial` and `exact` are a separate adjacent pair in the
-project-XML serializer's pool (§4.1). [UNDOCUMENTED: RealityScan.exe string pool]
+The table below is the **union** of (a) Epic's sample, (b) the `xcr:`-prefixed identifiers
+present in `RealityScan.exe`, and (c) attributes referenced elsewhere in the Help. Value
+vocabularies marked [UNDOCUMENTED: binary strings] are token strings present in the
+executable; the export observations in §2.3 (`perspective`, element-form `Rotation`)
+confirm part of them from real output.
 
 | Attribute (exact spelling) | Form | Type / shape | Meaning | Source |
 |---|---|---|---|---|
 | `xcr:Version` | attr | int; `3` observed | Sidecar schema version. Both `xcr:Version` and `xcr:version` exist in the binary; only the capitalised form appears in Epic's sample. | [OFFICIAL: tools/xmpalign] + [UNDOCUMENTED: binary] |
 | `xcr:PosePrior` | attr | enum `initial` \| `exact` \| `locked` | How hard the pose in this file constrains alignment. See §4.1 and §6. | [OFFICIAL: sample value `initial`]; enum [INFERRED] |
-| `xcr:Coordinates` | attr | enum `absolute` \| `relative` \| `rigid` | Whether `Position`/`Rotation` are in the scene's absolute (project/geo) frame or in a rig-relative frame. | `absolute` [OFFICIAL: sample]; `relative`/`rigid` [UNDOCUMENTED: binary value pool] |
+| `xcr:Coordinates` | attr | enum `absolute` \| `relative` \| `rigid` | Whether `Position`/`Rotation` are in the scene's absolute (project/geo) frame or in a rig-relative frame. | `absolute` [OFFICIAL: sample]; `relative`/`rigid` [UNDOCUMENTED: binary strings] |
 | `xcr:Rotation` | attr | 9 space-separated floats — 3×3 matrix | Camera orientation. Row-major, world→camera by strong analogy with the shipped export templates; see §5.1. | [OFFICIAL: sample]; convention [INFERRED], §5.1 |
-| `xcr:Position` | **element** (attr in legacy files) | 3 space-separated floats | Camera position. In exports from this pipeline it is a **grid-anchored local Euclidean frame, not UTM**. See §5.2. | [OFFICIAL: sample]; frame [VERIFIED: NA167 notes §1, poses_to_flight_log.py] |
-| `xcr:DistortionModel` | attr | enum, lowercase; 8 tokens: `perspective` `division` `brown3` `brown3t2` `brown4` `brown4t2` `rationalP2D1` `rationalP2D1T2` | Lens distortion model for this camera. **In practice the global `sfmDistortionModel` key owns the model — see §7.5.** | `division` [OFFICIAL: sample]; full token set [UNDOCUMENTED: binary value pool]; override [CONTRADICTED], §7.5 |
+| `xcr:Position` | **element** (attr in legacy files) | 3 space-separated floats | Camera position. In exports from this pipeline it is a **grid-anchored local Euclidean frame, not UTM**. See §5.2. | [OFFICIAL: sample]; frame [VERIFIED: earlier multi-camera dataset, 2026-07, poses_to_flight_log.py] |
+| `xcr:DistortionModel` | attr | enum, lowercase; 8 tokens: `perspective` `division` `brown3` `brown3t2` `brown4` `brown4t2` `rationalP2D1` `rationalP2D1T2` | Lens distortion model for this camera. **In practice the global `sfmDistortionModel` key owns the model — see §7.5.** | `division` [OFFICIAL: sample]; `perspective` observed in exports (§2.3); full token set [UNDOCUMENTED: binary strings]; override [CONTRADICTED], §7.5 |
 | `xcr:DistortionCoeficients` | attr | 6 space-separated floats | Distortion coefficients. **Note Epic's misspelling — one `f`. Reproduce it exactly** (the correctly spelled `DistortionCoefficients` occurs nowhere in the binary). Slot order almost certainly `k1 k2 k3 k4 t1 t2`; see §4.3a. | [OFFICIAL: sample]; order [INFERRED from shipped `calibration.xml`], §4.3a |
 | `xcr:FocalLength35mm` | attr | float, mm | 35 mm-equivalent focal length prior. | [OFFICIAL: sample] |
 | `xcr:Skew` | attr | float; `0` typical | Image-plane skew. Only optimised under the `Kplus…` distortion models. | [OFFICIAL: sample] + [OFFICIAL: appbasics/settings_distortion_models] |
@@ -355,7 +322,7 @@ project-XML serializer's pool (§4.1). [UNDOCUMENTED: RealityScan.exe string poo
 | `xcr:PrincipalPointU` | attr | float, **normalised**, not mm — the Help's GUI label disagrees, see §4.4 | Principal point x offset from image centre. | [OFFICIAL: sample]; units [CONTRADICTED], §4.4 |
 | `xcr:PrincipalPointV` | attr | float, **normalised** | Principal point y offset from image centre. | same |
 | `xcr:CalibrationPrior` | attr | enum `initial` \| `exact` (\| `locked`) | Hardness of the intrinsic-calibration prior; maps to the GUI's Unknown/Approximate/Fixed. | [OFFICIAL: sample value `initial`]; mapping [INFERRED], §4.2 |
-| ~~`FocalPrior`, `PrincipalPrior`, `SkewPrior`, `AspectRatioPrior`, `DistortionPrior`~~ | — | — | **NOT XMP attributes — listed here so they are not mistaken for some.** They exist in the binary **without any `xcr:` prefix**, inside the `.rsproj` `<input>` serializer's format strings (` FocalLength35mm="%f" FocalPrior="%s"`, ` PrincipalPointU="%f" PrincipalPointV="%f" PrincipalPrior="%s"`, ` Skew="%f" SkewPrior="%s"`, ` AspectRatio="%f" AspectRatioPrior="%s"`, ` DistortionModel="%s" DistortionCoeficients="%f %f %f %f %f %f" DistortionPrior="%s"`). That pool also holds `calibrationGroup`, `distortionGroup`, `rigId`, `rigInstance`, `rigCameraIndex`, `absX/absY/absZ`, `absRX/absRY/absRZ`, `absuX…`, `insOfsX…`, `absPrior`, `relPrior`, `absCs`, `relCs`, `relGroup`, `xmpPath`, `width`, `height`. Project-file attributes, not sidecar ones. | [UNDOCUMENTED: RealityScan.exe string pool] |
+| ~~`FocalPrior`, `PrincipalPrior`, `SkewPrior`, `AspectRatioPrior`, `DistortionPrior`~~ | — | — | **NOT XMP attributes — listed here so they are not mistaken for some.** They are attributes of the `.rsproj` project file's `<input>` element (with `absPrior`, `relPrior`, `calibrationGroup`, `distortionGroup` and others), and carry no `xcr:` prefix. Project-file attributes, not sidecar ones. | [UNDOCUMENTED: binary strings] |
 | `xcr:CalibrationGroup` | attr | int; `-1` = ungrouped | Images sharing a value >= 0 share one set of intrinsics after alignment. | [OFFICIAL: sample] + [OFFICIAL: appbasics/camerasettings] |
 | `xcr:DistortionGroup` | attr | int; `-1` = ungrouped | Images sharing a value >= 0 share one set of lens-distortion parameters. | [OFFICIAL: sample] |
 | `xcr:Rig` | attr | GUID `{…}` | Rig identity. | [OFFICIAL: sample] |
@@ -363,12 +330,11 @@ project-XML serializer's pool (§4.1). [UNDOCUMENTED: RealityScan.exe string poo
 | `xcr:RigPoseIndex` | attr | int | Which camera slot within the rig this image is. | [OFFICIAL: sample] |
 | `xcr:InTexturing` | attr | `0` \| `1` | Include this image in texturing/coloring. Written when "Include editor options" is enabled on export. | [OFFICIAL: sample + tools/xmpalign] |
 | `xcr:InMeshing` | attr | `0` \| `1` | Include this image in meshing. | same |
-| `xcr:InColoring` | attr | `0` \| `1` | Include this image in coloring. Present in the binary but absent from Epic's sample and from the reader/writer name pool. | [UNDOCUMENTED: binary] |
+| `xcr:InColoring` | attr | `0` \| `1` | Include this image in coloring. Present in the binary but absent from Epic's sample. | [UNDOCUMENTED: binary] |
 | `xcr:ComponentId` | attr | id/GUID | Which component the exported pose belongs to. Not in Epic's sample. | [UNDOCUMENTED: binary] |
 | `xcr:ExportCoordinateSystemType` | attr | string | CRS label the export was written in (mirrors the export dialog's "Coordinate system"). Not in Epic's sample. | [UNDOCUMENTED: binary] |
 | `xcr:Gravity` | attr | 3 floats (vector) | Gravity direction. **Consumed by `-setCamerasGravityDirection [componentID]`: the component is rotated so the `-z` vector follows the gravity vector. Sparse cloud only — the mesh is not affected.** | [OFFICIAL: appbasics/allcommands, tutorials/commandline_1] |
 | `xcr:latitude`, `xcr:longitude`, `xcr:altitude` | attr | — | Geographic position fields. **Observed to be garbage in this pipeline's exports** — the useful position is `xcr:Position` in the local frame. | [UNDOCUMENTED: binary]; garbage [VERIFIED: poses_to_flight_log.py docstring, zone_9] |
-| `xcr:Cert` | **element** | `<xcr:Cert id="%s">…</xcr:Cert>` | **Nothing to do with image sidecars.** It is the licence-certificate element: the binary carries the writer strings `<certificates>`, `xmlns:xcr`, `<xcr:Cert id="%s">`, `</xcr:Cert>`, `</certificates>`, adjacent to `importLicense` / `exportLicense` / `"certificate file"` / `certificates\`. Never write it into an image XMP. | [UNDOCUMENTED: RealityScan.exe string pool, resolved 2026-08-04] |
 
 ### 3.1 Names that are NOT in the schema
 
@@ -384,9 +350,8 @@ and UTF-16LE, with and without a prefix:
 | `http://www.capturingreality.com/ns/xcr/1.0/` | 0, 0 |
 | any identifier matching `Camera:[A-Za-z0-9]+` | 0, 0 |
 
-For contrast, `DistortionCoeficients` (Epic's spelling) occurs 3× ASCII + 1× UTF-16LE.
-[UNDOCUMENTED: RealityScan.exe string pool, measured 2026-08-04] This is load-bearing for
-§8.
+For contrast, `DistortionCoeficients` (Epic's spelling) is present.
+[UNDOCUMENTED: binary strings, measured 2026-08-04] This is load-bearing for §8.
 
 ---
 
@@ -403,22 +368,15 @@ For contrast, `DistortionCoeficients` (Epic's spelling) occurs 3× ASCII + 1× U
 The three GUI export modes are literally named "Export as draft", "Export as exact",
 "Export as locked". [OFFICIAL: tools/xmpalign]
 
-What the binary actually supports for these three words, measured as NUL-delimited ASCII
-C strings [UNDOCUMENTED: RealityScan.exe string pool, 2026-08-04]:
-
-| token | where it sits | reading |
-|---|---|---|
-| `locked` | in the XMP value pool, beside `relative` / `rigid` / `absolute` (§3) | an XMP-writer token |
-| `initial`, `exact` | an adjacent pair in the `.rsproj` `<input>` serializer's pool, beside `FocalPrior` / `PrincipalPrior` / `absPrior` and the pose words `pose` `oriented` `registered` `fixed` `disabled` | the prior-hardness vocabulary shared by the project file and (per Epic's sample) the XMP |
-| `draft` | one occurrence, in an unrelated part of the binary | **not** an XMP token |
-
-So the XMP prior vocabulary is `{initial, exact, locked}` and the mapping draft→`initial`
-is [INFERRED] — Epic's sample uses `initial` for a pose that is "subject to adjustment",
-which is exactly the draft semantics, and no `draft` token exists in the XMP pools.
+The binary carries `initial`, `exact` and `locked` as token strings and no `draft` XMP
+token [UNDOCUMENTED: binary strings, 2026-08-04], so the XMP prior vocabulary is
+`{initial, exact, locked}` and the mapping draft→`initial` is [INFERRED] — Epic's sample
+uses `initial` for a pose that is "subject to adjustment", which is exactly the draft
+semantics.
 
 Corroborating: the Selected Input panel documents a "Relative coordinates" field that is
-visible "only for the inputs that are connected in a rig (e.g. individual `.lsp` files in
-one LiDAR scanner position, **or images with exact or locked XMP files**)".
+shown only for rig-connected inputs, and the Help's examples of such inputs are the `.lsp`
+files of one LiDAR scanner position **or images whose XMP files are exact or locked**.
 [OFFICIAL: appbasics/selectedinputs] So `exact`/`locked` sidecars promote a set of images
 into a rig-like relative-pose relationship; `initial` does not.
 
@@ -433,14 +391,10 @@ Distortion [OFFICIAL: appbasics/camerasettings_priors, appbasics/selectedinputs]
 | Approximate | starting values known, **will be adjusted** during processing | `inpCalibration=1` / `inpDistortion=1` | `initial` [INFERRED] |
 | Fixed | values known and **will not be changed** | `inpCalibration=2` / `inpDistortion=2` | `exact` [INFERRED] |
 
-`Approximate` occurs **exactly once** in `RealityScan.exe`, inside a UTF-16LE UI label run
-that reads `… Unknown | Approximate | Fixed | No lens distortion | Division | Brown3 |
-Brown4 | Brown3 with tangential distortion | Brown4 …` — i.e. it is the dropdown caption,
-sitting next to the other dropdown captions, not a serialisation token. Lowercase
-`approximate` occurs once and only as the tail of the English word "approximately" in an
-unrelated progress message. Neither appears in the XMP value pool or the project-XML prior
-pool (§4.1). [UNDOCUMENTED: RealityScan.exe string pool, measured 2026-08-04] Do **not**
-write `Approximate` as an XMP value on this evidence. [OPEN — Q6]
+`Approximate` is present in `RealityScan.exe` only as a GUI dropdown caption (beside
+`Unknown`, `Fixed` and the distortion-model captions), not as a serialisation token.
+[UNDOCUMENTED: binary strings, measured 2026-08-04] Do **not** write `Approximate` as an XMP
+value on this evidence. [OPEN — Q6]
 
 **Critical and counter-intuitive:** the default lens-distortion state is model *"No lens
 distortion"* with prior *"Approximate"*, which means **RealityScan actively searches for a
@@ -450,9 +404,9 @@ remedies are to supply real coefficients or to set the lens prior to **Unknown**
 
 However — and this is a repo finding that supersedes an earlier caution in the same
 session — **`Approximate` with NO coefficients supplied does not pin distortion to zero in
-practice.** The Cinema camera carried exactly that state and still solved
-k1 = −0.0524 over 2,204 cameras. `Unknown` merely withholds a hint.
-[VERIFIED: FINDINGS 2026-07-25] [SUPERSEDED: the earlier claim that `Approximate` asserts
+practice.** The rectilinear camera of the earlier four-camera rig carried exactly that
+state and still solved k1 = −0.0524 over 2,204 cameras. `Unknown` merely withholds a hint.
+[VERIFIED: project testing 2026-07-25] [SUPERSEDED: the earlier claim that `Approximate` asserts
 approximately-zero distortion]
 
 ### 4.3 `xcr:DistortionModel` — four different spellings of the same models
@@ -460,9 +414,9 @@ approximately-zero distortion]
 **RealityScan spells its distortion models four different ways depending on the interface.
 Do not interchange them.**
 
-**(1) XMP `xcr:DistortionModel` — lowercase, 8 tokens**, taken verbatim from the writer's
-value pool (§3) [UNDOCUMENTED: RealityScan.exe string pool]; `division` is the one Epic's
-sample shows [OFFICIAL: tools/xmpalign]:
+**(1) XMP `xcr:DistortionModel` — lowercase, 8 tokens** present in the binary
+[UNDOCUMENTED: binary strings]; `division` is the one Epic's sample shows
+[OFFICIAL: tools/xmpalign] and `perspective` is observed in real exports (§2.3):
 
 | XMP token | corresponds to |
 |---|---|
@@ -479,12 +433,10 @@ The correspondence column is [INFERRED] from the names; only `division` is confi
 document. Note two structural facts that fall out of the list: there is **no XMP token for
 the `K+` variants** (consistent with `K+` being an optimise-skew-and-aspect flag on top of
 a Brown model rather than a distinct model), and there are **two rational models with no
-documented interface at all**. [UNDOCUMENTED: binary value pool]
+documented interface at all**. [UNDOCUMENTED: binary strings]
 
-**(2) The global setting `sfmDistortionModel` — capitalised, 7 values.** Both the Help and
-the binary's enum pool (`Division | Brown3 | Brown4 | Brown3WithTangential2 |
-Brown4WithTangential2 | KplusBrown3WithTangential2 | KplusBrown4WithTangential2`, one
-contiguous UTF-16LE run) agree exactly:
+**(2) The global setting `sfmDistortionModel` — capitalised, 7 values**, as the Help lists
+them:
 
 | `sfmDistortionModel` value | Coefficients | Notes |
 |---|---|---|
@@ -497,9 +449,7 @@ contiguous UTF-16LE run) agree exactly:
 | `KplusBrown4WithTangential2` | + Skew, Aspect | |
 
 Default `Brown3`. [OFFICIAL: appbasics/settings_distortion_models for the descriptions;
-tutorials/setkeyvaluetable for the key, type and default] The seven literal spellings are
-independently confirmed as one contiguous UTF-16LE run in the binary.
-[UNDOCUMENTED: RealityScan.exe string pool, 2026-08-04]
+tutorials/setkeyvaluetable for the key, type and default]
 
 **(3) `-editInputSelection "inpDistortionModel=<n>"` — integers 0–5:**
 `0` No lens distortion, `1` Division, `2` Brown3, `3` Brown4, `4` Brown3 with tangential
@@ -507,14 +457,10 @@ distortion, `5` Brown4 with tangential distortion.
 [OFFICIAL: tutorials/editselectioncommand] Note there is no `K+` option in the per-image
 key — `K+` is global-only.
 
-**(4) The camera DB (`sensorsdb.xml`) `<lens type="…">`:** the parser's own string pool —
-a contiguous ASCII run reading `cameras | ignore | /cameras | GPSAccuracy | ccdWidth |
-brownr4t2 | brownr4 | orientationAccuracy | /camera | GPSMode | brownr3 | lens |
-brownr3t2 | brown | focus | /lens | distance` — supplies `brown`, `brownr3`, `brownr3t2`,
-`brownr4`, `brownr4t2`. [UNDOCUMENTED: RealityScan.exe string pool] `division` is not in
-that run (it lives in the XMP value pool) but is the value every `<lens>` in the shipped
-`sensorsdb.xml` uses, so it is certainly accepted.
-[VERIFIED-by-inspection of the shipped file, 2026-08-04]
+**(4) The camera DB (`sensorsdb.xml`) `<lens type="…">`:** `division` is the value every
+`<lens>` in the shipped `sensorsdb.xml` uses, so it is certainly accepted.
+[VERIFIED-by-inspection of the shipped file, 2026-08-04] Other `type` spellings appear in
+no shipped entry and are untested.
 
 ### 4.3a Coefficient slot order in `xcr:DistortionCoeficients`
 
@@ -554,9 +500,10 @@ normalised.]**
   `$(px*scale+width*0.5)` / `$(py*scale+height*0.5)`, using the *same* `scale` that turns
   `f` into pixels (`$(f*scale)`). Both are only consistent if `px`/`py` are normalised in
   the same units as `f`. [OFFICIAL: shipped `calibration.xml`]
-- **Measured here, consistent with normalised:** cinema median `(−0.0071, −0.0031)`, port
-  `(+0.0027, +0.0056)` over 5,050 harvest records
-  [VERIFIED: FINDINGS 2026-07-26]. As millimetres on a 36 mm frame that would be a
+- **Measured on an earlier multi-camera dataset, consistent with normalised:** rectilinear
+  camera median `(−0.0071, −0.0031)`, fisheye camera `(+0.0027, +0.0056)` over 5,050
+  harvest records
+  [VERIFIED: project testing 2026-07-26]. As millimetres on a 36 mm frame that would be a
   7-micron principal-point offset holding across 5,050 independently solved cameras —
   implausible. As a fraction of frame width it is a 0.7 % offset, which is ordinary.
 
@@ -614,7 +561,7 @@ logic on it without running the probe in Q9.
 `xcr:Position` in this pipeline's exports is in a **grid-anchored local Euclidean frame,
 not UTM**. The anchor is the project's grid origin. The `xcr:latitude` / `xcr:longitude`
 attributes in the same files are garbage.
-[VERIFIED: NA167 notes §1 and poses_to_flight_log.py, on zone_9]
+[VERIFIED: earlier multi-camera dataset, 2026-07 and poses_to_flight_log.py, on zone_9]
 
 The consequence is the whole reason `poses_to_flight_log.py` exists: to recover UTM you must
 fit a rigid local→UTM transform (Umeyama, **scale locked at 1**) between the XMP positions
@@ -626,8 +573,8 @@ From the checkout in **Command Prompt**, using the installed environment:
 
 ```bat
 ".venv\Scripts\python.exe" poses_to_flight_log.py ^
-   --images-dir "F:\na156_h2024\batched_images_by_zone\zone_1\cinema" ^
-   --flight-log "F:\na156_h2024\batched_images_by_zone\zone_1\flight_log_4Q_UTM.txt" ^
+   --images-dir "F:\survey\batched_images_by_zone\zone_1\cam1" ^
+   --flight-log "F:\survey\batched_images_by_zone\zone_1\flight_log_4Q_UTM.txt" ^
    --position-accuracy 1.0 --registered-only
 ```
 
@@ -637,7 +584,7 @@ is a direct estimate of the USBL/DVL navigation error, and writes a per-image re
 Because `Position` is local, distance **ratios** are still meaningful — that invariance is
 what makes the correspondence-free scale oracle possible for fused components whose
 sidecars are ordinal and carry no image identity.
-[VERIFIED: FINDINGS 2026-07-28] Details in `06-georeferencing-flightlogs-and-scale.md`.
+[VERIFIED: project testing 2026-07-28] Details in `06-georeferencing-flightlogs-and-scale.md`.
 
 Whether `xcr:Position` is UTM in a scene that was georeferenced *before* export has never
 been re-tested — hardening cell U13 was written for exactly this and never run.
@@ -664,7 +611,7 @@ operationally there are two families with different plumbing:
 
 `sfmEnableCameraPrior` **is** the GUI's "use camera priors for georeferencing": pose priors
 participate *inside* the bundle adjustment and georeference the resulting components.
-It stays `true` in every production align here. [VERIFIED: docs/settings-evaluation-2026-07 §4/§5]
+It stays `true` in every production align here. [VERIFIED: project test records, 2026-07]
 
 ### 6.2 Absolute pose modes
 
@@ -698,7 +645,7 @@ outright:
 > *"prior set to 'Exact' mode must be all aligned in a single run. Incremental adding is
 > not supported."*
 
-[VERIFIED: FINDINGS, hardening cell U18 FAIL, 2026-07-23] The practical consequence for a
+[VERIFIED: project testing, cell U18 FAIL, 2026-07-23] The practical consequence for a
 chunked pipeline is that checkpoint/rollback (copying the `.rsproj` bundle) remains the
 only never-shrink mechanism; you cannot freeze a solved component and grow around it.
 
@@ -722,13 +669,13 @@ see `06-georeferencing-flightlogs-and-scale.md`. The measured lesson from this r
 worth repeating here because it is a *prior-content* lesson, not a plumbing one:
 
 > **The accuracy columns want END-TO-END per-image position uncertainty** (timestamp
-> matching + nav interpolation + lever arm + dive drift), **not the instantaneous sensor
+> matching + nav interpolation + lever arm + navigation drift), **not the instantaneous sensor
 > spec.** Over-tight position priors fragment solves and wreck metric scale while barely
 > moving the registration count — which is exactly why a camera-counting oracle never
 > caught it. On a 665-image known-good component: loose 10/10/1 gave **1 component at
 > scale 1.049**; tight 1/1/0.1 gave **2 components at 0.886**. Under Division: loose
 > **1 component at 0.989**, tight **3 components at 0.826**. Registration moved only
-> 656→665 across all four cells. [VERIFIED: PRIORS_DISTORTION_TEST_PLAN "Bow 2×2", 2026-07-25]
+> 656→665 across all four cells. [VERIFIED: project test records ("Bow 2×2"), 2026-07-25]
 
 ### 6.6 Full `-editInputSelection` prior key table
 
@@ -751,7 +698,7 @@ per key. [OFFICIAL: tutorials/editselectioncommand]
 | `inpFocal` | Prior calibration/Focal length (35mm) | float > 0 |
 | `inpPPX` / `inpPPY` | Principal point x / y [mm] | float — the Help's "[mm]" is contested, see §4.4 |
 | `inpSkew` | Prior calibration/Skew | float |
-| `inpAspect` | Prior calibration/**Aspect ratio** | float — **the Help lists `inpSkew` for BOTH Skew and Aspect ratio.** [CONTRADICTED: `tutorials/editselectioncommand` prints `inpSkew` twice, once under "Skew" and once under "Aspect ratio", and documents no aspect key / the binary's `inp*` key pool contains `inpAspect` sitting directly between `inpPPX` and `inpSkew` — `… inpFocal \| inpCalibration \| inpPPY \| inpPPX \| inpAspect \| inpSkew \| inpDistortionModel …`. The Help entry is a copy-paste error; `inpAspect` is the key. UTF-16LE, 1 occurrence; `inpAspectRatio` occurs 0 times.] [UNDOCUMENTED: RealityScan.exe string pool, 2026-08-04] [OPEN — Q11: acceptance untested] |
+| `inpAspect` | Prior calibration/**Aspect ratio** | float — **the Help lists `inpSkew` for BOTH Skew and Aspect ratio.** [CONTRADICTED: `tutorials/editselectioncommand` prints `inpSkew` twice, once under "Skew" and once under "Aspect ratio", and documents no aspect key / the binary contains `inpAspect` among the other `inp*` prior keys, and no `inpAspectRatio`. The Help entry is a copy-paste error; `inpAspect` is the key.] [UNDOCUMENTED: binary strings, 2026-08-04] [OPEN — Q11: acceptance untested] |
 | `inpLensGroup` | Prior lens distortion/Lens group | int >= 0, or `-1` |
 | `inpDistortion` | Prior lens distortion/Prior | `0` Unknown, `1` Approximate, `2` Fixed |
 | `inpDistortionModel` | Prior lens distortion/Camera model | `0` No lens distortion, `1` Division, `2` Brown3, `3` Brown4, `4` Brown3+tangential, `5` Brown4+tangential |
@@ -766,10 +713,9 @@ only, `2` meshing only, `3` both), `aligFeaturesMode` (`0` merge using overlaps,
 [OFFICIAL: tutorials/editselectioncommand]
 
 `"inpEnabled=false"` is confirmed working as a single quoted `key=value` argument, and
-`-align` honours enable/disable exactly. [VERIFIED: FINDINGS 2026-07-23, cell U1]
+`-align` honours enable/disable exactly. [VERIFIED: project testing 2026-07-23, cell U1]
 
-The full `inp*` key pool in the binary holds **80** identifiers — the Help documents about
-half. Undocumented members that matter for priors and rigs:
+The binary holds **80** `inp*` identifiers — the Help documents about half. Undocumented members that matter for priors and rigs:
 `inpAspect` (above), `inpCamModel`, `inpLensModel`, `inpPosePriorAbsoluteCs`,
 `inpPosePriorAbsoluteCsType`, `inpPosePriorAbsoluteCsWkt`, `inpPosePriorAbsoluteCsInput`,
 `inpPosePriorAbsoluteCsWktCheckProj`, `inpPosePriorAccuracyMode`,
@@ -779,16 +725,16 @@ half. Undocumented members that matter for priors and rigs:
 `inpImageDepthsWeight`, `inpPointCouldFeatureDetectionQuality` (Epic's typo, reproduced
 exactly), plus read-only-looking `inpFile`, `inpShortName`, `inpWidth`, `inpHeight`,
 `inpFeatures`, `inpMaxErr`, `inpMeanErr`, `inpMedErr`, `inpMeasCnt`, `inpPtsOverlap`,
-`inpWicPixelFormat`, `inpIsLy`, `inpLy`, `inpLya`, `inpIsMask`, `inpIsDepth`, `inpPPILic`.
+`inpWicPixelFormat`, `inpIsLy`, `inpLy`, `inpLya`, `inpIsMask`, `inpIsDepth`.
 **Presence proves the identifier exists in the build, not that `-editInputSelection`
-accepts it.** [UNDOCUMENTED: RealityScan.exe string pool, 2026-08-04]
+accepts it.** [UNDOCUMENTED: binary strings, 2026-08-04]
 
 **Delivery warning.** `key=value` cannot cross a cmd/subprocess boundary as a bare
 argument: cmd splits unquoted `;` `,` `=` into separate `.bat` arguments and Python's
 `subprocess` quotes only on whitespace. The observed symptom is
 `Parsing setting key=value 'X' failed [err:7155]`, the flag silently never applying, and
 the parse error landing in the errors marker and aborting the workflow.
-[VERIFIED: NA167 #15 / B5, 2026-07-23] See `01-cli-fundamentals.md` for the `key:value`
+[VERIFIED: bug B5, 2026-07-23] See `01-cli-fundamentals.md` for the `key:value`
 convention this repo uses to cross that boundary.
 
 ### 6.7 Selection-related prior commands
@@ -840,45 +786,40 @@ pipeline. [OPEN — Q12]
 `appGroupCalibrationByExif` (bool, default `false`) groups camera parameters automatically
 from EXIF at import. [OFFICIAL: tutorials/setkeyvaluetable, appbasics/appsettings]
 
-For the rig this repo drives, **neither setting is correct**:
+For the earlier four-camera rig, **neither setting was correct**:
 
-- The WCA rendered JPGs are **EXIF-identical across physical cameras**: `Make="Z CAM"`,
+- Its rendered JPGs were **EXIF-identical across physical cameras**: `Make="Z CAM"`,
   `Model="E2-F6"`, matching exposure data, **no focal length tag and no lens tag**,
-  4244×2827, Lightroom-rendered from a full-frame sensor. RealityScan cannot tell the
+  4244×2827, Lightroom-rendered from a full-frame sensor. RealityScan cannot tell such
   cameras apart from EXIF at all.
-  [VERIFIED-by-inspection: docs/settings-evaluation-2026-07 §1, 2026-07-23]
+  [VERIFIED-by-inspection: project test records, 2026-07-23]
 - Enabled, `appGroupCalibrationByExif=true` would collapse two cameras with different
   lenses (fisheye 14 mm and rectilinear 17 mm) into **one** calibration group.
 - Left `false`, images calibrate without any grouping — every camera self-calibrates
   independently, which is weak on low-texture underwater imagery.
 
 **Per-image XMP calibration sidecars are therefore the only mechanism that can separate
-EXIF-identical cameras. One group per PHYSICAL camera, never per lens type** — Port and
-Starboard share a lens *spec* but are different units with different real intrinsics.
-[VERIFIED: docs/settings-evaluation-2026-07 §1–§2]
+EXIF-identical cameras. One group per PHYSICAL camera, never per lens type** — two
+cameras sharing a lens *spec* are still different units with different real intrinsics.
+[VERIFIED: project test records, 2026-07]
 
-### 7.3 The rig table this repo encodes
+### 7.3 The rig table of the earlier four-camera datasets
 
-`modules/camera_registry.py` is the single source of truth. Groups, priors and focals are
-confirmed 2026-07-23/25.
+The evidence in this section was gathered on an earlier four-camera rig. The repository now
+encodes only the two ILX-LR1 cameras (`modules/cameras.json`; see
+`13-camera-rigs-priors-and-orientation.md` §10). The earlier rig's calibration table:
 
-| Physical camera | Filename families | Optics | CalibrationGroup | LensGroup | Prior | FocalLength35mm | model |
-|---|---|---|---|---|---|---|---|
-| Zeuss | `zeuss` / `herc` (delimiter-bounded token) | rectilinear 23 mm FF | `1` | `1` | Approximate | `23.0` | `brown3` |
-| Port | `cammid*`, WCA `P###C*` | fisheye 14 mm FF | `2` | `2` | Approximate | `16.0` | `division` |
-| Cinema | `camlower*`, WCA `C###C*` | rectilinear 17 mm FF | `3` | `3` | Approximate | `16.0` | `brown3` |
-| Starboard | `camupper*`, WCA `S###C*` | fisheye 14 mm FF | `4` | `4` | Approximate | `16.0` | `division` |
+| Physical camera | Optics | CalibrationGroup | LensGroup | Prior | FocalLength35mm | model |
+|---|---|---|---|---|---|---|
+| camera 1 | rectilinear 23 mm FF | `1` | `1` | Approximate | `23.0` | `brown3` |
+| camera 2 | fisheye 14 mm FF | `2` | `2` | Approximate | `16.0` | `division` |
+| camera 3 | rectilinear 17 mm FF | `3` | `3` | Approximate | `16.0` | `brown3` |
+| camera 4 | fisheye 14 mm FF | `4` | `4` | Approximate | `16.0` | `division` |
 
-Matching is most-specific-first: anchored WCA prefix `^([pcs])\d+c`, then anchored legacy
-prefix, then a delimiter-bounded `zeuss|herc` token. The delimiter bounding exists because
-an earlier unanchored `'herc' in name` test ran first and would beat an anchored WCA
-prefix. [VERIFIED-by-inspection: modules/camera_registry.py]
-
-Mount geometry (pitch offsets, lever arms) is deliberately **not** in this table — the
-same physical Cinema unit sits 10° down under legacy `camlower` names and 45° down under
-WCA names, so geometry keys off the *family*, not the camera. Keying mount geometry off
-the camera would silently change every legacy dataset by tens of degrees.
-[VERIFIED-as-design: modules/camera_registry.py]
+Mount geometry (pitch offsets, lever arms) was deliberately **not** in that table — the same
+physical camera sat at different pitch under two filename conventions, so geometry keyed off
+the filename *family*, not the camera. The current registry keeps that split
+(`families[].mount` in `modules/cameras.json`). [VERIFIED-as-design: modules/camera_registry.py]
 
 ### 7.4 Solved intrinsics — the two cameras do separate
 
@@ -888,13 +829,13 @@ design), the solve separated them by 5.6 % with interquartile ranges of about ±
 
 | camera | records | focal 35mm-eq (median) | IQR | division k1 | k1 IQR | principal point | skew | aspect |
 |---|---:|---:|---|---:|---|---|---|---|
-| cinema (group 3) | 2,558 | **16.374** | 16.302–16.476 | **−0.0378** | −0.0415…−0.0336 | (−0.0071, −0.0031) | 0 | 1 |
-| port (group 2) | 2,492 | **15.499** | 15.435–15.574 | **−0.3875** | −0.3933…−0.3832 | (+0.0027, +0.0056) | 0 | 1 |
+| camera 3, rectilinear (group 3) | 2,558 | **16.374** | 16.302–16.476 | **−0.0378** | −0.0415…−0.0336 | (−0.0071, −0.0031) | 0 | 1 |
+| camera 2, fisheye (group 2) | 2,492 | **15.499** | 15.435–15.574 | **−0.3875** | −0.3933…−0.3832 | (+0.0027, +0.0056) | 0 | 1 |
 
-[VERIFIED: FINDINGS 2026-07-26, parsed from the PD-6 identity harvest]
+[VERIFIED: project testing 2026-07-26, parsed from the PD-6 identity harvest]
 
-The order-of-magnitude k1 gap is the fisheye declaring itself. The findings log reads this
-as "independent confirmation that the sidecar grouping works, not just that it is
+The order-of-magnitude k1 gap is the fisheye declaring itself. The project's test notes
+read this as "independent confirmation that the sidecar grouping works, not just that it is
 written". **Read the caveat in §8 before treating it that way** — an equally consistent
 explanation is that each image self-calibrated independently and physics did the
 separating. The discriminating measurement is the *within-camera spread*, not the
@@ -904,9 +845,9 @@ if anything, mild evidence **against** the groups having been honoured. Nobody h
 controlled cell. [INFERRED] [OPEN — Q13]
 
 Exported pose XMPs from that run carry `xcr:CalibrationGroup="-1"` and
-`xcr:DistortionGroup="-1"` **alongside** `Camera:CalibrationGroup="3"`. The findings log
-records the `-1` as "an export artifact, not a lost grouping"; that interpretation is
-itself untested. [VERIFIED-as-observation: FINDINGS 2026-07-26] [UNDOCUMENTED]
+`xcr:DistortionGroup="-1"` **alongside** `Camera:CalibrationGroup="3"`. The test notes
+record the `-1` as "an export artifact, not a lost grouping"; that interpretation is
+itself untested. [VERIFIED-as-observation: project testing 2026-07-26] [UNDOCUMENTED]
 
 ### 7.5 `sfmDistortionModel` is GLOBAL and all-or-nothing
 
@@ -917,15 +858,15 @@ itself untested. [VERIFIED-as-observation: FINDINGS 2026-07-26] [UNDOCUMENTED]
   global setting lives in Alignment Settings → Advanced.
   [OFFICIAL: appbasics/settings_distortion_models, appbasics/camerasettings_priors]
 - **Observed, twice, in both directions:**
-  - Under global `sfmDistortionModel=Brown3`, **every** exported Port (fisheye) XMP read
+  - Under global `sfmDistortionModel=Brown3`, **every** exported fisheye-camera XMP read
     `xcr:DistortionModel="brown3"` despite a `division` sidecar declaration — recorded at
     the time as the prime residuals suspect.
-    [VERIFIED: PRIORS_DISTORTION_TEST_PLAN item 3, 2026-07-25]
-  - Under global `sfmDistortionModel=Division`, **all 2,558** cinema pose XMPs from PD-6
-    came back `xcr:DistortionModel="division"` — identical to the 2,492 port records —
-    despite the cinema sidecars declaring `brown3`.
-    [VERIFIED: FINDINGS 2026-07-26, aggregated over 5,050 harvest records; test cell PD-2]
-  [CONTRADICTED: docs/settings-evaluation-2026-07 §3 asserted "per-image XMP overrides the
+    [VERIFIED: project test records, 2026-07-25]
+  - Under global `sfmDistortionModel=Division`, **all 2,558** rectilinear-camera pose XMPs
+    from PD-6 came back `xcr:DistortionModel="division"` — identical to the 2,492
+    fisheye-camera records — despite the rectilinear sidecars declaring `brown3`.
+    [VERIFIED: project testing 2026-07-26, aggregated over 5,050 harvest records; test cell PD-2]
+  [CONTRADICTED: an earlier project test record asserted "per-image XMP overrides the
   global key" / observed: the global key owns the model, in both directions]
 
 **Scope caveat that must travel with this finding.** What was declared per image in both
@@ -943,25 +884,30 @@ calibration group. Choosing that one model is a global decision. Supplying measu
 coefficients remains per-group and therefore still useful. If Q13 shows the documented
 attribute form *is* honoured, revisit this.
 
-Measured, on this rig: `Division` globally did **not** degrade the rectilinear cameras.
+Measured on the earlier four-camera rig: `Division` globally did **not** degrade the
+rectilinear cameras.
 On Z3 (124 images) Division gave the best registration of the cell series (112/124 vs 102
 baseline) and both cameras solved division. On Z1 (4,540) Division produced 4,394/4,540 in
 **two** components at hull scale 0.981, against a Brown3 baseline's 4,405 in **three**
 components at hull scale 0.175. [VERIFIED: PD-1, PD-6, 2026-07-25] PD-6's attribution is
 not clean — it changed three things at once (Brown3→Division, accuracy columns importing
 for the first time, orientation priors removed) — so do not attribute the scale repair to
-Division alone. [VERIFIED-as-caveat: FINDINGS 2026-07-26]
+Division alone. [VERIFIED-as-caveat: project testing 2026-07-26]
 
 Epic's own strategy note is compatible: start with the simpler Division model, then switch
 to Brown and re-align to optimise. [OFFICIAL: appbasics/settings_distortion_models, "TIP"]
 
 ---
 
-## 8. The production calibration sidecar in this repo — and the doubt about it
+## 8. The element-form calibration sidecar — and the doubt about it
 
-### 8.1 What is actually written
+This section concerns the element-form sidecar written on the earlier four-camera datasets. The
+repository now writes the documented `xcr` 1.1 attribute form (`modules/calibration_sidecars.py`,
+`sidecar_xmp`; `13-camera-rigs-priors-and-orientation.md` §10.4).
 
-`modules/camera_registry.calibration_xmp()` produces, per image:
+### 8.1 What was written
+
+The earlier `calibration_xmp()` produced, per image:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -980,17 +926,17 @@ to Brown and re-align to optimise. [OFFICIAL: appbasics/settings_distortion_mode
 ```
 
 It carries **no pose entries by design** — exported pose sidecars auto-import as priors
-(§10), and pose priors measurably reduced registration on NA167 (§11).
+(§10), and pose priors measurably reduced registration on dataset C (§11).
 
 ### 8.2 Five ways this diverges from the documented schema
 
 | # | Divergence | Evidence |
 |---|---|---|
 | 1 | **Element form**, not attribute form, for everything | Epic's sample uses attributes on `rdf:Description` for all fields except `Position` [OFFICIAL: tools/xmpalign] |
-| 2 | Prefix `Camera:` bound to `http://www.capturingreality.com/ns/camera/1.0/` | Neither the prefix `Camera:` nor the URI `.../ns/camera/1.0/` occurs anywhere in `RealityScan.exe` [UNDOCUMENTED: binary string pool] |
+| 2 | Prefix `Camera:` bound to `http://www.capturingreality.com/ns/camera/1.0/` | Neither the prefix `Camera:` nor the URI `.../ns/camera/1.0/` occurs anywhere in `RealityScan.exe` [UNDOCUMENTED: binary strings] |
 | 3 | `xcr` bound to `.../ns/xcr/**1.0/**` | The only `xcr` URI in the binary is `.../ns/xcr/**1.1#**` [UNDOCUMENTED: binary] |
 | 4 | Names `LensDistortionGroup` / `LensDistortionPrior` | Neither string occurs in the binary in any form; the schema's names are `DistortionGroup` and (probably) `CalibrationPrior`-style `…Prior` tokens [UNDOCUMENTED: binary] |
-| 5 | Value `Approximate` for the prior fields | `approximate` (lowercase) occurs 0 times in the binary; `Approximate` once, as a UI label. The XMP prior token set is `{initial, exact, locked}` [UNDOCUMENTED: binary] |
+| 5 | Value `Approximate` for the prior fields | `Approximate` is present only as a GUI caption. The XMP prior token set is `{initial, exact, locked}` [UNDOCUMENTED: binary] |
 
 Under any conforming XMP/RDF parser, divergences 2–5 mean the `Camera:*` elements resolve
 to properties RealityScan has no name for. Under divergence 3, even `xcr:FocalLength35mm`
@@ -1001,9 +947,9 @@ resolves to a *different* property than `.../xcr/1.1#FocalLength35mm`.
 shares the app's XML diagnostics, a single align over one image with a repo-form sidecar
 would leave those lines in `%LOCALAPPDATA%\Temp\RealityScan.log` — and their absence, with
 a `Camera:CalibrationGroup` element present, would be equally informative. Snapshot the log
-immediately; the next instance boot truncates it (NA167 B6).
-[UNDOCUMENTED: RealityScan.exe string pool] [INFERRED — the strings were found in the
-project-XML parser's neighbourhood, not a distinct XMP one]
+immediately; the next instance boot truncates it (bug B6).
+[UNDOCUMENTED: binary strings] [INFERRED — whether the XMP reader shares those
+diagnostics is unknown]
 
 ### 8.3 But something is being read — the counter-evidence
 
@@ -1012,7 +958,7 @@ Two measured results say the sidecars are not inert:
 1. **Fragmentation.** A fresh end-to-end run with calibration sidecars gave zone_1
    **3 components at 4,405/4,540 (97.0 %)** against the pre-sidecar production run's
    **9 components at 4,392 (96.7 %)** on the same imagery and the same box.
-   [VERIFIED: FINDINGS 2026-07-24; fresh-run record 2026-07-24]
+   [VERIFIED: project testing 2026-07-24; fresh-run record 2026-07-24]
 2. **Sidecar loss is treated as a defect.** When the identity harvest stripped 796 of
    4,540 sidecars (§9.6), the pipeline gained a repair function rather than shrugging.
 
@@ -1022,12 +968,12 @@ Both are weaker than they look:
   boundaries differed (the bow landed inside zone_1 "this time"), and *alignment
   fragmentation is independently established as strongly nondeterministic* — the same
   4,540 images with identical settings and inputs produced 2 components / 4,391 cameras in
-  one run and 9 components / 4,392 in another. [VERIFIED: FINDINGS 2026-07-24]
+  one run and 9 components / 4,392 in another. [VERIFIED: project testing 2026-07-24]
 - The 5.6 % focal separation in §7.4 is fully explained by physics alone: a fisheye and a
   rectilinear lens self-calibrating independently *should* separate, with or without
   groups.
 - `Camera:*` tags appearing "echoed back in exports" was read as evidence the tags are
-  honoured [VERIFIED-as-observation: PRIORS_DISTORTION_TEST_PLAN item 4, 2026-07-25]. It
+  honoured [VERIFIED-as-observation: project test records, 2026-07-25]. It
   is not. The XMP exporter has a *"Merge with existing XMP files"* option
   [OFFICIAL: tools/xmpalign], and **unrecognised content surviving an export is exactly
   what a merging writer does** — a byte-preserving passthrough proves nothing about
@@ -1035,7 +981,7 @@ Both are weaker than they look:
   (`xmpMerge=true`) is passed to **nothing** (§9.7), so the merge state in force was the
   unpinned instance default. The observed file — `xcr:CalibrationGroup="-1"` written by
   RealityScan **alongside** a surviving `Camera:CalibrationGroup="3"` written by this repo
-  [VERIFIED: FINDINGS 2026-07-26] — is itself the evidence that the default preserves
+  [VERIFIED: project testing 2026-07-26] — is itself the evidence that the default preserves
   pre-existing XMP content. [INFERRED, from that co-presence]
 
 ### 8.4 Standing conclusion
@@ -1069,14 +1015,14 @@ from Epic's sample, where it is filler. Written for real under
 is the same trap as the app's own "No lens distortion + Approximate" default (§4.2).
 **Omit the attribute entirely unless you have measured coefficients**, and measure them
 under the distortion model that will actually be in force (a Division λ is not a Brown3
-k1). [VERIFIED-as-principle: FINDINGS 2026-07-25] (2) Per §7.5, `xcr:DistortionModel` may
+k1). [VERIFIED-as-principle: project testing 2026-07-25] (2) Per §7.5, `xcr:DistortionModel` may
 be ignored in favour of the global `sfmDistortionModel`; set the global key to match rather
 than relying on this attribute.
 
 **A completely independent, doc-sanctioned alternative that avoids the whole question:**
 put the intrinsics in `sensorsdb.xml` instead (§13) — but that only works if the cameras
-are distinguishable by `tiff:Model` / `aux:Lens`, which this rig's EXIF-identical JPGs are
-not. The other alternative is `-editInputSelection` with `inpCalibrationGroup` /
+are distinguishable by `tiff:Model` / `aux:Lens`, which the earlier rig's EXIF-identical
+JPGs were not. The other alternative is `-editInputSelection` with `inpCalibrationGroup` /
 `inpLensGroup` / `inpFocal` / `inpDistortionModel` after import (§6.6), which is fully
 documented but requires per-image selection and therefore pays the `-selectImage`
 literal-path cost.
@@ -1089,7 +1035,7 @@ literal-path cost.
 
 | Command | Scope | Sidecar naming | Source |
 |---|---|---|---|
-| `-exportXMP [params.xml]` | camera metadata of components created in **the last alignment**; gated by `-setMinComponentSize` | **stem-named** `<stem>.xmp` | [OFFICIAL: appbasics/allcommands] + [VERIFIED: FINDINGS 2026-07-23] |
+| `-exportXMP [params.xml]` | camera metadata of components created in **the last alignment**; gated by `-setMinComponentSize` | **stem-named** `<stem>.xmp` | [OFFICIAL: appbasics/allcommands] + [VERIFIED: project testing 2026-07-23] |
 | `-exportXMPForSelectedComponent` | camera metadata of the **selected component**, using current settings (no params argument) | **ordinal** `00000.xmp`, `00001.xmp`, … | [OFFICIAL: appbasics/allcommands] + [CONTRADICTED/UNDOCUMENTED], see §9.3 |
 
 Both write **next to the respective images**, wherever those live — the Help states this
@@ -1109,13 +1055,8 @@ Process ids, for `-writeProgress` / `appProcessExecCmd` filtering:
 An earlier hypothesis in this repo held that stem naming required a live aligning session.
 That was **wrong** and is superseded. Four consistent datapoints establish:
 `-exportXMP` → stems; `-exportXMPForSelectedComponent` → ordinals, in every observed
-context. [SUPERSEDED: the session-based hypothesis] [VERIFIED: FINDINGS 2026-07-23,
-NA167 B10 final form]
-
-Note the in-repo tension: the NA167 notes §1 still describes
-`-exportXMPForSelectedComponent` as writing `<stem>.xmp`, while the same file's **B10**
-entry and FINDINGS record ordinals. The B10/FINDINGS reading is the current one and
-the workflows are built on it. [CONTRADICTED-in-repo: NA167 notes §1 vs B10]
+context. [SUPERSEDED: the session-based hypothesis] [VERIFIED: project testing 2026-07-23,
+bug B10 final form]
 
 This is why per-component membership is derived by **successive difference**: each lap
 `-exportXMP` writes stems for all remaining components, the harvest moves them to
@@ -1125,28 +1066,28 @@ This is why per-component membership is derived by **successive difference**: ea
 
 Worked example, zone_1: lap sidecar counts `2619 / 985 / 593 / 248 / 133 / 64 / 0` →
 successive differences `1634 / 392 / 345 / 115 / 69 / 64`, reproducing all six component
-sizes to the camera. [VERIFIED: FINDINGS 2026-07-27]
+sizes to the camera. [VERIFIED: project testing 2026-07-27]
 
 **Directory semantics differ between scene types:** in an ALIGN scene, `identity_r<K>` is
 **cumulative** (lap K holds laps K..end); in a MERGE scene, `r<K>` is component K alone.
 Component K's own sidecars in an align scene are the stem difference `r_K` minus `r_{K+1}`.
-[VERIFIED: FINDINGS 2026-07-28]
+[VERIFIED: project testing 2026-07-28]
 
 Ordinal sidecars are **inert as priors** (no image has an ordinal stem), which is why
-`camera_registry.sanitize_and_census` deletes them quietly rather than restoring them.
+`calibration_sidecars.sanitize_and_census` deletes them quietly rather than restoring them.
 [VERIFIED: B10, 2026-07-23]
 
 ### 9.3 Ordinal naming and imported components
 
 `-exportXMPForSelectedComponent` on a component built from `-importComponent`-ed
 `.rsalign` files writes `00000.xmp`, `00001.xmp`, … beside the images.
-[VERIFIED: NA167 B10, NA156 smoke merge 2026-07-23] The count is still a valid
+[VERIFIED: bug B10, dataset B smoke merge 2026-07-23] The count is still a valid
 registration census; **per-camera identity is only available from `-exportXMP` in the
 original aligned scene.**
 
 Practical consequence for the scale oracle: fused components come back UNMEASURED under a
 stem-pairing oracle because there is nothing to join on. The correspondence-free quantile
-oracle exists specifically to work around this. [VERIFIED: FINDINGS 2026-07-28]
+oracle exists specifically to work around this. [VERIFIED: project testing 2026-07-28]
 
 ### 9.4 Two preconditions that silently produce nothing
 
@@ -1154,15 +1095,15 @@ oracle exists specifically to work around this. [VERIFIED: FINDINGS 2026-07-28]
 selected**, and selection-driven exports under `-silent` then export **nothing** — the
 "Export Selection" dialog is auto-answered. The signature is a suspiciously fast
 completion: **0.057 s instead of 20.5 s**. `-deselectAllImages` before every export step is
-mandatory. [VERIFIED: FINDINGS 2026-07-23] [UNDOCUMENTED: the Help does not warn that
+mandatory. [VERIFIED: project testing 2026-07-23] [UNDOCUMENTED: the Help does not warn that
 import leaves a selection]
 
 **(b) Set `-setMinComponentSize 1`.** The default is **5**, and components below the
 threshold are silently excluded from `-exportXMP` **and** from `-exportLatestComponents`
 **and** from selection. [OFFICIAL: appbasics/allcommands for the gate and the default]
-[VERIFIED: status log 2026-07-21] The command is officially **deprecated** in 2.2 — the app
+[VERIFIED: project testing 2026-07-21] The command is officially **deprecated** in 2.2 — the app
 log carries "will be removed in the next release" — but remains required.
-[VERIFIED: NA167 #22 / B11, 2026-07-24]
+[VERIFIED: bug B11, 2026-07-24]
 
 ```bat
 call :run -deselectAllImages          || goto :fail
@@ -1181,14 +1122,14 @@ Measured: four baseline components on real paths harvested `identity_r0` = 267 f
 **zero**, silently. The instance log read "Exporting Registration completed in 8.758
 seconds" and a sweep of the entire drive found zero `.xmp` written and zero sidecars
 carrying `xcr:Position` — the exact string the harvest filters on.
-[VERIFIED: FINDINGS 2026-07-27, "RESOLVED BY PROBE"] [UNDOCUMENTED: no Epic coverage of
+[VERIFIED: project testing 2026-07-27, by probe] [UNDOCUMENTED: no Epic coverage of
 reparse-point behaviour]
 
 Cost of the misdiagnosis, exactly: **155 min** of GPU work discarded on the first run
 (blamed on the read-side junction trap, §1.1), then **157 min** more across **18 attempts**
 (cluster_0 ×3, cluster_1 ×15) on a re-run that cleared only the read side — the components
 were still exported from junction paths, so the write side was never tested until the
-baseline probe. [VERIFIED: FINDINGS 2026-07-27]
+baseline probe. [VERIFIED: project testing 2026-07-27]
 
 Ruled out by measurement: "an imported component carries no images" — the merge scene
 reported `Added 1407 images` / `1217` / `2241`.
@@ -1197,17 +1138,17 @@ The fix that was verified: replace per-zone junctions with **real directories of
 hard-linked `.jpg`** (9,835 files, 35.8 GB logical, 0.05 GB actual) plus **copied** `.xmp`
 and flight logs. Sidecars are deliberately not hard-linked so a v2 write cannot corrupt the
 baseline's. No re-align was needed — the components were never the problem, only the paths
-baked into them. [VERIFIED: FINDINGS 2026-07-28]
+baked into them. [VERIFIED: project testing 2026-07-28]
 
 There is a *separate*, also-true junction fact that was mistaken for the cause for 157
 minutes: PowerShell 5.1's `Get-ChildItem -Recurse` does not descend into junction
 *children* (0 vs 9,835 `.xmp` on the same tree via its real path), while Python's
 `os.walk` crosses junctions in both directions. That is a **read**-side trap; the export
-failure was on the **write** side. [SUPERSEDED-as-cause; VERIFIED-as-fact: FINDINGS 2026-07-27]
+failure was on the **write** side. [SUPERSEDED-as-cause; VERIFIED-as-fact: project testing 2026-07-27]
 
 **Rule:** never hand a RealityScan workflow — or a harvest — a path whose components are
 reparse points. An empty harvest beside a non-empty component export must abort the run as
-an instrument failure, not be scored as "nothing fused". [VERIFIED-as-fix: FINDINGS 2026-07-28]
+an instrument failure, not be scored as "nothing fused". [VERIFIED-as-fix: project testing 2026-07-28]
 
 ### 9.6 The harvest strips calibration sidecars — and the required repair
 
@@ -1223,18 +1164,19 @@ had no sidecar** — the entire bow component (665/665), 123 of c0, and 8 unregi
 images. Any re-align of an already-harvested zone then silently runs with a partially
 ungrouped camera set. **Test cells PD-4 and PD-4a both re-aligned zone_1 in that state, so
 their "collapse" results (669 and 782 of 4,540) are CONFOUNDED.**
-[VERIFIED: FINDINGS 2026-07-25]
+[VERIFIED: project testing 2026-07-25]
 
-The repair is `camera_registry.ensure_calibration_sidecars(image_root)`, called after every
-zone align: it walks the tree and recreates a calibration-only XMP for every
-`.jpg/.jpeg/.png/.heif` that has none, returning `(created, unknown_camera_skipped)`.
+The repair is `calibration_sidecars.ensure_calibration_sidecars(image_root, modes)`, called
+after every zone align: it walks the tree and writes the decided calibration sidecar for
+every image of a camera whose mode is `prior` or `groups` that has none, returning
+`(created, images_of_no_known_camera)`.
 
 Two further hazards in that one PowerShell line, both recorded:
 
 - PowerShell 5.1 exits 0 on non-terminating pipeline errors, so `if errorlevel 1` cannot
   see a partial move — two locked sidecars are a silent −2.
 - A flat `-Force` move **collapses same-stem ordinal sidecars arriving from different
-  folders**. [VERIFIED: FINDINGS 2026-07-27]
+  folders**. [VERIFIED: project testing 2026-07-27]
 
 Together these mean a small camera deficit after a fusion (e.g. 3,740 → 3,738) is **not
 distinguishable from a harvest artifact** on the current instrument. [OPEN — Q14]
@@ -1271,22 +1213,10 @@ references and no target, and finds zero occurrences of `xmpMerge`, `xmpCamera`,
 [CONTRADICTED: the Help promises a worked XMP-export-settings example / no such section
 ships, verified by grep 2026-08-04]
 
-Everything below therefore comes from the binary. Two adjacent UTF-16LE runs exist — a
-**key** run and a **label** run:
-
-```
-keys:    xmpRig  xmpCalib  xmpEnabledOnly  xmpMerge  xmpFlags  xmpCalibGroups
-         xmpImageList  xmpExGps  xmpPrecision  xmpPose        [+ xmpCamera, xmpComponentMode, xmpPath]
-labels:  CameraExportMode  xmpCamera  EnabledCamerasOnly  MergeWithExistingFiles
-         precision_int  Precision  pose_int  Pose  ComponentMode  xmpComponentMode
-         Calibration  component_mode_int  Rig  CalibrationGroups  ReplaceGPSExif
-         UseConfigFlags  .xmp  .bak
-```
-
-[UNDOCUMENTED: RealityScan.exe string pool, 2026-08-04] Only `CameraExportMode` ↔
-`xmpCamera` and `ComponentMode` ↔ `xmpComponentMode` are adjacent; the rest of the
-key↔label pairing below is by name correspondence and by matching the label set against
-the dialog fields the Help does document [OFFICIAL: tools/xmpalign], i.e. [INFERRED]:
+The key names below are therefore the GUI-exported params file's plus further `xmp*` key
+strings present in the binary [UNDOCUMENTED: binary strings, 2026-08-04]; the pairing with
+the dialog fields the Help documents [OFFICIAL: tools/xmpalign] is by name correspondence,
+i.e. [INFERRED]:
 
 | Key | Internal label | Export dialog field | Repo value |
 |---|---|---|---|
@@ -1310,11 +1240,6 @@ export — which, re-imported, would refuse any incremental align (§6.4). A `0`
 with a fourth "no pose" state is equally possible. The mapping is not established.
 [OPEN — Q15]
 
-One further, low-confidence read of the same pool: `.xmp` and `.bak` are adjacent string
-constants in the XMP-export label run, which would be consistent with the writer keeping a
-`.bak` of a sidecar it overwrites. No `.bak` file has ever been observed beside an image in
-this pipeline. [INFERRED, weak]
-
 ### 9.8 The registration-export route
 
 The other way to produce XMP is the Registration export: set the save type to
@@ -1325,7 +1250,7 @@ The other way to produce XMP is the Registration export: set the save type to
 The CLI equivalent is `-exportRegistration <fileName> [params.xml]`.
 
 **`-exportRegistration` without a params XML BLOCKS FOREVER headless.**
-[VERIFIED: FINDINGS 2026-07-21] The only way to obtain a valid params file is to export it
+[VERIFIED: project testing 2026-07-21] The only way to obtain a valid params file is to export it
 once from that tool's GUI dialog; no such file exists in this repo, so the command is
 unusable here. See `09-xml-parameter-files.md`.
 
@@ -1337,36 +1262,21 @@ rotate / scale, normal transformation). [OFFICIAL: tools/exportregistration]
 
 **Only registered cameras get pose entries.** Counting pose-bearing sidecars is therefore a
 reliable registration census and is this pipeline's primary oracle.
-[VERIFIED: NA167 notes §1]
+[VERIFIED: earlier multi-camera dataset, 2026-07]
 
 The filter is the literal string `xcr:Position` — which is exactly why the
 element-vs-attribute form matters (§2.3) and why a component `.rsalign` (opaque `TBSM`
 binary, ~0.7 GB per ~1.5k cameras, no readable camera list) cannot substitute.
-[VERIFIED: NA167 notes §1]
+[VERIFIED: earlier multi-camera dataset, 2026-07]
 
-Census implementation, returning `(pose_count, restored, removed)`:
-
-```python
-# modules/camera_registry.py — sanitize_and_census(image_root)
-if 'xcr:Position' not in content:
-    continue                        # already calibration-only; NOT counted
-pose_count += 1
-camera = identify(filename)
-if camera is not None:
-    write(calibration_xmp(camera))  # restore calibration-only content
-    restored += 1
-    continue
-os.remove(path)                     # unrecognised camera: the pose file goes
-if os.path.splitext(filename)[0].isdigit():
-    continue                        # ordinal sidecar - expected, warn about nothing
-removed += 1                        # anything else is a real surprise; log it
-```
-
-Note the third counter's meaning: **every** unrecognised-camera sidecar is deleted, but
-only *non-ordinal* ones increment `removed` and trigger the warning — an ordinal stem is
+Census implementation: `calibration_sidecars.sanitize_and_census(image_root, modes)`
+returns `(pose_count, restored, removed)`. It counts every sidecar containing
+`xcr:Position`; rewrites it to the decided calibration sidecar when its camera's mode is
+`prior` or `groups`, and deletes it otherwise. Only a deleted sidecar of **no known camera**
+with a *non-ordinal* name increments `removed` and triggers the warning — an ordinal stem is
 the expected shape after `-exportXMPForSelectedComponent` (§9.3), so it is deleted
 silently. A non-zero `removed` means a real image whose filename `camera_registry.identify`
-could not classify. [VERIFIED-by-inspection: modules/camera_registry.py]
+could not classify. [VERIFIED-by-inspection: modules/calibration_sidecars.py]
 
 **Read the census BEFORE sanitising** — sanitising destroys the evidence.
 `modules/component_manifest.py` documents this ordering constraint explicitly.
@@ -1378,7 +1288,7 @@ could not classify. [VERIFIED-by-inspection: modules/camera_registry.py]
 ### 10.1 The trap
 
 `-add` and `-addFolder` **auto-import any `<stem>.xmp` sitting next to an image**, and a
-pose-bearing sidecar silently becomes a pose prior. [VERIFIED: NA167 B7, 2026-07-22]
+pose-bearing sidecar silently becomes a pose prior. [VERIFIED: bug B7, 2026-07-22]
 Because RealityScan's own exports land beside the images (§9.1), the default lifecycle is:
 
 ```
@@ -1402,19 +1312,20 @@ in an automated multi-run pipeline is nearly always.
 The strength of the inherited prior is whatever `xcr:PosePrior` the export wrote, which is
 governed by the unpinned `xmpCamera` export mode (§9.7). This repo's B7 entry records the
 inherited priors as **exact-pose** priors; the actual token in the exported files has never
-been read. [VERIFIED-as-effect: NA167 B7] [OPEN — Q16]
+been read. [VERIFIED-as-effect: bug B7] [OPEN — Q16]
 
 ### 10.2 The cleaning protocol in force
 
 After every census, the image tree is restored to **calibration-only** content:
 
-1. `sanitize_and_census(image_root)` — walk every `.xmp`; skip files without
+1. `sanitize_and_census(image_root, modes)` — walk every `.xmp`; skip files without
    `xcr:Position`; for pose-bearing files, count them, then either rewrite the file with
-   `calibration_xmp(camera)` (recognised camera) or delete it (unrecognised camera, e.g.
-   ordinal sidecars). Returns `(pose_count, restored, removed)`.
-2. `ensure_calibration_sidecars(image_root)` — recreate a calibration-only XMP for every
-   image left without one, because the harvest **moved** files out of the tree rather than
-   rewriting them (§9.6). Returns `(created, unknown_camera_skipped)`.
+   `sidecar_xmp(camera, mode)` (camera with a sidecar mode) or delete it (any other camera,
+   or an unrecognised one such as an ordinal sidecar). Returns `(pose_count, restored,
+   removed)`.
+2. `ensure_calibration_sidecars(image_root, modes)` — write the decided calibration sidecar
+   for every image left without one, because the harvest **moved** files out of the tree
+   rather than rewriting them (§9.6). Returns `(created, images_of_no_known_camera)`.
 
 Invariants worth asserting in any pipeline that does this:
 
@@ -1422,18 +1333,18 @@ Invariants worth asserting in any pipeline that does this:
 |---|---|
 | `count(*.xmp) == count(images)` after step 2 | catches both the `image.jpg.xmp` bug class and harvest stripping |
 | `0 == count(files containing 'xcr:Position')` after step 1 | proves no pose prior survives into the next run |
-| harvest moved > 0 sidecars whenever the exported component was non-empty | an empty harvest is otherwise indistinguishable from a legitimately empty scene [VERIFIED-as-fix: FINDINGS 2026-07-28] |
+| harvest moved > 0 sidecars whenever the exported component was non-empty | an empty harvest is otherwise indistinguishable from a legitimately empty scene [VERIFIED-as-fix: project testing 2026-07-28] |
 
 A verified end-to-end example of the whole chain working (smoke `mini_a`): align → save →
 destructive harvest loop → quit-without-saving produced `.rsalign` + manifest (118 members
 by real basename, UTM bbox), census from manifests equal to the original registration, and
-**zero pose sidecars left beside images**. [VERIFIED: FINDINGS 2026-07-23]
+**zero pose sidecars left beside images**. [VERIFIED: project testing 2026-07-23]
 
 ### 10.3 Why quit-without-saving is safe here
 
 `-quit` without saving leaves the `.rsproj` bundle **byte-stable** across load / delete /
 export cycles — hash-verified twice. That is what makes the destructive in-memory identity
-harvest safe. [VERIFIED: FINDINGS, cells U15/U16, 2026-07-23]
+harvest safe. [VERIFIED: project testing, cells U15/U16, 2026-07-23]
 
 ---
 
@@ -1441,18 +1352,17 @@ harvest safe. [VERIFIED: FINDINGS, cells U15/U16, 2026-07-23]
 
 ### 11.1 Priors are not automatically beneficial
 
-**96.3 % → 89.6 %** on Zeuss, zone_13, NA167. The A/B compared priors *absent* (because
-they had been written as `image.jpg.xmp` and were therefore never loaded — see §1.1)
-against priors *promoted* to the correct `<stem>.xmp` naming. Adding the priors **cost
-6.7 points of registration.** Sidecar generation became opt-in
-(`batch_xmp_priors`, default off) as a direct result.
-[VERIFIED: NA167 #4 / B7, 2026-07-22]
+**96.3 % → 89.6 %** on one camera, zone_13, dataset C. The A/B compared priors *absent*
+(because they had been written as `image.jpg.xmp` and were therefore never loaded — see
+§1.1) against priors *promoted* to the correct `<stem>.xmp` naming. Adding the priors
+**cost 6.7 points of registration.** Sidecar generation became opt-in as a direct result.
+[VERIFIED: bug B7, 2026-07-22]
 
 **The conditions matter and largely explain the result.** The writer of that era grouped
-`cammid` + `camupper` + `camlower` into one group at "12 mm fisheye", when `camlower` is
-in fact a **rectilinear 17 mm** camera. Wrong focal, wrong model, wrong grouping — a
+three cameras into one group at "12 mm fisheye", when one of them was in fact a
+**rectilinear 17 mm** camera. Wrong focal, wrong model, wrong grouping — a
 confidently-asserted lie is worse than silence.
-[VERIFIED: docs/settings-evaluation-2026-07 §2]
+[VERIFIED: project test records, 2026-07]
 [SUPERSEDED-in-scope: the corrected per-camera values reverse the calculus; validate per
 rig before trusting either direction]
 
@@ -1463,7 +1373,7 @@ shipping it, and treat "priors improve alignment" as a hypothesis per rig, not a
 
 With corrected per-camera groups and focals, sidecars at align time were associated with
 zone_1 going from **9 components at 4,392 (96.7 %)** to **3 components at 4,405/4,540
-(97.0 %)** — same imagery, same box. [VERIFIED: FINDINGS 2026-07-24] Attribution caveats
+(97.0 %)** — same imagery, same box. [VERIFIED: project testing 2026-07-24] Attribution caveats
 in §8.3.
 
 ### 11.3 Pose-prior effects (flight-log route)
@@ -1475,25 +1385,17 @@ on prior *content*:
 |---|---|---|
 | Configuration alone, no data change, rescued a zone | zone_2 **101/852 (11.9 %) → 812/852 (95.3 %)** with Division + orientation @15° + real accuracies | [VERIFIED: PD-2b, 2026-07-25] |
 | Over-tight position priors fragment and shrink scale | see the 2×2 in §6.5 | [VERIFIED: 2026-07-25] |
-| Removing orientation priors **destroyed** two zones | position-only re-align: zone_3 and zone_5 registered **nothing at all** — zero components after 12.7 and 32.4 minutes | [VERIFIED: status log 2026-07-27] |
-| Orientation-prior attribution is contaminated | Euler order and "Camera mount" are unpinned in `FlightLogParams.xml`; counts stand, attribution does not | [VERIFIED-as-flag: FINDINGS 2026-07-26] |
+| Removing orientation priors **destroyed** two zones | position-only re-align: zone_3 and zone_5 registered **nothing at all** — zero components after 12.7 and 32.4 minutes | [VERIFIED: project testing 2026-07-27] |
+| Orientation-prior attribution is contaminated | Euler order and "Camera mount" are unpinned in `FlightLogParams.xml`; counts stand, attribution does not | [VERIFIED-as-flag: project testing 2026-07-26] |
 
 **Unresolved tension between rows 1 and 2, stated rather than smoothed over.** PD-2b's
 zone_2 rescue ran at accuracies **1/1/0.1** — exactly the "tight" setting that fragmented
 the bow and pushed its scale to 0.886 in §6.5. Both results are real; each changed more
 than one thing (PD-2b also switched to Division and added orientation priors, the bow 2×2
-did not). The reconciliation the findings log offers is that the accuracy column should
+did not). The reconciliation the test notes offer is that the accuracy column should
 carry *end-to-end* per-image uncertainty, and that 1/1/0.1 is honest for one dataset and
 dishonest for another — but no cell isolates it. Do not read "tight priors are bad" as a
 law. [OPEN — attribution]
-
-### 11.4 A cross-engine echo worth knowing
-
-COLMAP on zone_9 **registered** 710 Zeuss frames but **triangulated zero points** from
-them. Two engines, two failure shapes, one physical camera family — treat Zeuss
-calibration and imagery as suspect.
-[VERIFIED-in-the-other-fact-base: COLMAP C-20260721-15/Q-07, recorded 2026-07-24; not
-reproduced in RealityScan]
 
 ---
 
@@ -1501,8 +1403,8 @@ reproduced in RealityScan]
 
 ### 12.1 Which metadata fields RealityScan actually consumes
 
-Extracted from the binary's XMP/EXIF property-name pool. These are the standard-namespace
-fields the application knows by name [UNDOCUMENTED: RealityScan.exe string pool]:
+Standard-namespace fields whose names are present in the binary — the fields the
+application knows by name [UNDOCUMENTED: binary strings]:
 
 | Namespace | Fields |
 |---|---|
@@ -1515,13 +1417,8 @@ fields the application knows by name [UNDOCUMENTED: RealityScan.exe string pool]
 lens model" the camera DB uses for per-lens-body entries (§13.4). The Help says a camera
 DB entry is unnecessary when the image "stores the 35mm equivalent focal length … (e.g.
 EXIF or XMP)" [OFFICIAL: appbasics/cameradb] but never names the tag; `FocalLengthIn35mmFilm`
-is the only 35 mm-equivalent field in the pool, so that is the one.
-[INFERRED, from the pool + the Help]
-
-Encoding split, for anyone re-deriving this: the `exif:`, `tiff:Make`, `tiff:Model` and
-`aux:` names are UTF-16LE; `tiff:Orientation` and all four `xmp:` names are single-byte
-ASCII. A scan of one encoding only will miss half the table.
-[UNDOCUMENTED: RealityScan.exe string pool, 2026-08-04]
+is the only 35 mm-equivalent field among them, so that is the one.
+[INFERRED, from the field list + the Help]
 
 ### 12.2 Focal-length resolution order
 
@@ -1536,9 +1433,9 @@ ASCII. A scan of one encoding only will miss half the table.
 4. If none of the above resolves, the 1Ds panel shows a **yellow exclamation mark** next to
    the image — "the system has incomplete camera information".
 
-For this rig, step 1–3 all fail: the WCA JPGs carry `Make`/`Model` and exposure data but
-**no focal length and no lens tag**, and the model string does not match any DB entry.
-[VERIFIED-by-inspection: docs/settings-evaluation-2026-07 §1]
+For the earlier four-camera rig, steps 1–3 all failed: its JPGs carried `Make`/`Model`
+and exposure data but **no focal length and no lens tag**, and the model string matched no
+DB entry. [VERIFIED-by-inspection: project test records, 2026-07]
 
 ### 12.3 GPS EXIF
 
@@ -1552,8 +1449,8 @@ For this rig, step 1–3 all fail: the WCA JPGs carry `Make`/`Model` and exposur
 In the shipped `sensorsdb.xml`, `GPSMode="ignore"` appears on **exactly 13** of the 785
 entries, all of them Apple iPhone models (`Apple iPhone 3GS`, `4`, `4s`, `4S`, `5`, `5s`,
 `5S`, `6s`, `6S`, `6s Plus`, `6S Plus`, `7 Plus`, `X`); `ignore` is the only value present
-in the shipped file, and it is also a standalone string in the DB parser's token run. The
-binary also contains the attribute name `GPSAccuracy`, which no shipped entry uses.
+in the shipped file. The binary also contains the attribute name `GPSAccuracy`, which no
+shipped entry uses.
 [VERIFIED-by-inspection of the shipped file + binary, 2026-08-04]
 [UNDOCUMENTED: `GPSAccuracy`]
 
@@ -1562,7 +1459,7 @@ control points, or directly to the camera using the camera priors, flight logs, 
 files". To use **EXIF GPS** as camera priors you must "enable the camera priors for
 georeferencing in the alignment settings … for the EXIF data to be used".
 [OFFICIAL: tutorials/georeferencing] That setting is `sfmEnableCameraPrior=true`.
-[VERIFIED: docs/settings-evaluation-2026-07 §4/§5]
+[VERIFIED: project test records, 2026-07]
 
 **On export, "Replace GPS Exif with optimized values" (`xmpExGps`) writes the
 alignment-computed coordinates instead of the EXIF ones.** [OFFICIAL: tools/xmpalign]
@@ -1578,13 +1475,12 @@ metadata takes priority over XMP metadata if this setting is enabled."
 [OFFICIAL: appbasics/appsettings] Its key is **not** in the published
 `setkeyvaluetable` list, and the Help never names one.
 
-The binary contains `AppPreferExif` (UTF-16LE, one occurrence) inside a capital-`App`
-run — `… AppGroupCalibrationsExif | AppForceEqualCalibration | AppIgnoreExifGPS |
-AppPreferExif` — which is a **separate naming family** from the documented lowercase
-`-set` keys: `appIgnoreExifGPS` and `appGroupCalibrationByExif` both exist lowercase
-elsewhere in the binary and are the forms `setkeyvaluetable` publishes, and note
-`AppGroupCalibrationsExif` ≠ `appGroupCalibrationByExif`. Lowercase `appPreferExif` occurs
-**zero** times. [UNDOCUMENTED: RealityScan.exe string pool, 2026-08-04] So the settable
+The binary contains `AppPreferExif`, with a capital `A`, alongside `AppIgnoreExifGPS` and
+`AppGroupCalibrationsExif` — a **separate naming family** from the documented lowercase
+`-set` keys (`appIgnoreExifGPS` and `appGroupCalibrationByExif` also exist lowercase and
+are the forms `setkeyvaluetable` publishes; note `AppGroupCalibrationsExif` ≠
+`appGroupCalibrationByExif`). Lowercase `appPreferExif` is not present.
+[UNDOCUMENTED: binary strings, 2026-08-04] So the settable
 key, if there is one, is as likely `appPreferExif` (never observed, matching the
 documented convention) as `AppPreferExif` (observed, matching the internal convention);
 a probe must try both. [OPEN — Q17]
@@ -1597,67 +1493,47 @@ focal data, the sidecar's `FocalLength35mm` may be overridden.
 `appCacheImageMetadata` (bool, **default `true`**) — "Cache image metadata" writes a hidden
 system file with EXIF-derived metadata (resolution and so on) next to input images, to
 speed up access. [OFFICIAL: tutorials/setkeyvaluetable, appbasics/appsettings — the latter
-names the file `crmeta.db`] The binary contains the format strings for **both**
-`%srsmeta.db` and `%scrmeta.db`, adjacent and in that order, so the 2.2-era filename is
-likely `rsmeta.db` with `crmeta.db` retained for legacy trees.
-[UNDOCUMENTED: RealityScan.exe string pool] Related and undocumented: the cache **location**
+names the file `crmeta.db`] The binary contains both the names `rsmeta.db` and
+`crmeta.db`, so the 2.2-era filename is likely `rsmeta.db` with `crmeta.db` retained for
+legacy trees. [UNDOCUMENTED: binary strings] [INFERRED] Related and undocumented: the cache **location**
 is `appCacheLocation` with enum `SystemTemp` \| `ProjectFolder` \| `Custom`.
 [UNDOCUMENTED: binary]
 
 Operational note: these files appear inside image directories and will be swept up by any
 naive "copy the image folder" step. They are not sidecars and carry no priors.
 
-### 12.6 This pipeline reads no EXIF at all
-
-`modules/file_metadata_parser.py` derives timestamps from **filenames**, not EXIF:
-`(?:camlower_|cammid_|camupper_)?(\d{8}T\d{6}Z|\d{14})`, defaulting to
-`19700101T000000Z` when nothing matches. Frame numbers come from `frame(\d+)`.
-[VERIFIED-by-inspection: modules/file_metadata_parser.py]
+### 12.6 Image verification at scale
 
 Full-file image verification is untenable at scale here — PIL `.verify()` walks every byte,
 ≈720 GB of reads over 18k 39 MB stills; a header probe cut the georeference stage to
-~5 min. [VERIFIED: NA167 #7, 2026-07-22]
+~5 min. [VERIFIED: earlier multi-camera dataset, 2026-07-22]
 
 One dimension anomaly is on record and is a metadata fact with real consequences: of 8,197
-H2024 JPGs, exactly one — `C231C2370_20231104202628_edt.jpg` — is **3846×2163** while the
-other 8,196 are **4244×2827**. A different sensor footprint means different intrinsics, so
+dataset B JPGs, exactly one is **3846×2163** while the other 8,196 are **4244×2827**. A different sensor footprint means different intrinsics, so
 RealityScan will group it separately **regardless of its XMP calibration group**.
-[VERIFIED: FINDINGS 2026-07-25]
+[VERIFIED: project testing 2026-07-25]
 
 ---
 
 ## 13. The sensor database `sensorsdb.xml`
 
-### 13.1 Location and the actual state of this machine
+### 13.1 Location and the state of the measured install
 
 | Path | Role |
 |---|---|
 | `C:\ProgramData\Epic\RealityScan\sensorsdb.xml` | **the file the application reads** [OFFICIAL: appbasics/cameradb] |
 | `C:\Program Files\Epic Games\RealityScan_2.2\sensorsdb.xml` | install-tree copy |
-| `<repo>\sensorsdb.xml` | this project's modified copy |
 
 Measured 2026-08-04: the ProgramData file and the install-tree file are **byte-identical**
-(SHA-256 `FA3D6EED…BAC01A37`, 47,925 bytes, 785 `<camera>` entries). The repo's copy is
-48,580 bytes and prepends four hand-authored ROV entries that are **not present on this
-machine**:
-
-```xml
-<camera model="ZCAM F6 8-15mm Fisheye Upper" ccdWidth="37.09"><lens type="division" focal="13"   c1="0"/></camera>
-<camera model="ZCAM F6 8-15mm Fisheye Mid"   ccdWidth="37.09"><lens type="division" focal="13.5" c1="0"/></camera>
-<camera model="ZCAM F7 16-35mm III Lower"    ccdWidth="37.09"><lens type="division" focal="16"   c1="0"/></camera>
-<camera model="Zeus Plus"                    ccdWidth="11.0"/>
-```
-
-[VERIFIED-by-inspection, 2026-08-04] Those entries are inert for two independent reasons:
-they are not installed, and their `model` strings cannot match this rig's EXIF
-(`Make="Z CAM"`, `Model="E2-F6"`) anyway. The database also **cannot distinguish two
-cameras with identical EXIF**, which is the rig's actual problem.
-[VERIFIED-by-inspection: docs/settings-evaluation-2026-07 §1]
+(SHA-256 `FA3D6EED…BAC01A37`, 47,925 bytes, 785 `<camera>` entries).
+[VERIFIED-by-inspection, 2026-08-04] The database **cannot distinguish two cameras with
+identical EXIF**, because it matches on the camera model string.
+[VERIFIED-by-inspection: project test records, 2026-07]
 
 Note the same install-tree/ProgramData duality applies to `flightlogs.xml`, which **was**
 hand-edited in Program Files to add a 13-column format; that edit must be re-checked after
 any app update. See `06-georeferencing-flightlogs-and-scale.md`.
-[VERIFIED: PRIORS_DISTORTION_TEST_PLAN, 2026-07-25]
+[VERIFIED: project test records, 2026-07-25]
 
 ### 13.2 Schema
 
@@ -1670,27 +1546,19 @@ any app update. See `06-georeferencing-flightlogs-and-scale.md`.
 
 | Element / attribute | Meaning | Source |
 |---|---|---|
-| `<cameras>` … `</cameras>` | root | shipped file + binary parser strings |
+| `<cameras>` … `</cameras>` | root | shipped file |
 | `<camera model="…">` | one entry; `model` matches the camera model string RealityScan displays in the 1D/1Ds panels (from `tiff:Make` + `tiff:Model`) | [OFFICIAL: appbasics/cameradb] |
 | `ccdWidth="…"` | sensor width in mm — supplies the missing chip size so a 35 mm equivalent can be computed. **"Define a ccdWidth to get rid of the yellow exclamation mark."** | [OFFICIAL: appbasics/cameradb] |
 | `GPSMode="ignore"` | per-camera EXIF GPS suppression | [OFFICIAL: appbasics/cameradb] |
-| `GPSAccuracy="…"` | present in the parser's string pool; unused by any shipped entry | [UNDOCUMENTED: binary] |
-| `orientationAccuracy="…"` | present in the parser's string pool; unused by any shipped entry | [UNDOCUMENTED: binary] |
+| `GPSAccuracy="…"` | name present in the binary; unused by any shipped entry | [UNDOCUMENTED: binary] |
+| `orientationAccuracy="…"` | name present in the binary; unused by any shipped entry | [UNDOCUMENTED: binary] |
 | `<lens type="…" focal="…" c1="…"/>` | lens prior for a given focal length; multiple `<lens>` elements per camera define different focal lengths | [OFFICIAL: appbasics/cameradb] + shipped file |
 | `<lens … quality="exact"/>` | makes it a **hard** prior — the system will not change the value. Recommended for fixed setups. Without it, DB priors are **soft**: RealityScan optimises them. | [OFFICIAL: appbasics/cameradb] |
-| `focus="…"`, `distance="…"` | present in the parser's string pool; not in any shipped entry and not documented | [UNDOCUMENTED: binary] |
+| `focus="…"`, `distance="…"` | names present in the binary; not in any shipped entry and not documented | [UNDOCUMENTED: binary] |
 
-The DB parser's own contiguous ASCII token run is, verbatim in order:
-`cameras | ignore | /cameras | GPSAccuracy | ccdWidth | brownr4t2 | brownr4 |
-orientationAccuracy | /camera | GPSMode | brownr3 | lens | brownr3t2 | brown | focus |
-/lens | distance`. So the `type` vocabulary it carries is `brown`, `brownr3`, `brownr3t2`,
-`brownr4`, `brownr4t2` — note these are the DB's **own** spellings, distinct from both the
-XMP tokens and the `sfmDistortionModel` names (§4.3). `division` is not in that run (it is
-in the XMP value pool) yet is the value both shipped `<lens>` entries use, so it is
-certainly accepted. [UNDOCUMENTED: RealityScan.exe string pool + shipped file inspection,
-2026-08-04] Note also what is **absent** from the run: no `model`, `focal`, `c1` or
-`quality` — those are stored differently and were not recoverable this way, but all four
-are documented or present in the shipped file.
+`division` is the `type` value both shipped `<lens>` entries use, so it is certainly
+accepted; other `type` spellings are untested. [VERIFIED-by-inspection of the shipped file,
+2026-08-04]
 
 Shipped content census, 2026-08-04: **785 camera entries, of which exactly 2 carry a
 `<lens>` prior** — `Gopro HD3` and `GoPro Hero3-Black Edition`, both
@@ -1783,8 +1651,8 @@ form is the one on the canonical command page.
 [CONTRADICTED: two Help pages disagree on the command's spelling, verified by grep over
 `Help\en-US\*\*.htm`, 2026-08-04] [OPEN — Q19]
 
-The undistortion/registration-export settings keys are the `calex*` family. Full inventory
-from the binary [UNDOCUMENTED: RealityScan.exe string pool, 2026-08-04]:
+The undistortion/registration-export settings keys are the `calex*` family. Inventory of
+the names present in the binary [UNDOCUMENTED: binary strings, 2026-08-04]:
 
 ```
 calexFilePath  calexFileName  calexFolder  calexFolderCustom  calexFolderDefault
@@ -1818,23 +1686,23 @@ Every row here fails **without an error code**, which is why this document exist
 
 | # | Failure | Signature | Fix |
 |---|---|---|---|
-| 1 | `image.jpg.xmp` naming | priors never applied; `count(*.xmp) ≈ 2 × count(images)` | write `<stem>.xmp`; assert the 1:1 count [VERIFIED: NA167 #3/B7] |
-| 2 | Leftover pose sidecars become priors on the next `-add` | second run's registration differs with "no changes made" | `sanitize_and_census` after every census [VERIFIED: NA167 B7] |
-| 3 | Images selected at export time | export "completes" in **0.057 s** instead of 20.5 s; no files | `-deselectAllImages` before every export [VERIFIED: FINDINGS 2026-07-23] |
-| 4 | `-setMinComponentSize` left at default 5 | small components missing from XMP export *and* from `-exportLatestComponents` *and* from selection | `-setMinComponentSize 1` before exports [VERIFIED: status log 2026-07-21] |
-| 5 | Images resolve through a directory junction | export logs success ("completed in 8.758 seconds"); **zero** `.xmp` written | real directories + hard-linked images [VERIFIED: FINDINGS 2026-07-27/28] |
-| 6 | `Get-ChildItem -Recurse` over a junction **parent** | reports `0` sidecars where `os.walk` reports 9,835 — but the *same* command pointed **at** the junction works, so an align harvest can pass while a merge harvest silently returns nothing | enumerate the real path, or use Python [VERIFIED: FINDINGS 2026-07-27] |
-| 7 | Identity harvest strips calibration sidecars | 796/4,540 images (17.5 %) left with no prior; later re-aligns run partially ungrouped | `ensure_calibration_sidecars` after every align [VERIFIED: FINDINGS 2026-07-25] |
-| 8 | PowerShell 5.1 exits 0 on non-terminating pipeline errors | a partial `Move-Item` is a silent −N in the census | assert the moved count; never trust `if errorlevel 1` on a PS pipeline [VERIFIED: FINDINGS 2026-07-27] |
-| 9 | Flat `-Force` move collapses same-stem ordinal sidecars from different folders | census undercounts | per-source subdirectories, or rename on move [VERIFIED: FINDINGS 2026-07-27] |
-| 10 | `xcr:Position` attribute form in legacy files | regex tuned to element form silently matches nothing | accept both forms [VERIFIED: FINDINGS 2026-07-28] |
-| 11 | Per-image `DistortionModel` believed to override the global key | every camera comes back with the global model, in both directions tested | choose one global `sfmDistortionModel` [CONTRADICTED: FINDINGS 2026-07-26; caveat §7.5 — the per-image form under test was the non-schema `Camera:` element] |
+| 1 | `image.jpg.xmp` naming | priors never applied; `count(*.xmp) ≈ 2 × count(images)` | write `<stem>.xmp`; assert the 1:1 count [VERIFIED: bug B7] |
+| 2 | Leftover pose sidecars become priors on the next `-add` | second run's registration differs with "no changes made" | `sanitize_and_census` after every census [VERIFIED: bug B7] |
+| 3 | Images selected at export time | export "completes" in **0.057 s** instead of 20.5 s; no files | `-deselectAllImages` before every export [VERIFIED: project testing 2026-07-23] |
+| 4 | `-setMinComponentSize` left at default 5 | small components missing from XMP export *and* from `-exportLatestComponents` *and* from selection | `-setMinComponentSize 1` before exports [VERIFIED: project testing 2026-07-21] |
+| 5 | Images resolve through a directory junction | export logs success ("completed in 8.758 seconds"); **zero** `.xmp` written | real directories + hard-linked images [VERIFIED: project testing 2026-07-27/28] |
+| 6 | `Get-ChildItem -Recurse` over a junction **parent** | reports `0` sidecars where `os.walk` reports 9,835 — but the *same* command pointed **at** the junction works, so an align harvest can pass while a merge harvest silently returns nothing | enumerate the real path, or use Python [VERIFIED: project testing 2026-07-27] |
+| 7 | Identity harvest strips calibration sidecars | 796/4,540 images (17.5 %) left with no prior; later re-aligns run partially ungrouped | `ensure_calibration_sidecars` after every align [VERIFIED: project testing 2026-07-25] |
+| 8 | PowerShell 5.1 exits 0 on non-terminating pipeline errors | a partial `Move-Item` is a silent −N in the census | assert the moved count; never trust `if errorlevel 1` on a PS pipeline [VERIFIED: project testing 2026-07-27] |
+| 9 | Flat `-Force` move collapses same-stem ordinal sidecars from different folders | census undercounts | per-source subdirectories, or rename on move [VERIFIED: project testing 2026-07-27] |
+| 10 | `xcr:Position` attribute form in legacy files | regex tuned to element form silently matches nothing | accept both forms [VERIFIED: project testing 2026-07-28] |
+| 11 | Per-image `DistortionModel` believed to override the global key | every camera comes back with the global model, in both directions tested | choose one global `sfmDistortionModel` [CONTRADICTED: project testing 2026-07-26; caveat §7.5 — the per-image form under test was the non-schema `Camera:` element] |
 | 16 | `-editInputSelection "inpSkew=…"` used for **aspect ratio** because the Help lists `inpSkew` under both fields | the aspect prior silently never changes; skew is overwritten instead | use `inpAspect` [UNDOCUMENTED: binary, §6.6] |
-| 17 | A `.xmp` written by `Set-Content -Encoding utf8` (PowerShell 5.1) | emits a UTF-8 BOM; harmless for sidecars so far, **fatal on line 1 of a `.complist`** | `[System.IO.File]::WriteAllLines(…, UTF8Encoding($false))` [VERIFIED: FINDINGS 2026-07-27] |
+| 17 | A `.xmp` written by `Set-Content -Encoding utf8` (PowerShell 5.1) | emits a UTF-8 BOM; harmless for sidecars so far, **fatal on line 1 of a `.complist`** | `[System.IO.File]::WriteAllLines(…, UTF8Encoding($false))` [VERIFIED: project testing 2026-07-27] |
 | 18 | `Get-ChildItem -LiteralPath <dir> -Recurse -Include *.jpg` used to count images | `-Include` silently ignored; returns **every** entry, so a sidecar-count audit passes when it should fail | `-File` then filter on `.Extension` [VERIFIED-by-probe, 2026-08-04, §1.1] |
 | 19 | `^` line-continuation used **inside** a quoted `-c` / `-Command` argument | caret reaches the child process as text; Python raises `SyntaxError`, PowerShell raises `Unexpected token '^'` | one physical line, or carets only outside quotes [VERIFIED-by-probe, 2026-08-04, §1.1/§16.1] |
-| 12 | `appGroupCalibrationByExif=true` on EXIF-identical cameras | two different lenses collapse into one calibration group | leave `false`; separate with XMP groups [VERIFIED-by-inspection: settings-evaluation §1] |
-| 13 | `-exportRegistration` with no params XML | **blocks forever** headless | never call it without a GUI-exported params file [VERIFIED: FINDINGS 2026-07-21] |
+| 12 | `appGroupCalibrationByExif=true` on EXIF-identical cameras | two different lenses collapse into one calibration group | leave `false`; separate with XMP groups [VERIFIED-by-inspection: project test records, 2026-07-23] |
+| 13 | `-exportRegistration` with no params XML | **blocks forever** headless | never call it without a GUI-exported params file [VERIFIED: project testing 2026-07-21] |
 | 14 | `-selectImage` with a regexp | selects nothing, silently | literal full paths only in this build [CONTRADICTED: allcommands, 2026-07-23] |
 | 15 | `exact`/`locked` pose priors + incremental add | `-align` refuses: *"prior set to 'Exact' mode must be all aligned in a single run"* | do not use pose locking as a growth anchor [VERIFIED: cell U18, 2026-07-23] |
 
@@ -1855,14 +1723,15 @@ string — the caret is passed through to Python verbatim and yields
 `SyntaxError: invalid syntax`. Verified by execution, 2026-08-04.
 
 ```bat
-".venv\Scripts\python.exe" -c "from modules import camera_registry as cr; print(cr.ensure_calibration_sidecars(r'F:\na156_h2024\batched_images_by_zone\zone_1'))"
+".venv\Scripts\python.exe" -c "from modules import calibration_sidecars as cs; print(cs.ensure_calibration_sidecars(r'F:\survey\batched_images_by_zone\zone_1', {'ilx_left': 'groups', 'ilx_right': 'groups'}))"
 ```
 
-Prints `(created, unknown_camera_skipped)`. Idempotent: images that already have a sidecar
-are skipped, so this is safe to run before every align. Note it walks with `os.walk`, so
+Prints `(created, images_of_no_known_camera)`. The second argument maps each camera key to
+its sidecar mode (`prior` or `groups`; with no modes nothing is written). Idempotent:
+images that already have a sidecar are skipped, so this is safe to run before every align. Note it walks with `os.walk`, so
 unlike the PowerShell harvest it **does** cross directory junctions in both directions
-(§1.1) — which is why it reported correct coverage throughout the reparse-point incident
-and raised no warning. [VERIFIED: FINDINGS 2026-07-27]
+(§1.1) — which is why it reported correct coverage throughout the reparse-point failure
+and raised no warning. [VERIFIED: project testing 2026-07-27]
 
 ### 16.2 The canonical per-zone align + identity harvest
 
@@ -1911,14 +1780,14 @@ goto :identityLoop
 The loop terminal is a **file-existence check**, not an error check:
 `-selectMaximalComponent`, `-renameSelectedComponent` and `-deleteSelectedComponent` all
 silently no-op on an empty scene, and there is no CLI query for "how many components
-remain". [VERIFIED: FINDINGS 2026-07-23/24]
+remain". [VERIFIED: project testing 2026-07-23/24]
 
 ### 16.3 Census then sanitise (order matters)
 
 Again one physical line (see §16.1):
 
 ```bat
-".venv\Scripts\python.exe" -c "from modules import camera_registry as cr; root=r'F:\na156_h2024\batched_images_by_zone\zone_1'; print('pose_count, restored, removed =', cr.sanitize_and_census(root)); print('created, unknown =', cr.ensure_calibration_sidecars(root))"
+".venv\Scripts\python.exe" -c "from modules import calibration_sidecars as cs; root=r'F:\survey\batched_images_by_zone\zone_1'; modes={'ilx_left': 'groups', 'ilx_right': 'groups'}; print('pose_count, restored, removed =', cs.sanitize_and_census(root, modes)); print('created, unknown =', cs.ensure_calibration_sidecars(root, modes))"
 ```
 
 `sanitize_and_census` returns the registration census **and** destroys the evidence in the
@@ -1949,22 +1818,21 @@ have been run.
 | # | Question | Cheapest probe |
 |---|---|---|
 | **Q1** | When both `_common.xmp` and `<stem>.xmp` exist in a folder, which wins — and do they merge per-field? | Smoke fixture (120 images, ~2 min align). `_common.xmp` with `FocalLength35mm=20`, one image's `<stem>.xmp` with `FocalLength35mm=30`. Align, `-exportXMP`, read that image's solved focal against its neighbours. |
-| **Q2** | Does `_common.xmp` apply recursively to subfolders, or only to its own folder? | Same fixture with per-camera subfolders; place `_common.xmp` at the zone root only, align, and check whether cameras in `cinema\` and `port\` both received the group. |
+| **Q2** | Does `_common.xmp` apply recursively to subfolders, or only to its own folder? | Same fixture with per-camera subfolders; place `_common.xmp` at the zone root only, align, and check whether cameras in `cam1\` and `cam2\` both received the group. |
 | **Q3** | What does `-addImageWithCalibration` cost per image at 8k scale, and does it accept delegation? | Time 100 delegated `-addImageWithCalibration` calls on the smoke fixture; extrapolate. ~3 min. |
 | **Q4** | Does the XMP reader accept **element** form for attributes other than `Position`? | Two sidecars for one image on the smoke fixture, one attribute-form and one element-form, differing only in `FocalLength35mm`. Align each, compare exported solved focal. ~5 min. |
-| ~~Q5~~ | ~~What is `xcr:Cert`?~~ | **CLOSED 2026-08-04.** It is the licence-certificate element `<xcr:Cert id="%s">` inside `<certificates>`, not an image-sidecar attribute (§3). Settled from the binary's string neighbourhood — `importLicense`, `exportLicense`, `"certificate file"`, `certificates\`. No probe needed. |
-| **Q6** | Are the XMP prior tokens exactly `{initial, exact, locked}`, and does an unrecognised value (e.g. `Approximate`) fail loudly or silently? | Smoke fixture; one sidecar with `xcr:CalibrationPrior="Approximate"` and one with `"initial"`, both with `FocalLength35mm` far from truth. Compare solved focals and grep `%LOCALAPPDATA%\Temp\RealityScan.log` for the literals **`Skipping unexpected attribute`** and **`Skipping unexpected tag`** — both are format strings in the binary (`Skipping unexpected attribute, %s=%S`), so if the XMP reader shares the app's XML diagnostics they are the loudest signal available. Caveat: they were found in the **project-XML** parser's string neighbourhood, so their firing on a sidecar is not guaranteed. ~5 min. |
+| **Q6** | Are the XMP prior tokens exactly `{initial, exact, locked}`, and does an unrecognised value (e.g. `Approximate`) fail loudly or silently? | Smoke fixture; one sidecar with `xcr:CalibrationPrior="Approximate"` and one with `"initial"`, both with `FocalLength35mm` far from truth. Compare solved focals and grep `%LOCALAPPDATA%\Temp\RealityScan.log` for the literals **`Skipping unexpected attribute`** and **`Skipping unexpected tag`** — both are strings in the binary (`Skipping unexpected attribute, %s=%S`), so if the XMP reader shares the app's XML diagnostics they are the loudest signal available. Caveat: whether they fire on a sidecar is not known. ~5 min. |
 | **Q7** | **Narrowed 2026-08-04.** The *native* six-slot order is `k1 k2 k3 k4 t1 t2` — two shipped `calibration.xml` templates emit it literally (§4.3a). What remains open is only whether `xcr:DistortionCoeficients` uses that same order. | Align the smoke fixture under `Brown3WithTangential2` (so `t1 ≠ t2 ≠ 0`), `-exportXMP`, and cross-read the same cameras through `-exportRegistration` in the **Internal/External Camera Parameters** format (`{0CA18733-…}`, header `…,k1,k2,k3,k4,t1,t2`). Requires a GUI-exported registration params XML first — see Q20. |
 | **Q8** | **Narrowed 2026-08-04.** The Help's GUI label says "[mm]"; the shipped `{0CA18733-…}` template names the same quantity `px_norm`/`py_norm` and writes `$(px)` raw beside `f_35mm = $(f*36)` (§4.4). Treat as normalised. What remains open is the exact divisor — image width, or the larger image dimension. | One camera, cross-read: `px_norm` from `{0CA18733-…}` and `px_pix` from the OpenCV format `{B5331837-…}` (`px*scale+width*0.5`). `scale = (px_pix − width/2) / px_norm` settles the divisor arithmetically. Blocked on Q20. |
 | **Q9** | `xcr:Rotation` convention: row-major? world→camera? handedness? — the export variables `R00…R22` are settled (row-major, world→camera; the CmpMvs template builds `P = K·[R|t]`, §5.1), but `xcr:Rotation` is a different serialiser. | Same cross-read: compare one camera's nine `xcr:Rotation` floats against its `R00…R22` from `{0CA18733-…}` or Boujou. Decisive, needs no new alignment. Blocked on Q20. |
 | **Q10** | Is `xcr:Position` UTM in a scene georeferenced **before** export, or always local? | Hardening cell U13: export XMP in an original georeferenced zone scene and compare positions to the flight-log UTM. ~5 min on zone_3 (124 images). Also read `xcr:ExportCoordinateSystemType` from the same files. |
-| **Q11** | **Largely answered 2026-08-04: the key is `inpAspect`**, found in the binary's `inp*` pool between `inpPPX` and `inpSkew` (§6.6); the Help's duplicate `inpSkew` row is a copy-paste error. What remains is only whether `-editInputSelection` *accepts* it. | `-editInputSelection "inpAspect=1.5"` on a selected image, then check `%LOCALAPPDATA%\Temp\RealityScan.log` for `err:7155` ("Parsing setting … failed"). Seconds; no align needed. Confirm positively with an align + `-exportXMP` read of `xcr:AspectRatio`. |
-| **Q12** | Does Epic's ungroup-and-re-align refinement (group → align → ungroup → align) improve this rig? | Z3 fixture (124 images, ~4 min/align): align grouped, then `-removeCalibrationGroups` + `-align`, compare registration, component count and solved focal spread. ~10 min total. |
+| **Q11** | **Largely answered 2026-08-04: the key is `inpAspect`**, present in the binary among the other `inp*` prior keys (§6.6); the Help's duplicate `inpSkew` row is a copy-paste error. What remains is only whether `-editInputSelection` *accepts* it. | `-editInputSelection "inpAspect=1.5"` on a selected image, then check `%LOCALAPPDATA%\Temp\RealityScan.log` for `err:7155` ("Parsing setting … failed"). Seconds; no align needed. Confirm positively with an align + `-exportXMP` read of `xcr:AspectRatio`. |
+| **Q12** | Does Epic's ungroup-and-re-align refinement (group → align → ungroup → align) improve registration on this pipeline's imagery? | Z3 fixture (124 images, ~4 min/align): align grouped, then `-removeCalibrationGroups` + `-align`, compare registration, component count and solved focal spread. ~10 min total. |
 | **Q13** | **Does the repo's `Camera:`-namespaced element-form sidecar do anything at all?** Also settles §7.5's attribution: cell (c) declaring `xcr:DistortionModel="brown3"` under a global `sfmDistortionModel=Division` distinguishes "the global key wins" from "the repo's sidecar was never parsed". | Z3 fixture (124 images, ~4 min/align), three cells, one variable each: (a) no sidecars, (b) current repo-form sidecars, (c) documented attribute form under `.../ns/xcr/1.1#` with `xcr:CalibrationPrior="initial"`, `xcr:CalibrationGroup`, `xcr:DistortionGroup`, `xcr:FocalLength35mm`, `xcr:DistortionModel`. Compare registration, component count, the exported `xcr:DistortionModel`, and the **spread** of solved focal within each camera (a real group forces one focal; ungrouped self-calibration does not — the ±0.5 % IQR of §7.4 is the number to beat). Grep each run's `RealityScan.log` snapshot for `Skipping unexpected attribute` / `Skipping unexpected tag`. ~15 min total. **Highest-value probe in this document.** |
 | **Q14** | Is the 3,740→3,738 fusion deficit a real solver drop or a harvest artifact? | Re-import `cluster_*_m_c0.rsalign` **from its original export location** into a spare instance and census it: 3,740 means accounting artifact, 3,738 means real loss. Uses artifacts already on disk. (Reading the count from `rslog.txt` is **not** trustworthy on these artifacts — see the log-splice finding in `01-cli-fundamentals.md`.) |
 | **Q15** | What do the `xmpCamera` integers mean, and what does the default (unpinned) export mode write? | Export XMP three times from the smoke fixture with `xmpCamera` 1/2/3 in a params XML, and once with no params; read `xcr:PosePrior` from the results. ~4 min. Settles Q16 as a side effect. |
 | **Q16** | What `xcr:PosePrior` value does this pipeline's production export actually write — and therefore how hard is the contamination in §10? | Covered by Q15's "no params" cell; or simply grep any existing `identity_r*` directory on the data drives for `PosePrior`. Zero cost if those artifacts still exist. |
-| **Q17** | Is "Prefer Exif over XMP" settable from the CLI, under which spelling, and what is its default? The binary has `AppPreferExif` (capital `A`, matching an internal family) but not `appPreferExif` (lowercase, matching every documented `-set` key). | Boot once with both: `-set "AppPreferExif=false" -set "appPreferExif=false"`, then read `%LOCALAPPDATA%\Temp\RealityScan.log` for `err:7155` — whichever spelling does **not** produce a parse failure is the key. Seconds. Snapshot the log immediately: the next boot destroys it (NA167 B6). |
+| **Q17** | Is "Prefer Exif over XMP" settable from the CLI, under which spelling, and what is its default? The binary has `AppPreferExif` (capital `A`, matching an internal family) but not `appPreferExif` (lowercase, matching every documented `-set` key). | Boot once with both: `-set "AppPreferExif=false" -set "appPreferExif=false"`, then read `%LOCALAPPDATA%\Temp\RealityScan.log` for `err:7155` — whichever spelling does **not** produce a parse failure is the key. Seconds. Snapshot the log immediately: the next boot destroys it (bug B6). |
 | **Q18** | Precedence between a `sensorsdb.xml` entry and an XMP sidecar for the same image | Add a DB entry for the smoke fixture's camera model with a deliberately wrong `focal`, plus a sidecar with the right one; align and read the solved value. ~5 min plus a ProgramData edit (back the file up first). |
 | **Q19** | Does `-exportUndistortedImages` / `-exportSTMap` work headless, and at what cost — and which spelling of the undistort command does the parser accept (`exportUndistortedImages` per `allcommands` vs `exportUndistoredImages` per `commandline_1`, §14)? | The spelling half is free: issue both at boot on an empty scene and read `RealityScan.log` — an unknown command is reported, a known one is not. The functional half is blocked on Q20 (`-exportSTMap` alone may run with no params at all, since the Help says both of its arguments are optional). |
 | **Q20** | Obtain a valid Export Registration params XML | One GUI session: open any aligned project, Export Registration → "RealityScan XMPs with Image List" → configure → save the params. Unblocks Q7, Q8, Q9, Q19 and makes `-exportRegistration` usable headless at all. **Cheapest single action with the widest unblocking effect in this document.** |

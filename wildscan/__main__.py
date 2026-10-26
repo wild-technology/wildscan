@@ -4,6 +4,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+# Repository-root driver scripts the stages run as subprocesses. They are
+# not part of the installed packages, so they exist only in a source
+# checkout installed with `pip install -e .`, never in a built wheel.
+DRIVER_SCRIPTS = ('main.py', 'merge_zones.py', 'run_models.py',
+                  'publish_batch.py')
+
 
 def main() -> int:
     """Load the UI with the same startup diagnostics for both launch routes."""
@@ -25,6 +31,13 @@ def main() -> int:
         raise SystemExit(
             f'Unable to load WildScan: {exc}\n'
             f'See {checkout / "docs" / "SETUP-AND-RUN.md"} for troubleshooting.') from exc
+    missing = [name for name in DRIVER_SCRIPTS if not (checkout / name).is_file()]
+    if missing:
+        raise SystemExit(
+            f'WildScan must run from a source checkout installed with '
+            f'`pip install -e .`: {checkout} has no {", ".join(missing)}. A '
+            'built wheel does not include the pipeline\'s driver scripts and '
+            'is not a supported way to run it.')
     return app_main()
 
 

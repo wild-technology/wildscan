@@ -13,6 +13,29 @@ historical experiment records.
 
 ---
 
+## Compatibility boundary
+
+The generic workflow supports WCA, Zeuss and the other registered cameras:
+video extraction and navigation georeferencing are still available, and the
+legacy commands, camera families, mount transforms and saved setting names
+remain valid. A Sony Wild Sync recording uses an explicitly selected intake
+stage before the shared processing stages. An intake manifest carries its
+per-camera calibration decision and selects the Sony alignment template;
+without that manifest, existing calibration and alignment defaults apply.
+
+Add cameras and input types without rewriting the meaning of a different
+camera's settings. Do not use the presence of Sony support in the registry to
+infer that an arbitrary dataset is a Sony recording. Explicit alignment
+parameter overrides take precedence. Keep local and UTM coordinate systems
+separate and check them before invoking RealityScan.
+
+EXIF preservation is selected by the input's own intake manifest or an explicit
+preprocessing option; generic output and resume defaults stay historical.
+Python native-operation entry points snapshot and verify existing XMP files
+before native work. Direct batch-script entry points require working copies.
+Large datasets without spatial extent need explicit permission to exceed the
+configured zone-size maximum.
+
 ## Getting started
 
 Set up the checkout in a virtual environment (dependencies are declared in

@@ -52,7 +52,7 @@ re-derives them.
 
 ## 1. How to read this reference
 
-Command counts catalogued here [VERIFIED: SURVEY_commands, sweep of
+Command counts catalogued here [VERIFIED: sweep of
 `appbasics/allcommands` + all `tutorials/commandline*` pages, 2026-08-04]:
 
 | category | count |
@@ -64,12 +64,11 @@ Command counts catalogued here [VERIFIED: SURVEY_commands, sweep of
 | commands proven **not** to exist | 1 (`-selectAllComponents`) |
 | **distinct `RealityScan.exe` command names catalogued** | **218** |
 | flags belonging to `RSNode.exe`, not `RealityScan.exe` | 3 |
-| commands used by this repository in production | 52 |
+| commands used by this repository in production | 56 |
 
 The 208 figure is a mechanical count: `appbasics/allcommands.htm` holds 209
 `<td class="command">` rows, of which `defineDistance` appears twice (two parameter forms)
-[VERIFIED: row count over the installed Help HTML, 2026-08-04]. `SURVEY_commands.md` totals
-217 because `-undercut` (§12.2) was found only after that survey was written.
+[VERIFIED: row count over the installed Help HTML, 2026-08-04].
 
 **Required vs optional parameters in this document are taken from the HTML, not the text
 conversion.** The plain-text conversion of the Help collapses adjacent empty table cells, so
@@ -122,7 +121,7 @@ space-separated [OFFICIAL: tutorials/commandline].
 "C:\Program Files\Epic Games\RealityScan_2.2\RealityScan.exe" -load C:\MyFolder\MyProject.rsproj -selectMaximalComponent -calculateNormalModel -simplify 1000000 -save C:\MyFolder\MyProject.rsproj -quit
 ```
 
-The executable on this machine is
+The executable of the measured install is
 `C:\Program Files\Epic Games\RealityScan_2.2\RealityScan.exe`. The pipeline's discovery list
 is exactly five paths, in this order [VERIFIED: `realityscan_cli.py` `EXECUTABLE_CANDIDATES`]:
 
@@ -165,7 +164,7 @@ RealityScan then logs `Parsing setting key=value … failed [err:7155]`, applies
 and writes the parse failure into the error channel, aborting any workflow gated on it.
 Lists cross the boundary as **files** (`.imagelist`, `.complist`); settings cross as
 `key:value` and the workflow converts the colon to `=` inside the `.bat`
-[VERIFIED: NA167 B5 / FINDINGS 2026-07-23; ARCHITECTURE.md hard rule 8].
+[VERIFIED: bug B5 / project testing 2026-07-23; ARCHITECTURE.md hard rule 8].
 
 ```bat
 :: WRONG - arrives as two arguments, silently applies nothing
@@ -179,7 +178,7 @@ call Workflow.bat "sfmMergeGeoreferencedComponents:true"
 the command; the delegating `RealityScan.exe` process returns at hand-over, not at
 completion. Queued commands run FIFO, so instant commands (`-set`, selection, rename) can
 be fired without a completion wait — ordering is guaranteed before the next queued
-operation [VERIFIED: NA167 notes §1]. Long-running commands need the double-wait
+operation [VERIFIED: earlier multi-camera dataset, 2026-07]. Long-running commands need the double-wait
 pattern of §5.
 
 **Exit codes** [OFFICIAL: tutorials/commandline_5]: `0` on success; with
@@ -188,7 +187,7 @@ written to the `-silent` directory.
 
 **`.bat` files must be CRLF.** cmd's label search is byte-offset sensitive; with LF endings
 the same `call :run` resolved ten times and then failed with "cannot find the batch label"
-at a later call site [VERIFIED: NA167 #21, hit independently on two machines, 2026-07-23].
+at a later call site [VERIFIED: earlier multi-camera dataset, 2026-07, hit independently on two machines, 2026-07-23].
 
 ---
 
@@ -254,9 +253,9 @@ off re-enters headless), **About** and **Exit** [OFFICIAL: tutorials/headless].
   brought up GUI-visible for inspection without changing anything else — delegation and
   monitoring behave identically either way [VERIFIED: `SetVariables.bat`
   `RS_HEADLESS_FLAG`, honours `RS_HEADLESS=0`].
-- Nothing in two years of headless production recorded a licensing or activation
-  interaction. That is absence of evidence, not evidence of absence
-  [OPEN: whether headless RS 2.2 can hit a licence prompt that manifests as a silent hang].
+- Nothing in this project's headless production runs recorded a sign-in interaction.
+  That is absence of evidence, not evidence of absence
+  [OPEN: whether headless RS 2.2 can hit a sign-in prompt that manifests as a silent hang].
 
 **Example — the production boot line** [VERIFIED: `RS_CLI/Scripts/startRealityScan.bat`]
 
@@ -298,7 +297,7 @@ autosave exists for it. The global equivalent is `-set "appAutoSaveCliHandling=�
 - [VERIFIED] A stale `<name>.rsproj.new` left beside the project by an interrupted GUI save
   makes `-load` emit warning-class `0x82000017` **while still completing**. That is enough
   to abort any workflow gated on a non-empty error marker. Setting the temp file aside
-  (rename — reversible) cleans the load [FINDINGS 2026-07-29].
+  (rename — reversible) cleans the load [project testing 2026-07-29].
 - Loading a large assembled project is the expensive part of any per-component loop; this
   is why `ExportDeliverables.bat` loads once and exports every component inside one session
   [VERIFIED: `ExportDeliverables.bat`].
@@ -311,16 +310,16 @@ autosave exists for it. The global equivalent is `-set "appAutoSaveCliHandling=�
 - [VERIFIED] Quitting **without** saving leaves the `.rsproj` bundle byte-stable across
   load / delete / export cycles — hash-verified twice. This is what makes the destructive
   in-session identity harvest safe: save first, peel destructively in memory, quit without
-  saving [FINDINGS cells U15/U16, 2026-07-23].
+  saving [project testing, cells U15/U16, 2026-07-23].
 - Save cost scales with the number of live models, not just geometry. `GenerateModel.bat`
   originally took two dated copies per component, one of them mid-recipe with ~15
   intermediate models live: `zone_1_c0`'s saves consumed **~81 GB**. With the dated copies
   disabled, `cluster_4_a1_c0` cost **6.8 GB** end to end, and one dated copy of the finished
-  six-component project took **13.1 min / 95.2 GB** [VERIFIED: FINDINGS 2026-07-29].
+  six-component project took **13.1 min / 95.2 GB** [VERIFIED: project testing 2026-07-29].
 - Checkpoint/rollback in this pipeline is a plain **file copy of the `.rsproj` bundle**, and
   restore is a copy back. Battle-tested in anger on a killed growth run. Component reimport
   is *not* a valid checkpoint — it drops non-member images
-  [VERIFIED: FINDINGS 2026-07-23/24].
+  [VERIFIED: project testing 2026-07-23/24].
 
 ### `-start`
 
@@ -338,25 +337,25 @@ autosave exists for it. The global equivalent is `-set "appAutoSaveCliHandling=�
 **Behavior notes**
 
 - [VERIFIED] Works as documented. CRLF line endings in the `.imagelist` are fine; full
-  paths, one per line [NA167 wave-1 A2, 2026-07-23].
+  paths, one per line [test wave-1 A2, 2026-07-23].
 - This is the mechanism for **shared-path components** — the same image path present in
   more than one scene's components — which is what lets `-mergeComponents` fuse by camera
-  identity [VERIFIED: NA167 §Project & image input].
+  identity [VERIFIED: earlier multi-camera dataset, 2026-07].
 - [VERIFIED] Adding images **auto-imports `<stem>.xmp` sidecars sitting next to them**, and
   pose-bearing sidecars silently become exact-pose priors. Clean the image tree before any
-  run that must be independent of a previous solve [NA167 B7, 2026-07-22].
+  run that must be independent of a previous solve [bug B7, 2026-07-22].
 - [VERIFIED] Registration is independent of how images were added: folder vs imagelist on
   identical zones gave 95.2 % vs 95.3 % (zone_6) and 90.1 % vs 91.0 % (zone_4)
-  [NA167 wave-1 A1 vs A2, 2026-07-23].
+  [test wave-1 A1 vs A2, 2026-07-23].
 - [VERIFIED] `<stem>.xmp` only. `image.jpg.xmp` files are ignored **silently** — a batcher
   bug wrote priors that way, so no historical run before 2026-07-22 ever loaded its
-  calibration priors [NA167 #3 / B7].
+  calibration priors [bug B7].
 
 **Example**
 
 ```bat
-%RealityScan% -delegateTo RS1 -add "F:\na156_h2024\lists\zone_1.imagelist"
-%RealityScan% -delegateTo RS1 -add "F:\na156_h2024\images\zone_1\C231C1034.jpg"
+%RealityScan% -delegateTo RS1 -add "F:\survey\lists\zone_1.imagelist"
+%RealityScan% -delegateTo RS1 -add "F:\survey\images\zone_1\Cam1_20260820_191034.00.jpg"
 ```
 
 ### `-addFolder`
@@ -366,21 +365,21 @@ autosave exists for it. The global equivalent is `-set "appAutoSaveCliHandling=�
 **Behavior notes**
 
 - [VERIFIED — the Help is right, and an earlier contrary reading is SUPERSEDED] The Help
-  says subdirectories require `-set "appIncSubdirs=true"`, and in this 2.2 build they do. An
-  H2023 run with the key unset added **"0 layer images"**, and every subsequent flight-log
+  says subdirectories require `-set "appIncSubdirs=true"`, and in this 2.2 build they do. A
+  dataset A run with the key unset added **"0 layer images"**, and every subsequent flight-log
   row then failed `err:18002` inside a 25-second run that reported success; the evidence is a
-  `RealityScan.log` snapshot reading `Added 0 layer images` [FINDINGS 2026-07-23]. The
-  `NA167 notes` entry "in our 2.2 build subfolders were included **without** setting
-  the key (zone_13: `wca/` + `zeuss/` both imported)" is **SUPERSEDED**: that run had
+  `RealityScan.log` snapshot reading `Added 0 layer images` [project testing 2026-07-23]. An
+  earlier reading that subfolders were included **without** setting the key (a dataset C zone
+  whose two per-camera subfolders were both imported) is **SUPERSEDED**: that run had
   `appIncSubdirs` set by the fixed workflow, so the flag — not the build — was the variable
-  [FINDINGS 2026-07-23, "Nuance" clause]. Operational rule unchanged and unconditional: emit
+  [project testing 2026-07-23]. Operational rule unchanged and unconditional: emit
   `-set "appIncSubdirs=true"` immediately before every `-addFolder`.
 - [VERIFIED] A routine `-addFolder` reports process **result 1** through the
   `appProcessExecCmd` completion trigger. 0 and 1 are both success; only other codes are
-  failures [FINDINGS 2026-07-21].
+  failures [project testing 2026-07-21].
 - [VERIFIED] Per-camera zone subfolders are **one alignment scene**, not several. Aligning
   each camera subfolder separately defeats mixed-camera co-registration — a pre-overhaul
-  defect [NA167 #5 + 2026-07-22 fix pass].
+  defect [earlier multi-camera dataset, 2026-07 + 2026-07-22 fix pass].
 - [VERIFIED] RealityScan writes **no XMP sidecars at all** when a scene's images resolve
   through a **reparse point** (directory junction), and reports success. Controlled probe:
   baseline components exported from real image paths harvested `identity_r0` = **267**
@@ -388,21 +387,21 @@ autosave exists for it. The global equivalent is `-set "appAutoSaveCliHandling=�
   components whose `.rsalign` files had baked in junction paths harvested **zero**, silently,
   on **all 18 attempts** (cluster_0 ×3, cluster_1 ×15). Use real directories of hardlinked
   images, not junctions
-  [FINDINGS 2026-07-27] [UNDOCUMENTED: no Epic coverage of reparse-point behaviour].
+  [project testing 2026-07-27] [UNDOCUMENTED: no Epic coverage of reparse-point behaviour].
 - [VERIFIED — the harness half of the same trap, distinct cause] PowerShell 5.1
   `Get-ChildItem -Recurse` does **not** descend into junction **children** (it does resolve a
   junction it is pointed at directly). Enumerating a directory of per-zone junctions returned
   0 `.xmp`; the same tree through its real path returned 9,835. This discarded **155 minutes**
   of correct GPU work, and a re-run that cleared only the read side burned **157 more**
   before the write-side cause above was found. Both halves must be fixed; neither implies the
-  other [FINDINGS 2026-07-27, the second entry marked SUPERSEDED AS A CAUSE].
+  other [project testing 2026-07-27, the second entry marked SUPERSEDED AS A CAUSE].
 
 **Example** [VERIFIED: `AlignZone.bat`]
 
 ```bat
 :: instant -set, FIFO-ordered ahead of the queued addFolder, so no wait is needed
 %RealityScan% -delegateTo RS1 -set "appIncSubdirs=true"
-call :run -addFolder "F:\na156_h2024\zones\zone_1"
+call :run -addFolder "F:\survey\zones\zone_1"
 ```
 
 ### `-importVideo`
@@ -412,11 +411,8 @@ call :run -addFolder "F:\na156_h2024\zones\zone_1"
 **Behavior notes**
 
 - `jumpsLength` is the inter-frame interval in **seconds** [OFFICIAL].
-- Adjacent finding, not about this command: this repo's own OpenCV frame extractor
-  timestamped frames **one output interval early** (60 s at 1 fpm) because frame seek and
-  timestamp source used different frame indices. Any dataset extracted with the old
-  `__extract_video_cv2` carries the offset [VERIFIED: NA167 #1, 2026-07-22]. RealityScan's
-  own extraction has not been checked for an equivalent offset
+- RealityScan's own extraction has not been checked for a timestamp offset (frames stamped
+  one output interval early is a known failure shape of frame extractors)
   [OPEN: extract a synthetic per-frame-gray video through `-importVideo` and read the
   resulting EXIF/XMP timestamps].
 
@@ -435,9 +431,11 @@ Note the lowercase `i` in `images` — the literal spelling is `-importHDRimages
 - The two files need **not** share a name or a folder. This is the only way to attach an
   XMP whose name or location differs from the image's [OFFICIAL: tools/xmpalign]. Every
   other path — `-add`, `-addFolder` — requires the strict `<stem>.xmp` convention beside the
-  image [VERIFIED: NA167 B7].
-- Not used by this repo: the pipeline writes `<stem>.xmp` sidecars beside the images
-  instead, through `camera_registry.ensure_calibration_sidecars()`.
+  image [VERIFIED: bug B7].
+- Used by this repo for calibration priors: `calibration_sidecars.rscmd_text` writes an
+  `.rscmd` with one `-addImageWithCalibration "<image>" "<sidecar>"` line per image that has
+  a sidecar (a plain `-add` otherwise), and `AlignZone.bat` runs it through `-execRSCMD`
+  [VERIFIED-by-inspection: `calibration_sidecars.py`, `AlignZone.bat`].
 
 ### `-importImageSelection`
 
@@ -472,7 +470,7 @@ Documented regexp forms [OFFICIAL: tutorials/commandline]:
 - [CONTRADICTED — high severity] In this 2.2 build **only literal full paths select
   anything.** Bare regexp, `.*`-wrapped regexp, glob, and regexp with an explicit `set`
   modifier all silently select **nothing**; a literal full path selects exactly its image.
-  Established by bisection probes U-SEL2…U-SEL8 [FINDINGS 2026-07-23; H2023 U1/U19/U2].
+  Established by bisection probes U-SEL2…U-SEL8 [project testing 2026-07-23; dataset A U1/U19/U2].
   [OPEN: forum-mine the regexp dialect — a staff reply may explain the discrepancy;
   standing follow-up since 2026-07-23.]
 - Consequence: selection composition is a **per-image literal union loop** at roughly
@@ -500,7 +498,7 @@ exit /b 0
   selection-driven exports under `-silent` then export **nothing**: the "Export Selection"
   dialog is auto-answered, and an XMP export that should take 20.5 s finished in 0.057 s
   having written no files. `-deselectAllImages` before **every** export is mandatory
-  [FINDINGS 2026-07-23] [UNDOCUMENTED: the Help does not warn that import leaves a
+  [project testing 2026-07-23] [UNDOCUMENTED: the Help does not warn that import leaves a
   selection].
 - Every export step in every production workflow here is preceded by it
   [VERIFIED: `AlignZone.bat`, `MergeZoneComponents.bat`, `GrowZone.bat`].
@@ -534,7 +532,7 @@ exit /b 0
   error/no-error, or set one layer and check the Selected input table.
 - Image Layers is the agreed eventual mechanism for aligning on original imagery while
   texturing from CLAHE-enhanced imagery, but it has **never been exercised through this
-  CLI** [VERIFIED-as-decision: status log 2026-07-26] [OPEN].
+  CLI** [VERIFIED-as-decision: project testing 2026-07-26] [OPEN].
 
 ### `-importCache`
 
@@ -552,14 +550,14 @@ drive; keep it on a local SSD on both machines and copy between them
 - The project must be **saved** before clearing [OFFICIAL].
 - Cache retention is otherwise governed by the `appCacheLocation` /
   `appCacheCustomLocation` / `appAutoClearCache` keys — see `03-settings-keys.md`
-  [VERIFIED: FINDINGS 2026-07-26].
+  [VERIFIED: project testing 2026-07-26].
 - [VERIFIED] The cache is placed by the **drive of the path given** and does **not** move
   when the project moves. `D:\rccache` reached 1,089 GB and refilled 197 GB of
   freshly-cleaned space within one run, killing the same model three times, while the
-  **project** drive showed 773.9 GB free [FINDINGS 2026-07-26, "TRUE ROOT CAUSE"].
+  **project** drive showed 773.9 GB free [project testing 2026-07-26].
 - Epic's own guidance: do **not** hand-delete cache files; free space on the cache disk or
   change the cache disk. A cache-full abort loses the operation's progress
-  [OFFICIAL: Epic "Out of Disk Space", quoted in FINDINGS 2026-07-26].
+  [OFFICIAL: appbasics/outofdisk].
 
 ### `-execRSCMD`
 
@@ -604,8 +602,7 @@ drive; keep it on a local SSD on both machines and copy between them
 - [VERIFIED] Verify shutdown by polling `-getStatus`, not by assuming: large scenes close
   slowly and the process outlives its `getStatus` visibility. The execution layer uses
   `SHUTDOWN_VERIFY_TIMEOUT_SECONDS = 900` and `STATUS_CALL_TIMEOUT_SECONDS = 60`
-  [NA167 §`-quit`, B3; `realityscan_cli.py`]. `ARCHITECTURE.md` documents the shutdown bound as
-  300 s — the code is authoritative for behaviour, the doc is stale.
+  [bug B3; `realityscan_cli.py`].
 - Shutdown timing has only been verified on **small** scenes
   [OPEN: time `-quit` → `-getStatus` gone once on a 4,000+ camera scene; costs one
   teardown].
@@ -700,33 +697,33 @@ Every setting also has a long "path" key spelling (e.g.
 **Behavior notes**
 
 - [VERIFIED] `"inpEnabled=false"` works as a single quoted `key=value` argument, and
-  `-align` honours the enable/disable state exactly [FINDINGS 2026-07-23, cells U1/U19/U2].
+  `-align` honours the enable/disable state exactly [project testing 2026-07-23, cells U1/U19/U2].
 - [VERIFIED — hard limit] `inpPose=3` (Locked/Exact) **takes effect but makes `-align`
   refuse to run incrementally**: *"prior set to 'Exact' mode must be all aligned in a single
   run. Incremental adding is not supported."* Pose-locking is therefore unusable as a
   growth anchor; checkpoint/rollback stays the primary never-shrink mechanism
-  [FINDINGS cell U18 FAIL, 2026-07-23].
+  [project testing, cell U18 FAIL, 2026-07-23].
 - [VERIFIED — must re-enable before saving] A component-mode growth pass disables most of
   the scene, and that state **persists into the save**. A saved zone project must always be
   the all-enabled state, since it is the authoritative artifact. `GrowZone.bat` originally
   fell through to `:save_quit` without re-enabling; every component pass would have saved a
-  crippled scene [FINDINGS 2026-07-24].
+  crippled scene [project testing 2026-07-24].
 - [CONTRADICTED — global vs per-image distortion] `sfmDistortionModel` is **global and
   all-or-nothing**; a per-camera XMP `Camera:DistortionModel` hint does **not** switch
-  models per camera. All 2,558 cinema pose XMPs from PD-6 came back
+  models per camera. All 2,558 pose XMPs of a rectilinear camera from PD-6 came back
   `xcr:DistortionModel="division"` despite their sidecars declaring `brown3`, identical to
-  the 2,492 port records. Whether `inpDistortionModel` set through this command can override
+  the 2,492 records of a fisheye camera. Whether `inpDistortionModel` set through this command can override
   per-image where the XMP cannot is **not established**
-  [FINDINGS 2026-07-26; PD-2] [OPEN].
+  [project testing 2026-07-26; PD-2] [OPEN].
 - Process ID `21877 CLI_SET_SELECTED_INPUTS_PROPERTY`.
 
-**Example — enable a subset, disable everything else** [VERIFIED: `ProbeSubsetAlign.bat`]
+**Example — enable a subset, disable everything else** [VERIFIED: an earlier probe script, 2026-07]
 
 ```bat
 call :run -selectAllImages
 call :run -editInputSelection "inpEnabled=false"
 call :run -deselectAllImages
-call :selectFromList "F:\na156_h2024\lists\primary.imagelist"
+call :selectFromList "F:\survey\lists\primary.imagelist"
 call :run -editInputSelection "inpEnabled=true"
 call :run -align
 ```
@@ -738,7 +735,7 @@ call :run -align
 - [VERIFIED] This trio (`-setFeatureSource`, `-selectImage`, `-editInputSelection`) was
   wrongly recorded as GUI-only in an earlier test plan. It **is** CLI, and it composes with
   `-selectImage` for per-camera merge-mode experiments
-  [SUPERSEDED: MERGE_TEST_PLAN §1 "GUI-only", corrected 2026-07-23; VERIFIED: NA167 B11].
+  [SUPERSEDED: an earlier test plan's "GUI-only" reading, corrected 2026-07-23; VERIFIED: bug B11].
 - What the three modes mean for component integration [OFFICIAL: appbasics/components]:
   `0` **Merge using overlaps** uses only the images/points common to the components — much
   faster and far lower memory; `1` **Use component features** uses only the points that were
@@ -750,7 +747,7 @@ call :run -align
   component-integration strategy; `-mergeComponents` is a separate mechanism and does not read
   it. Read `0` "images/points common to the components" as **shared-path images**, not
   duplicate copies of the same picture — see the identity rule under `-add`
-  [FINDINGS 2026-07-23, caveat added at the 2026-07-24 reconciliation].
+  [project testing 2026-07-23, caveat added at the 2026-07-24 reconciliation].
 
 ### `-enableAlignment`
 
@@ -766,27 +763,27 @@ composed inside the `.bat` and cmd can never split it
 
 - The Help's wording says it sets the calibration group of **all inputs**, not just the
   selection, despite appearing in the selected-images group [OFFICIAL].
-- [VERIFIED-by-inspection] Unusable for this rig in either position: the WCA rendered JPGs
-  are **EXIF-identical across cameras** (Make `Z CAM`, Model `E2-F6`, no focal length, no
-  lens tag, 4244×2827). RealityScan cannot tell the cameras apart from EXIF, so grouping by
-  Exif would merge two physically different cameras into one calibration group. Per-image
-  XMP sidecars carrying `Camera:CalibrationGroup` / `Camera:LensDistortionGroup` are the
-  only mechanism that separates them — one group per **physical camera**, never per lens
-  type [settings-evaluation §1–§2, 2026-07-23].
+- [VERIFIED-by-inspection] Unusable on the earlier four-camera rig in either position: its
+  rendered JPGs were **EXIF-identical across cameras** (Make `Z CAM`, Model `E2-F6`, no focal
+  length, no lens tag, 4244×2827). RealityScan cannot tell such cameras apart from EXIF, so
+  grouping by Exif would merge physically different cameras into one calibration group.
+  Per-image XMP sidecars carrying `Camera:CalibrationGroup` / `Camera:LensDistortionGroup`
+  are the only mechanism that separates them — one group per **physical camera**, never per
+  lens type [project test records, 2026-07-23].
 - That the sidecar grouping works is demonstrable: given the **same** 16.0 mm prior, the
-  solve separated the two cameras by 5.6 % with IQRs of ±0.5 % — cinema focal 16.374
-  (IQR 16.302–16.476), division k1 −0.0378; port focal 15.499 (IQR 15.435–15.574),
-  division k1 −0.3875. The order-of-magnitude k1 gap is the fisheye declaring itself
-  [VERIFIED: FINDINGS 2026-07-26, 5,050 harvest records].
+  solve separated two cameras of that rig by 5.6 % with IQRs of ±0.5 % — the rectilinear
+  camera's focal 16.374 (IQR 16.302–16.476), division k1 −0.0378; the fisheye camera's focal
+  15.499 (IQR 15.435–15.574), division k1 −0.3875. The order-of-magnitude k1 gap is the
+  fisheye declaring itself [VERIFIED: project testing 2026-07-26, 5,050 harvest records].
 
 ### `-setPriorCalibrationGroup` / `-setPriorLensGroup` / `-lockPoseForContinue`
 
 Never exercised through the CLI here — the equivalent state is written into `<stem>.xmp`
-sidecars by `camera_registry.py` before the images are added. `-lockPoseForContinue` maps to
+sidecars by `calibration_sidecars.py` before the images are added. `-lockPoseForContinue` maps to
 `inpPosePriorRelative` (`0` Unknown / `1` Draft / `2` Exact) plus
 `inpPosePriorRelativeGroup`, which is the **relative** pose lock and a different setting
 from the absolute `inpPose=3` that `-align` refuses to grow incrementally
-[OFFICIAL: tutorials/editselectioncommand; VERIFIED for `inpPose=3`: FINDINGS U18]
+[OFFICIAL: tutorials/editselectioncommand; VERIFIED for `inpPose=3`: project testing, cell U18]
 [OPEN: whether relative locking (`inpPosePriorRelative=2`) is subject to the same
 "single run" restriction — probe: set it on a solved component, add one image, `-align`,
 read the error].
@@ -832,11 +829,10 @@ RealityScan.exe -setInstanceName RS1
   exercised; two concurrent instances on different GPUs is untested
   [OPEN: boot RS1 on GPU 0 and RS2 on GPU 1, align two small zones simultaneously, confirm
   marker-file isolation and no cache contention].
-- [VERIFIED — incident] `RS_INSTANCE` was **not** an input to the Python execution layer
-  until 2026-07-28: it resolved the instance from constructor arg → `rs_settings.json` →
-  default and only ever *wrote* the env var for the `.bat` layer, so every driver exporting
-  `RS_INSTANCE` was decorative. A cross-session incident ran a probe on RS1 believing it was
-  on RS2, and could have `-quit` a live production instance [FINDINGS 2026-07-28].
+- [VERIFIED] The execution layer must resolve the instance name from the same source the
+  `.bat` layer reads (`RS_INSTANCE`); a layer that resolves it elsewhere can drive a different
+  instance than its caller believes, up to delegating `-quit` to a live one. Resolution order:
+  `01-cli-fundamentals.md` §5.3 [project testing 2026-07-28].
 
 ### `-delegateTo`
 
@@ -847,11 +843,11 @@ RealityScan.exe -setInstanceName RS1
 - [VERIFIED] Delegated commands are **queued FIFO**, and the delegating process returns at
   hand-over, not at completion. Instant commands such as `-set` therefore need no
   completion wait — FIFO guarantees they execute before the next queued operation
-  [NA167 notes §1; status log 2026-07-21].
+  [earlier multi-camera dataset, 2026-07; project testing 2026-07-21].
 - A failure to hand the command over (dead instance) makes the delegating process exit
   non-zero with "Failed to delegate command". [VERIFIED] After a **crash**, that is the
   signature seen on the *next* delegated command — a dead instance, not a rejected operation
-  [FINDINGS 2026-07-26].
+  [project testing 2026-07-26].
 - Every operation in every production workflow here goes through `-delegateTo %RS_INSTANCE%`
   inside the shared `:run` subroutine [VERIFIED: `RS_CLI/Scripts/*.bat`].
 
@@ -862,12 +858,12 @@ RealityScan.exe -setInstanceName RS1
 - [CONTRADICTED] The Help implies it blocks until the running process is done. Observed: it
   **returns prematurely** when issued before the instance has picked up the queued command.
   The mitigation baked into every workflow is grace delay → wait → grace → wait
-  [NA167 §`-waitCompleted`; FINDINGS 2026-07-21; ARCHITECTURE.md hard rule].
+  [earlier multi-camera dataset, 2026-07; project testing 2026-07-21; ARCHITECTURE.md hard rule].
 - Do **not** infer completion any other way. In particular, do not gate on growth of the
   results log: RealityScan 2.2 emits periodic internal **heartbeat** processes through the
   same completion trigger, so "the results log grew" does not mean "our command finished".
   A completion check built that way raced ahead of a running `-align` and was removed
-  entirely [VERIFIED: status log 2026-07-21].
+  entirely [VERIFIED: project testing 2026-07-21].
 - Do **not** infer completion from process names (`tasklist`) — the pre-2.x code did that
   and silently broke [ARCHITECTURE.md hard rule 2].
 
@@ -914,7 +910,7 @@ It is redirectable: `RealityScan.exe -getStatus * > D:\statusreport.txt`.
   there is.
 - [VERIFIED] "Gone" precedes process teardown by **seconds**: file handles — notably the
   `-writeProgress` marker — are released **after** `getStatus` already reports the instance
-  dead. Marker deletion must retry for up to ~60 s [NA167 #14 / B3, 2026-07-23].
+  dead. Marker deletion must retry for up to ~60 s [bug B3, 2026-07-23].
 - Boot readiness is polled at ~1 s intervals up to 120 tries (120 s) before the boot script
   gives up [VERIFIED: `startRealityScan.bat`].
 
@@ -941,7 +937,7 @@ aborts every process queued after the running one when processing is CLI-driven
   **stall-warn, never auto-kill** an alignment: `#timeout` in the progress stream does not
   reliably mean hung (a successful 94.6 % run emitted 40 `#timeout` lines), and there is
   deliberately no overall timeout on any RealityScan operation
-  [VERIFIED: NA167 #28, 2026-07-24; `realityscan_cli.py` `STALL_WARNING_SECONDS = 2*60*60`;
+  [VERIFIED: earlier multi-camera dataset, 2026-07-24; `realityscan_cli.py` `STALL_WARNING_SECONDS = 2*60*60`;
   ARCHITECTURE.md hard rule 3].
 - [OPEN] Whether `-abortInstance` leaves the project in a recoverable state, and whether
   `-continueModelCalculation` can resume from it. Cheapest probe: abort a preview model on
@@ -994,7 +990,7 @@ aborts every process queued after the running one when processing is CLI-driven
 - [CONTRADICTED] `-align "<AlignmentParams.xml>"` is not supported in 2.x: an XML argument
   is **silently ignored**. Alignment settings must be applied as `-set` commands *before* a
   plain `-align`. Older repo scripts and pre-2.x lore passed a params file
-  [FINDINGS 2026-07-21, confirmed against `appbasics/allcommands`].
+  [project testing 2026-07-21, confirmed against `appbasics/allcommands`].
 - [OFFICIAL — `-align` is the *first* of four documented merge mechanisms, and the only one
   that can register new imagery] `tutorials/mergecomponents` lists the options for connecting
   a split scene, in its own order: (1) **run alignment again** — "RealityScan will first use
@@ -1010,36 +1006,36 @@ aborts every process queued after the running one when processing is CLI-driven
   through this CLI (§6.2).
 - [VERIFIED] With components already in the scene, `-align` is align/**update**: it adds
   newly added images to existing components and can fuse components
-  [NA167 notes §1; corroborated by the D7 probe wave].
+  [earlier multi-camera dataset, 2026-07; corroborated by the D7 probe wave].
 - [VERIFIED] `-align` can **shrink** components — re-optimization drops marginal cameras
   (3,860 → 3,855; one component's pass lost 51 previously-registered images). A free
   re-align is never pose-stable: it moved all 118 cameras of a solved smoke scene
-  [FINDINGS 2026-07-23/24, U18 bonus].
+  [project testing 2026-07-23/24, U18 bonus].
 - [VERIFIED] Alignment **fragmentation** is strongly nondeterministic; total **registration**
   is not. zone_1 (4,540 images, identical settings, sidecars and inputs) aligned to 2
   components / 4,391 cameras in one run and 9 components / 4,392 in another. Component
   structure cannot be relied on across runs — only manifest-tracked image sets can
-  [FINDINGS 2026-07-24].
+  [project testing 2026-07-24].
 - [VERIFIED] Runtime varies **~3×** with scene character at equal image count (zone_6
   61.6 / 97.8 min vs zone_4 24.3 / 20.8 min, both ~1.5k frames, same GPU, each run twice).
-  Budget by zone, not by image count [NA167 #20].
+  Budget by zone, not by image count [earlier multi-camera dataset, 2026-07].
 - [VERIFIED] Memory: per-zone aligns of ~1.5k images stayed ≤ ~60 GB; a joint 4,131-image
   align peaked ~165 GB on a 192 GB box. Joint alignment extrapolates to ~700 GB for a
-  19k-image dive — chunking is mandatory at production scale [NA167 #19].
+  19k-image survey — chunking is mandatory at production scale [earlier multi-camera dataset, 2026-07].
 - [VERIFIED] Sequential growth and joint alignment give **identical quality** and differ
   2.6× in time and 2.7× in memory, with opposite winners: 94.6 % / 444 min / ≤60 GB versus
-  94.5 % / 169 min / ~165 GB [NA167 #19].
-- [VERIFIED — failure mode] One zone (NA167 zone_14, 1,476 images) fails standalone
+  94.5 % / 169 min / ~165 GB [earlier multi-camera dataset, 2026-07].
+- [VERIFIED — failure mode] One zone (dataset C zone_14, 1,476 images) fails standalone
   alignment **deterministically** (4/4) with fully clean data: RealityScan internal error
   `MSS_STR001` in the reconstruction phase, surfacing as generic `0x8000FFFF`. Data was
   exonerated by full-pixel decode, MD5 de-duplication and Laplacian checks. Its images align
   fine inside a larger scene. **Production rule: when a zone fails alignment solo, grow it
   from an aligned neighbour — do not retry solo**
-  [NA167 #17/#18/#27 / B8, 2026-07-23/24] [OPEN: never reported to Epic].
+  [bug B8, 2026-07-23/24] [OPEN: never reported to Epic].
 - [VERIFIED] Incremental growth is state-sensitive and can **degrade** existing structure: a
   two-zone grow fragmented to an 870-camera maximal (below one input zone's solo 1,533),
   while a three-zone grow through the same stages held 3,906. Verify camera counts after
-  every grow step [NA167 #29].
+  every grow step [earlier multi-camera dataset, 2026-07].
 
 **Example — apply settings from a GUI-exported params file, then align**
 [VERIFIED: `AlignZone.bat`]
@@ -1066,23 +1062,23 @@ first without `-quit`, inspect, then load and run a full `-align`
 
 - [VERIFIED] It is a **similarity/rigid fit to the scene's imported constraints**, applied
   after reconstruction: it can rotate or rescale a component but cannot stiffen or repair
-  its geometry [FINDINGS 2026-07-26].
+  its geometry [project testing 2026-07-26].
 - [VERIFIED] It is the step that actually georeferences a **merged** component. A merged
   component is a *new* component and does **not** inherit its parents' georeferencing;
   without constraints in the merge scene RealityScan has nothing to register it against.
   The production pattern is: import components → import the **union** flight log → merge →
-  `-update` [FINDINGS 2026-07-23, GUI inspection called the missing step a
+  `-update` [project testing 2026-07-23, GUI inspection called the missing step a
   "showstopper"; `MergeZoneComponents.bat`].
 - [VERIFIED — risk] Because it fits to nav constraints, `-update` is also the step that can
   **set scale** and the step that will **rotate geometry to satisfy mis-converted
   orientation priors**. It is the leading ranked candidate for an observed ~45° tilt of one
   delivered component, whose *alignment* was measured to match nav to 0.8°
-  [FINDINGS 2026-07-25/26/27].
+  [project testing 2026-07-25/26/27].
 - [OPEN/BLINDNESS] The result of `-update` in an assembled project is not measurable by this
   pipeline today — assemble mode exports no poses, so scale and attitude are measured on the
   assembly's *inputs* while `-update` runs afterwards unobserved. Closing it means porting
   the successive-difference harvest to a dated **copy** of the assembly project
-  [FINDINGS 2026-07-25/26].
+  [project testing 2026-07-25/26].
 
 ### `-detectFeatures`
 
@@ -1106,48 +1102,46 @@ a split scene, and Epic's own page puts "run alignment again" **first**
 mechanisms obey the same governing rule — content overlap fuses, zero content overlap does
 not (below) — with merge mode about **25 % faster** than align mode on the D7 probe, and
 `-align` additionally able to register images that no component holds, which
-`-mergeComponents` by definition cannot [VERIFIED: FINDINGS "D7 RESOLVED", 2026-07-24].
+`-mergeComponents` by definition cannot [VERIFIED: project testing 2026-07-24, probe D7].
 
 **Behavior notes — the most consequential set in this document**
 
 - [OFFICIAL + VERIFIED-as-consequence] "No new images are added" is **true and
   load-bearing**: orphans can never be picked up by a merge. Only `-align` can add images
-  [appbasics/allcommands; FINDINGS 2026-07-27].
+  [appbasics/allcommands; project testing 2026-07-27].
 - [VERIFIED — the governing rule] **Fusion is content-driven.** Content overlap ⇒ fusable by
   either mechanism, with or without georeferencing constraints in the scene. **Zero content
   overlap ⇒ silent no-fuse regardless of flags or logs.** The D7 probe: two components
   sharing *zero* basenames and zero paths but viewing the same wreck strip fused to one
   120-camera component (78+42 exact) both without any flight log in the scene (70 s) and
-  with a union log plus `-update` (57 s) [FINDINGS "D7 RESOLVED", [archive/campaign_drivers/probe_d7.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/probe_d7.py),
-  2026-07-24].
+  with a union log plus `-update` (57 s) [project testing 2026-07-24, probe D7].
 - [VERIFIED — positive proof through shared cameras] A split-zone fixture — one zone divided
   into two 1,000-image halves sharing 390 images, each aligned solo (749 and 342 cameras),
   imported into a fresh scene — merged with both flags pinned false in **56 minutes** of
-  merge reconstruction ending in "Finalizing 1 component" [NA167 #31 / D6, 2026-07-24].
+  merge reconstruction ending in "Finalizing 1 component" [probe D6, 2026-07-24].
 - [VERIFIED — the silent failure] With zero content overlap it **exits SUCCESS and leaves
   the components separate**, under every mechanism × flag × path-form combination tested.
   Instant completion is the no-fuse signature; a real merge takes ~1 h for 1–4k-camera pairs
-  [NA167 #23/#26/#30].
+  [earlier multi-camera dataset, 2026-07].
 - **Verify every merge by pose-XMP camera census, never by exit status.** This is the single
-  most repeated operational rule in this repository [NA167 #23; ARCHITECTURE.md; status log;
-  MERGE_STRATEGY_REPORT].
+  most repeated operational rule in this repository [earlier multi-camera dataset, 2026-07; ARCHITECTURE.md].
 - [CONTRADICTED] `sfmMergeGeoreferencedComponents=true` — documented as merging
   georeferenced components even without visual overlap — **never manifested headless**, in
-  any mechanism × flag × path form [NA167 wave-1f / D1 / D2, 2026-07-24].
+  any mechanism × flag × path form [test wave-1f / D1 / D2, 2026-07-24].
   [SUPERSEDED-RISK: those cells fed the flag components georeferenced from **position-only**
   priors at 10 m claimed accuracy, so the feature's documented premise arguably was never
   met. Do not treat D1/D2 as final.] [OPEN: re-test with priors-v2 components.]
 - [VERIFIED] It **retains its input components** alongside the fused one. Controlled case:
   a peel of `[267, 116, 94, 57]` = the fusion plus all three unconsumed parents. Any
   all-components export of a merge scene contains residual source copies — consumers must
-  **attribute**, not enumerate [FINDINGS 2026-07-24 and 2026-07-27].
+  **attribute**, not enumerate [project testing 2026-07-24 and 2026-07-27].
 - [VERIFIED] It is a **no-op with a single component**, and its asynchronous
   re-reconstruction can clear the selection — replaced by `-selectMaximalComponent` in the
-  smoke workflow [status log 2026-07-21].
+  smoke workflow [project testing 2026-07-21].
 - [VERIFIED] Fusion can **drop a small number of cameras**: 3,026+714 = 3,740 fused to 3,738
   (merge mode) and 3,739 (both align-mode rungs). A 5-camera loss out of 4,865 (0.10 %) was
   enough to hide a fusion entirely from exact-subset-sum attribution
-  [FINDINGS 2026-07-25 / 2026-07-28].
+  [project testing 2026-07-25 / 2026-07-28].
 - [VERIFIED — rigid-glue signature] Zero camera loss on a fusion between components with
   **zero shared imagery** is the signature of a rigid glue rather than a joint solve: one
   accepted `merge_georef` fusion packed **eight disjoint objects** into a single 3,615-camera
@@ -1155,16 +1149,16 @@ not (below) — with merge mode about **25 % faster** than align mode on the D7 
   arithmetic scored each step as an exact-sum fusion with zero loss. By contrast a real
   joint solve of the hull ran under `-align`, logged "Finalizing 1", and **lost 5 cameras**.
   A keep-largest-connected-component model step would delete every smaller object from such
-  a container [FINDINGS 2026-07-28].
+  a container [project testing 2026-07-28].
 - [VERIFIED] As a rigid **consolidation** pass it does consolidate: one zone went 9
   components → 4 in a 38-minute accepted pass over the same 4,392-image union
-  [FINDINGS 2026-07-24].
+  [project testing 2026-07-24].
 - [CONTRADICTED-in-part] An Epic staff claim (2021, pre-rename, outside the 4-year trust
   window) describes Merge Components as a rigid best-fit with no re-optimization and no
   repositioning. What stands: merge cannot shrink the image set and cannot register orphans
   (corroborated by current 2.2 Help). What is **unverified**: "no re-optimization" — the
   observed 56-minute merge reconstruction and varying finalized component counts argue
-  against it [FINDINGS RECON 2026-07-24].
+  against it [project testing 2026-07-24].
 - [OPEN] The exact semantics of "Finalizing N component(s)" in the log are not established.
   Cheapest probe: two tiny imports, one merge, count the result.
 - [OPEN] `-exportLatestComponents` after `-mergeComponents` — a merge is not an alignment,
@@ -1175,19 +1169,19 @@ not (below) — with merge mode about **25 % faster** than align mode on the D7 
 
 ```bat
 call :run -newScene
-for /f "usebackq delims=" %%F in ("F:\na156_h2024\merged\cluster_0.complist") do (
+for /f "usebackq delims=" %%F in ("F:\survey\merged\cluster_0.complist") do (
     call :run -importComponent "%%~F"
 )
 %RealityScan% -delegateTo RS1 -set "sfmMergeGeoreferencedComponents=true"
 %RealityScan% -delegateTo RS1 -set "sfmEnableCameraPrior=true"
-call :run_geoimport -importFlightLog "F:\na156_h2024\merged\union_flight_log_04Q_UTM.txt" "F:\na156_h2024\merged\FlightLogParams.xml"
+call :run_geoimport -importFlightLog "F:\survey\merged\union_flight_log_04Q_UTM.txt" "F:\survey\merged\FlightLogParams.xml"
 call :run -mergeComponents
 call :run -update
 call :run -deselectAllImages
 call :run -setMinComponentSize 1
 call :run -selectMaximalComponent
 call :run -renameSelectedComponent "cluster_0_m_c0"
-call :run -exportSelectedComponentDir "F:\na156_h2024\merged"
+call :run -exportSelectedComponentDir "F:\survey\merged"
 ```
 
 ### `-exportXMP`
@@ -1197,32 +1191,32 @@ call :run -exportSelectedComponentDir "F:\na156_h2024\merged"
 - [VERIFIED — the naming rule] **The command determines the naming, not the scene.**
   `-exportXMP` writes **stem-named** `<stem>.xmp` sidecars beside the images; four
   consistent datapoints. An earlier session-based hypothesis ("stems require the live
-  aligning session") is **SUPERSEDED** [FINDINGS 2026-07-23; NA167 B10 final form].
+  aligning session") is **SUPERSEDED** [project testing 2026-07-23; bug B10 final form].
 - [OFFICIAL + VERIFIED] It covers only "the last alignment", and silently skips components
-  below `-setMinComponentSize` [status log 2026-07-21].
+  below `-setMinComponentSize` [project testing 2026-07-21].
 - [VERIFIED] Only **registered** cameras get pose entries, so counting pose-bearing sidecars
   is a reliable registration census — this is the pipeline's primary oracle
-  [NA167 notes §1].
+  [earlier multi-camera dataset, 2026-07].
 - [VERIFIED] `xcr:Position` appears as an **element** (`<xcr:Position>x y z</xcr:Position>`)
   in current exports and in **attribute** form in older ones. Both forms must be parsed
-  [FINDINGS 2026-07-28].
+  [project testing 2026-07-28].
 - [VERIFIED] `xcr:Position` is in a **grid-anchored local frame, not UTM**; fit local→UTM
   with `poses_to_flight_log.py`. The exports' lat/long XMP attributes are unusable per that
-  analysis [NA167, 2026-07-23] [OPEN: cell U13 — re-verify on an *original* georeferenced
+  analysis [dataset C, 2026-07-23] [OPEN: cell U13 — re-verify on an *original* georeferenced
   zone scene; if positions are UTM there, manifests could carry true per-camera positions].
 - [VERIFIED] Exported pose sidecars carry `xcr:CalibrationGroup="-1"` /
   `DistortionGroup="-1"` **alongside** `Camera:CalibrationGroup="3"` — the `-1` is an export
-  artifact, not a lost grouping [FINDINGS 2026-07-26] [UNDOCUMENTED].
+  artifact, not a lost grouping [project testing 2026-07-26] [UNDOCUMENTED].
 - [VERIFIED — contamination] Exported pose sidecars are auto-imported as **exact-pose
   priors** on any later `-add` of the same images. The pipeline sanitizes the tree back to
-  calibration-only content after every census [NA167 B7].
+  calibration-only content after every census [bug B7].
 - [VERIFIED — defect, fixed] The identity harvest **moves** every pose-bearing `.xmp` into
   `identity_r<K>`, and the last-peeled component's sidecars are never re-exported: measured
   on a fresh zone, **796 of 4,540 images (17.5 %) were left with no sidecar at all**,
   including an entire 665-image component. Any re-align of an already-harvested zone then
   silently runs with a partially ungrouped camera set — two prior-test cells were confounded
-  this way. Fixed by `camera_registry.ensure_calibration_sidecars()`
-  [FINDINGS 2026-07-25].
+  this way. Fixed by `calibration_sidecars.ensure_calibration_sidecars()`
+  [project testing 2026-07-25].
 
 **Example — successive-difference membership harvest** [VERIFIED: `AlignZone.bat`]
 
@@ -1240,7 +1234,7 @@ call :run -deleteSelectedComponent
 
 `members(c<K>) = stems(r<K>) − stems(r<K+1>)`. In an **align** scene the `identity_r<K>`
 directories are cumulative (rK = laps K..end); in a **merge** scene rK is component K alone,
-because merge-scene exports are ordinal [VERIFIED: FINDINGS 2026-07-28].
+because merge-scene exports are ordinal [VERIFIED: project testing 2026-07-28].
 
 ### `-exportXMPForSelectedComponent`
 
@@ -1249,18 +1243,18 @@ because merge-scene exports are ordinal [VERIFIED: FINDINGS 2026-07-28].
 - [CONTRADICTED] The Help gives no naming rule. Observed: it writes **ordinal** sidecars
   `00000.xmp`, `00001.xmp`, … in every observed context, never `<stem>.xmp`. The count is
   still a valid registration census, but per-camera **identity** requires `-exportXMP` in the
-  original aligned scene [NA167 B10; FINDINGS 2026-07-23].
+  original aligned scene [bug B10; project testing 2026-07-23].
 - [VERIFIED] Ordinal sidecars are **inert as priors** — no image has an ordinal stem — and
-  `camera_registry.sanitize_and_census` deletes them quietly [B10, 2026-07-23].
+  `calibration_sidecars.sanitize_and_census` deletes them quietly [B10, 2026-07-23].
 - [VERIFIED] It can complete in a merge scene and write **nothing**: the log said "Exporting
   Registration completed in 8.758 seconds" while a sweep of the whole drive found zero
   `.xmp` written. Root cause was the **reparse-point write path** (see `-addFolder`), not
   "an imported component carries no images" — the merge scene had reported
-  `Added 1407 images` [FINDINGS 2026-07-27].
+  `Added 1407 images` [project testing 2026-07-27].
 - [OPEN, do not build on it] Attempts that **re-import a previously fused component**
   harvested nothing (three attempts, `identity_r0: 0`), while sibling attempts harvested
   normally. Consistent with the ordinal/identity rule but unexplained; did not recur later
-  [FINDINGS 2026-07-28].
+  [project testing 2026-07-28].
 
 ### `-importComponent`
 
@@ -1272,18 +1266,18 @@ because merge-scene exports are ordinal [VERIFIED: FINDINGS 2026-07-28].
   location.** A relocated copy imports into a permanent `#timeout` stall: ≥6 h observed, no
   error, no minidump, and — because `#timeout` lines keep ticking their elapsed counter —
   **zero stall warnings**. In place it is ~2 s per 0.7 GB component. The repo mitigation is
-  a `.complist` of in-place paths [NA167 B1/B4; FINDINGS 2026-07-23; ARCHITECTURE.md hard rule 7].
+  a `.complist` of in-place paths [bug B1/B4; project testing 2026-07-23; ARCHITECTURE.md hard rule 7].
 - [VERIFIED] `-importComponent X.rsalign` names the in-scene component `X` — the **file
   stem**. Two attempt directories exporting the same stem therefore put two identically
   named components into one assembly, and every name-resolved operation downstream becomes
-  ambiguous [FINDINGS 2026-07-28].
+  ambiguous [project testing 2026-07-28].
 - [VERIFIED] Component `.rsalign` files are ~0.7 GB per ~1.5k cameras and are opaque `TBSM`
   binary — there is **no readable camera list**. Membership must come from the XMP census
-  [NA167 notes §1].
+  [earlier multi-camera dataset, 2026-07].
 - [VERIFIED] Component reimport does **not** carry non-member images: orphans are absent
   from a components-only project and carry no trajectory until a flight log is imported.
   Checkpoint/rollback must therefore use `.rsproj` **file copies**, not component reimport
-  [FINDINGS 2026-07-23].
+  [project testing 2026-07-23].
 - [OFFICIAL] Components may contain duplicate images and points; control points placed on a
   component are exported and imported with it; an imported component is marked with a star
   icon in the 1Ds view [appbasics/components].
@@ -1295,12 +1289,8 @@ because merge-scene exports are ordinal [VERIFIED: FINDINGS 2026-07-28].
 
 ### `-loadColmap`
 
-Takes the path to any of the three COLMAP text files [OFFICIAL]. Repo context:
-[archive/colmap/](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/colmap/) holds retired COLMAP scripts and must not be resurrected into the active
-pipeline [ARCHITECTURE.md]. Cross-engine fact worth carrying: COLMAP on one zone **registered**
-710 frames of the Zeuss camera family but triangulated **zero** points from them — two
-engines, two failure shapes, one physical camera family
-[VERIFIED-in-the-other-fact-base, recorded 2026-07-24; not reproduced in RealityScan].
+Takes the path to any of the three COLMAP text files [OFFICIAL]. This pipeline does not
+use it.
 
 ### `-exportLatestComponents`
 
@@ -1309,7 +1299,7 @@ engines, two failure shapes, one physical camera family
 - [VERIFIED] It exports **ALL** components of the last alignment (subject to
   `-setMinComponentSize`), not just the maximal one. An older maximal-only export pattern
   was unnecessary loss — underwater zones routinely fragment and every pocket is input to
-  the merge stage [FINDINGS 2026-07-23].
+  the merge stage [project testing 2026-07-23].
 - Exports are selection-driven: `-deselectAllImages` first, or they silently produce nothing
   under `-silent` [VERIFIED: `GrowZone.bat`, `MergeZoneComponents.bat`].
 - [OPEN] Behaviour after `-mergeComponents` (no "last alignment") is untested — hardening
@@ -1319,7 +1309,7 @@ engines, two failure shapes, one physical camera family
 ```bat
 call :run -setMinComponentSize 50
 call :run -deselectAllImages
-call :run -exportLatestComponents "F:\na156_h2024\components\zone_1"
+call :run -exportLatestComponents "F:\survey\components\zone_1"
 ```
 
 ### `-setMinComponentSize`
@@ -1329,12 +1319,12 @@ call :run -exportLatestComponents "F:\na156_h2024\components\zone_1"
 **Behavior notes**
 
 - **DEPRECATED**: the application logs that it "will be removed in the next release"
-  [VERIFIED: read out of a per-cell `RealityScan.log` snapshot, NA167 #22 / B11,
+  [VERIFIED: read out of a per-cell `RealityScan.log` snapshot, bug B11,
   2026-07-24]. No replacement is documented.
 - **Still required.** Without it, components below the default threshold of 5 are silently
   excluded from **selection and from XMP export**. Production sets it to 1 before any export
   and to the zone's minimum (e.g. 50) before an all-components export
-  [VERIFIED: status log 2026-07-21; `AlignZone.bat`, `MergeZoneComponents.bat`].
+  [VERIFIED: project testing 2026-07-21; `AlignZone.bat`, `MergeZoneComponents.bat`].
 - Related but separate: the GUI's **Small Components** grouping threshold (default: fewer
   than 3 cameras) only affects 1Ds-view grouping and the "Delete all small components"
   button [OFFICIAL: appbasics/smallcomponents]; it is not this setting.
@@ -1346,8 +1336,8 @@ call :run -exportLatestComponents "F:\na156_h2024\components\zone_1"
 - [VERIFIED] `-exportSelectedComponentDir` names the file after the **component**, not the
   scene (a component called `Merged` produces `Merged.rsalign`). Rename the component first,
   or snapshot the directory before and after to identify the new file. Rename → export
-  writes `<newname>.rsalign` [NA167 §`-exportSelectedComponentDir`; FINDINGS U15/U16,
-  2026-07-23].
+  writes `<newname>.rsalign` [earlier multi-camera dataset, 2026-07; project testing, cells
+  U15/U16, 2026-07-23].
 - `-exportSelectedComponentFile` takes an explicit filename and would avoid the rename step;
   it has **never been exercised here** [OPEN: one smoke-fixture call settles whether it
   accepts a path with no `.rsalign` extension and whether the in-scene component keeps its
@@ -1356,8 +1346,8 @@ call :run -exportLatestComponents "F:\na156_h2024\components\zone_1"
 ```bat
 call :run -selectMaximalComponent
 call :run -renameSelectedComponent "zone_1_c0"
-call :run -exportSelectedComponentDir "F:\na156_h2024\components\zone_1"
-:: -> F:\na156_h2024\components\zone_1\zone_1_c0.rsalign
+call :run -exportSelectedComponentDir "F:\survey\components\zone_1"
+:: -> F:\survey\components\zone_1\zone_1_c0.rsalign
 ```
 
 ### `-exportRegistration`
@@ -1365,7 +1355,7 @@ call :run -exportSelectedComponentDir "F:\na156_h2024\components\zone_1"
 **Behavior notes**
 
 - [VERIFIED] **Without a params XML it blocks forever headless.** Avoid it until a params
-  file saved from the GUI Export Registration dialog exists [FINDINGS 2026-07-21].
+  file saved from the GUI Export Registration dialog exists [project testing 2026-07-21].
 - This is the GUI path by which a component is exported as a `.rsalign` ("RealityScan
   alignment component — only this one preserves all features of the application")
   [OFFICIAL: appbasics/components]. A complete component is exported when the current
@@ -1385,7 +1375,7 @@ Correct spelling is `-exportUndistortedImages` (master table, and process ID
 - [VERIFIED] It **does** resolve manifest component names in an **assembled** project —
   `-selectComponent "pd6_zone_1_c0"` worked — because components imported from `.rsalign`
   files had been renamed *before* export. It silently no-ops in **zone** scenes, which were
-  saved before the rename [FINDINGS 2026-07-26].
+  saved before the rename [project testing 2026-07-26].
 - New components are named `Component N` with **unstable N** (observed 5, 9, 0, 3, 4 across
   two zones), so name-based selection of a freshly aligned component is not reliable
   [VERIFIED-as-observation; OPEN: cell U6 — whether `-align` updates an existing component
@@ -1399,13 +1389,13 @@ Correct spelling is `-exportUndistortedImages` (master table, and process ID
   command that does not exist.
 - [VERIFIED] All three **silently no-op on an empty scene** (no error marker). Loop
   terminals must therefore be **file-existence checks**, not error checks
-  [FINDINGS 2026-07-23].
+  [project testing 2026-07-23].
 - [VERIFIED — the one exception that is usable] At the peel loop's terminal state,
   `-selectMaximalComponent` on an empty scene silently no-ops and the **following**
   `-renameSelectedComponent` fails `E_INVALIDARG 0x80070057` (2147942487) "in 0 seconds".
   Since there is **no CLI query for how many components remain**, that tolerated rename
   failure *is* the exhaustion signal; the evidence file is preserved as
-  `expected_peelend_<inst>.txt` [FINDINGS 2026-07-24] [UNDOCUMENTED: no component-count
+  `expected_peelend_<inst>.txt` [project testing 2026-07-24] [UNDOCUMENTED: no component-count
   query exists].
 - `-selectMaximalComponent` selects by **size**; whether it is affected by component names
   at all is untested [OPEN: hardening cell U5].
@@ -1414,7 +1404,7 @@ Correct spelling is `-exportUndistortedImages` (master table, and process ID
 
 ### `-selectComponentWithLeastReprojectionError`
 
-[VERIFIED] Exists in this build [NA167 B11; FINDINGS 2026-07-23]. Not used here — component
+[VERIFIED] Exists in this build [bug B11; project testing 2026-07-23]. Not used here — component
 choice is by camera count, because the deliverable criterion is coverage, not residual.
 [OPEN: per-component reprojection error is not otherwise readable headless — hardening cell
 U14; `-exportReport` with `<install>\Reports\ComponentAccuracyReport.html` is the candidate,
@@ -1423,7 +1413,7 @@ U14; `-exportReport` with `<install>\Reports\ComponentAccuracyReport.html` is th
 ### `-deleteComponent`
 
 `-deleteComponent <index>`, indices 0-based [OFFICIAL]. [VERIFIED] Exists in this build
-[FINDINGS 2026-07-23]. Index stability across a session is unknown, and component numbering
+[project testing 2026-07-23]. Index stability across a session is unknown, and component numbering
 is observed to be unstable across alignments — prefer `-selectComponent` /
 `-selectMaximalComponent` + `-deleteSelectedComponent` [INFERRED].
 
@@ -1499,7 +1489,7 @@ tutorials/commandline_1].
   of stereo-rig support** in RealityScan (through Aug 2025), which implies that rig-derived
   metric scale must come from GCPs, distance constraints, or locked XMP poses
   [OPEN: no GCP has ever been imported through this CLI]
-  [VERIFIED-second-hand: COLMAP fact base F-20260723-27].
+  [VERIFIED-second-hand: vendor staff statement, recorded 2026-07-23].
 
 ### `-editControlPointSelection`
 
@@ -1555,7 +1545,7 @@ Supported import formats are listed in `distancedefinitions.xml` in the installa
 [OFFICIAL]. Distance constraints are the CLI-reachable mechanism for imposing metric scale
 without GCPs — relevant here because a uniform scale error is invisible in the viewer and
 was measured at 0.175× on a 3,026-camera component
-[VERIFIED: FINDINGS 2026-07-25]. Never exercised through this CLI [OPEN].
+[VERIFIED: project testing 2026-07-25]. Never exercised through this CLI [OPEN].
 
 ### `-editConstraintSelection`
 
@@ -1653,12 +1643,12 @@ constraints first [OFFICIAL: tutorials/commandline_2].
 - Production here calls `-calculateHighModel` once, on the merged/assembled component, never
   per zone [VERIFIED: `GenerateModel.bat`; ARCHITECTURE.md].
 - **Measured cost of `-calculateHighModel` plus the full 8-step recipe**, on a 93.6 GB
-  dual-5090 box [VERIFIED: FINDINGS 2026-07-26 and 2026-07-29]:
+  dual-5090 box [VERIFIED: project testing 2026-07-26 and 2026-07-29]:
 
 | component | cameras | wall clock | peak commit | min available RAM |
 |---|---:|---:|---:|---:|
 | `cluster_0_a2_c0` (hull) | 4,860 | 338.3 min | **148.7 GB** | **0.9 GB** |
-| `pd6_zone_1_c0` (hull, other dive) | 3,738 | 384.1 min | 142.3 GB | 0.3 GB |
+| `pd6_zone_1_c0` (hull, another dataset) | 3,738 | 384.1 min | 142.3 GB | 0.3 GB |
 | `zone_1_c0` | 1,634 | 249.3 min | 139.9 GB | 2.0 GB |
 | `cluster_1_a1_c0` | 880 | 122.8 min | 138.6 GB | 2.8 GB |
 | `zone_4_c0` | 576 | 106.1 min | 116.8 GB | 3.0 GB |
@@ -1668,23 +1658,23 @@ constraints first [OFFICIAL: tutorials/commandline_2].
 - [VERIFIED] The ~5,000-camera envelope does **not** plateau. The apparent plateau at
   ~140 GB across 392–1,634 cameras was an artifact of that range; the hull pushed ~9 GB past
   it and ran with under a gigabyte of headroom. Treat anything materially larger as at risk
-  [FINDINGS 2026-07-29].
+  [project testing 2026-07-29].
 - [VERIFIED] On 3,738 cameras, `-calculateHighModel` drove available RAM from 79.4 GB to
   3.1 GB within three minutes; commit charge went 19.6 → 105 GB and Windows grew the commit
   limit from 99.5 to ~120 GB to absorb it. RealityScan's working set peaked at 62.5 GB. It
   was verified doing real work (9.1 cores busy, 33 % GPU over a 20 s window), not hanging.
   **These figures are a memory profile, not the cause of any failure**
-  [FINDINGS 2026-07-26; SUPERSEDED: the reading "memory exhaustion intrinsic to this mesh"].
+  [project testing 2026-07-26; SUPERSEDED: the reading "memory exhaustion intrinsic to this mesh"].
 - [VERIFIED — the real failure cause] Three failures of one hull model were all the **cache
   disk**: a crash at `closeHoles`/`cleanModel` (minidump
   `RealityScanCrash-20260726-054742.dmp`), then a 143.5-minute run failing at texture with
   `0x80070070 ERROR_DISK_FULL`, with the instance log finally saying "Processing failed: Out
   of disk space." during `-simplify`. Attempt 4 with the cache relocated succeeded in
-  384.1 min — the only variable changed [FINDINGS 2026-07-26].
+  384.1 min — the only variable changed [project testing 2026-07-26].
 - Near-OOM is a **third** cause of persistent `#timeout` in the progress stream: RealityScan
   slows to a crawl without crashing and without spilling to NVMe, indistinguishable from a
   hang. Mitigated here by sampling available RAM and warning below 4 GB free
-  [VERIFIED: FINDINGS 2026-07-24; `realityscan_cli.py` `LOW_MEMORY_WARN_GB = 4.0`].
+  [VERIFIED: project testing 2026-07-24; `realityscan_cli.py` `LOW_MEMORY_WARN_GB = 4.0`].
 
 ### `-continueModelCalculation`
 
@@ -1701,7 +1691,7 @@ RealityScan.exe -load project.rsproj recoverAutosave -continueModelCalculation
 
 **Behavior note.** This repo sets `appAutoSaveMode=false` at boot, so the crash path is
 **not** available to it by construction; a failed model run instead quits without saving and
-leaves the assembly intact [VERIFIED: `startRealityScan.bat`; FINDINGS 2026-07-26].
+leaves the assembly intact [VERIFIED: `startRealityScan.bat`; project testing 2026-07-26].
 
 ---
 
@@ -1777,23 +1767,23 @@ Do not put it in a workflow until that probe runs.
 - [VERIFIED] Matching is on the **exact** name — the prefix hazard is not real:
   `<tag>_HighPoly` does **not** match `<tag>_HighPoly_Textured`, confirmed on a real
   deliverable where the cleanup loop ran and all three kept models survived
-  [FINDINGS 2026-07-28].
+  [project testing 2026-07-28].
 - [VERIFIED] Model names are mutated by the workflow. `-renameSelectedModel` at any step
   removes the old name from the project, so a later `-selectModel <oldname>` fails
-  `err:5601 'not found'` [FINDINGS 2026-07-29].
+  `err:5601 'not found'` [project testing 2026-07-29].
 - [VERIFIED] A no-op select on a missing name **leaves the previous selection live**. If the
   wait is too short to detect the miss, a following `-deleteSelectedModel` deletes whatever
   was selected before — which at cleanup-loop entry is the final textured deliverable. The
   mitigation is the full double-wait in `:try_delete_model`, plus per-model evidence
   filenames so twelve iterations cannot overwrite each other's records
-  [FINDINGS 2026-07-29, GenerateModel audit #4].
+  [project testing 2026-07-29].
 - A missing name reports `2147942487` (`E_INVALIDARG`, empty selection) through the error
   channel, which is the code the tolerant wrappers whitelist
   [VERIFIED: `GenerateModel.bat`, `ExportDeliverables.bat`].
 - [OPEN] Benign and unexplained: `-selectModel <tag>_HighPoly` reports the empty-selection
   code in **every** component's cleanup loop, six for six. The name is the one intermediate
   that is both renamed and immediately re-textured, so the texture step may consume it
-  [status log 2026-07-29 loose end #3].
+  [project testing 2026-07-29].
 
 ### `-renameSelectedModel` / `-deleteSelectedModel` / `-duplicateSelectedModel`
 
@@ -1805,18 +1795,18 @@ Do not put it in a workflow until that probe runs.
   texture could be reprojected onto another's mesh silently. Every model name in
   `GenerateModel.bat` now carries a per-component `%model_tag%` prefix — 19 references
   namespaced. Discovered by reading the workflow before the second component started, not by
-  a failure [FINDINGS 2026-07-25].
+  a failure [project testing 2026-07-25].
 - [VERIFIED] A filter or simplify step can leave a **default-named residual** behind
   (`Model 1`, `Model 2`, …). Default names carry no component prefix, so they are swept
   separately; residuals from earlier components persist in a shared project. Exactly **one**
   such residual existed across a whole six-component project, not one per component as
-  hypothesised [FINDINGS 2026-07-29].
+  hypothesised [project testing 2026-07-29].
 - [VERIFIED] `-duplicateSelectedModel` exists in this build. It is the identified fix for
   retaining `<tag>_HighPoly_Raw`, which does **not** survive the recipe: step [2/8] renames
   the selected model to `_Cleanup1` when the marginal filter fires, so the raw name leaves
   the project. The models that actually persist per component are `_HighPoly_Textured`,
   `_Simplified_Textured`, plus one default-named residual
-  [FINDINGS 2026-07-29] [INFERRED: that duplicating after step [1/8] would preserve the raw
+  [project testing 2026-07-29] [INFERRED: that duplicating after step [1/8] would preserve the raw
   model; not tested].
 
 ### `-unwrap` / `-calculateTexture` / `-reprojectTexture`
@@ -1834,21 +1824,21 @@ Do not put it in a workflow until that probe runs.
   because reprojection samples the source **surface**. The final reprojection then maps
   manifold → manifold and introduces no nodata. Residual limitation: fill areas no camera
   ever saw come out untextured under any strategy
-  [docs/settings-evaluation-2026-07 §7, 2026-07-23].
+  [project test records, 2026-07-23].
 - [VERIFIED] `-reprojectTexture` resolves both operands **by name**; with duplicate names in
   a shared project it silently maps the wrong component's texture
-  [FINDINGS 2026-07-25].
-- Texture budget in force here: **max 4 adaptive 16K textures** in both texture passes.
-  `unwrapStyle=MaxTexturesCount` *is* the adaptive mode — texel size adapts to fit the count
-  — so 4 × 16K caps the budget while small components use fewer and smaller textures
-  [VERIFIED-as-config: status log 2026-07-29].
+  [project testing 2026-07-25].
+- Texture budget in force here: **max 4 adaptive 8K textures** in both texture passes
+  (the 2026-07-29 production runs used 4 × 16K). `unwrapStyle=MaxTexturesCount` *is* the
+  adaptive mode — texel size adapts to fit the count — so 4 × 8K caps the budget while small
+  components use fewer and smaller textures [VERIFIED-by-inspection: `GenerateModel.bat`].
 - Params files for all three are obtained by exporting them once from the corresponding GUI
   dialog. That is the only way to obtain a valid params XML for any tool
-  [VERIFIED-as-practice: FINDINGS 2026-07-21].
+  [VERIFIED-as-practice: project testing 2026-07-21].
 
 ```bat
-call :run -calculateTexture "%Metadata%\Texturing_MaxTextureCount4_16k.xml"
-call :run -unwrap "%Metadata%\Unwrapping_Simplified_4x16k.xml"
+call :run -calculateTexture "%Metadata%\Texturing_MaxTextureCount4_8k.xml"
+call :run -unwrap "%Metadata%\Unwrapping_Simplified_4x8k.xml"
 call :run -reprojectTexture "%model_tag%_HighPoly_Textured" "%model_tag%_Simplified" "%Metadata%\ReprojectionParams.xml"
 ```
 
@@ -1865,7 +1855,7 @@ call :run -exportModel "%comp%_HighPoly_Raw" "%out_dir%\%comp%\ply\%comp%_dense.
 ```
 
 [VERIFIED] In practice the dense PLY export falls back to `_HighPoly_Textured`, because
-`_HighPoly_Raw` does not survive the model recipe [FINDINGS 2026-07-29].
+`_HighPoly_Raw` does not survive the model recipe [project testing 2026-07-29].
 
 ### `-simplify`
 
@@ -1877,22 +1867,22 @@ call :run -exportModel "%comp%_HighPoly_Raw" "%out_dir%\%comp%\ply\%comp%_dense.
   a GUI-exported params XML [OFFICIAL].
 - Production passes params XMLs for a 70 %-relative "noise" pass and four 80 %-relative
   "smooth" passes with a `-cleanModel` between each
-  [VERIFIED: `GenerateModel.bat`; docs/settings-evaluation-2026-07].
+  [VERIFIED: `GenerateModel.bat`; project test records, 2026-07].
 - [OPEN] `SimplifyNoise_Params.xml` (70 % rel) and `SimplifySmooth_80per_Params.xml`
   (80 % rel) are **placeholders derived from the 50 % template**. If custom GUI presets exist
-  they should be exported over these files [standing self-audit item 5, unresolved].
+  they should be exported over these files [unresolved].
 
 ### `-closeHoles` / `-cleanModel`
 
 **Behavior notes**
 
 - [VERIFIED] The GUI's **Check Integrity** and **Check Topology** have **no CLI commands**;
-  their fix action maps to `-cleanModel` + `-closeHoles` [FINDINGS 2026-07-23]. Process IDs
+  their fix action maps to `-cleanModel` + `-closeHoles` [project testing 2026-07-23]. Process IDs
   `23 CHECK_MODEL_INTEGRITY` and `28 CHECK_MODEL_TOPOLOGY` exist in the progress-ID table
   but no command drives them [OFFICIAL: tutorials/processids].
 - Measured on a 3,738-camera hull: `-closeHoles` 125 s, `-cleanModel` 230 s, both succeeding
   — the failure that followed was the cache disk, not these steps
-  [VERIFIED: FINDINGS 2026-07-26].
+  [VERIFIED: project testing 2026-07-26].
 - `-closeHoles` accepts a `maxEdgesCount`; production calls it bare
   [VERIFIED: `GenerateModel.bat`].
 
@@ -1903,10 +1893,10 @@ call :run -exportModel "%comp%_HighPoly_Raw" "%out_dir%\%comp%\ply\%comp%_dense.
 - [VERIFIED] `-removeSelectedTriangles` removes the **SELECTED** set — it is the Filter
   Selection tool. So the marginal-triangle and large-triangle steps filter **directly**, and
   only the keep-largest-connected-component step needs `-invertTrianglesSelection` first
-  [FINDINGS 2026-07-23].
+  [project testing 2026-07-23].
 - [VERIFIED] `-selectLargeTrianglesRel`'s threshold is in **multiples of the average edge
   length, not pixels**. The GUI's "30 px" intuition does not transfer; a visual check is
-  required [FINDINGS 2026-07-23; docs/settings-evaluation-2026-07]
+  required [project testing 2026-07-23; project test records, 2026-07]
   [OPEN: the value `30` in `GenerateModel.bat` has never been visually validated on a real
   model].
 - A selection step that finds nothing, or a remove on an empty selection, reports
@@ -1938,10 +1928,10 @@ call :run -cleanModel
   into an empty `.xml` [OFFICIAL: tools/export].
 - [VERIFIED] By-parts export on a real assembly produced: **OBJ** — 4 parts + per-part MTL +
   `u1_v1` textures + `.rsInfo` (exactly Nira's expected layout); **FBX** — 4 parts +
-  textures; ~35–38 s each on a 133-camera component [FINDINGS 2026-07-29].
+  textures; ~35–38 s each on a 133-camera component [project testing 2026-07-29].
 - External platform facts carried alongside: Nira recommends OBJ over FBX and **refuses PLY
   point clouds** (LAS/LAZ/E57 instead); neither Nira nor Cesium ion has a scriptable in-app
-  share [VERIFIED-second-hand: vendor guidance, status log 2026-07-29].
+  share [VERIFIED-second-hand: vendor guidance, project testing 2026-07-29].
 
 ```bat
 call :run -exportModel "%comp%_Simplified_Textured" "%out_dir%\%comp%\obj\%comp%.obj" "%Metadata%\ModelExportParamsOBJ_NiraParts.xml"
@@ -2074,7 +2064,7 @@ are **not** templates and must not be passed as `templateFileName`
 [VERIFIED-by-inspection]. `images\`, `scripts\` and `styles\` hold the templates' assets.
 
 ```bat
-RealityScan.exe -delegateTo RS1 -exportReport "F:\na156_h2024\reports\zone_1_accuracy.html" ^
+RealityScan.exe -delegateTo RS1 -exportReport "F:\survey\reports\zone_1_accuracy.html" ^
   "C:\Program Files\Epic Games\RealityScan_2.2\Reports\ComponentAccuracyReport.html" true
 ```
 
@@ -2086,7 +2076,7 @@ RealityScan.exe -delegateTo RS1 -exportReport "F:\na156_h2024\reports\zone_1_acc
   verified **only in the GUI** today. Cheapest probe: delegate
   `ComponentAccuracyReport.html` with a watchdog; the risk being tested is that it blocks the
   way `-exportRegistration` does without a params file
-  [FINDINGS 2026-07-23 onward, never closed]. Note that `-exportReport` takes **no** params
+  [project testing 2026-07-23 onward, never closed]. Note that `-exportReport` takes **no** params
   XML — its third parameter is a boolean — so the `-exportRegistration` mitigation (supply a
   GUI-exported params file) does not exist here.
 - Report templates use the same variable and function syntax as `.rscmd` files
@@ -2189,12 +2179,12 @@ The key inventory is `03-settings-keys.md`. What belongs here is the command's b
   `Parsing setting key=value 'sfmMergeGeoreferencedComponents' failed [err:7155]` and
   `'false' failed`, applying nothing — while the parse errors land in the error marker and
   spuriously abort the workflow that carried them. Before this was found, **no flag cell in
-  the merge matrix had ever applied its flags** [NA167 B5, 2026-07-23].
+  the merge matrix had ever applied its flags** [bug B5, 2026-07-23].
 - [VERIFIED] Swept `-set` values **persist across instance restarts**, so every experiment
   must pin every key it depends on rather than assuming a default
-  [MERGE_TEST_PLAN §3 contamination controls, 2026-07-23].
+  [project test records, 2026-07-23].
 - [VERIFIED] Legacy `RealityCapture*` key names are **dead**; RealityScan 2.x uses `app*`
-  [overhaul commit 2, 2026-07-21].
+  [project testing 2026-07-21].
 - `-set` is instant. Delegated FIFO ordering guarantees it takes effect before the next
   queued operation, so production fires it without a completion wait
   [VERIFIED: `AlignZone.bat`, `MergeZoneComponents.bat`].
@@ -2247,12 +2237,12 @@ the shipped Help].
 
 - [VERIFIED] Under `-silent`, dialogs such as "Export Selection" are **auto-answered** —
   which is the mechanism by which a selection-driven export silently exports nothing when a
-  stray selection is active [FINDINGS 2026-07-23]. This is the single most important
+  stray selection is active [project testing 2026-07-23]. This is the single most important
   consequence of running silent.
 - Exit code `3` means a crash; the minidump is written to this path as
   `RealityScanCrash-YYYYMMDD-HHMMSS.dmp`. After a crash, the **next** delegated command
   fails with "Failed to delegate command" — the signature of a dead instance rather than a
-  rejected operation [VERIFIED: FINDINGS 2026-07-26].
+  rejected operation [VERIFIED: project testing 2026-07-26].
 
 ### `-writeProgress`
 
@@ -2279,17 +2269,17 @@ the shipped Help].
 - [VERIFIED] `#timeout` lines are **not progress**. The operation is internally stalled, yet
   `duration` keeps ticking and `estimation` becomes garbage — so line-change stall detection
   counts a 6-hour hang as activity. The relocated-`-importComponent` hang produced **zero**
-  stall warnings [NA167 #12 / B4, 2026-07-23].
+  stall warnings [bug B4, 2026-07-23].
 - [VERIFIED] `#timeout` does **not** always mean hung. Heavy alignment phases legitimately
   freeze the progress fraction for 20+ minutes; a *successful* 94.6 % run emitted 40
   `#timeout` lines. The pathological signature is `#timeout` **from fraction 0.00 with an
   ever-growing ETA**. Policy adopted: stall-**warn** at 2 h, never auto-kill an alignment
-  [NA167 #28, 2026-07-24].
+  [earlier multi-camera dataset, 2026-07-24].
 - Production uses a 600 s timeout and tails the file from the Python execution layer
   [VERIFIED: `startRealityScan.bat`, `realityscan_cli.py`].
 - The marker file is namespaced per instance (`progress_<inst>.txt`) and cleared before every
   run, with a 60 s retry because of the `getStatus`/teardown handle race
-  [VERIFIED: `realityscan_cli.py`; NA167 B3].
+  [VERIFIED: `realityscan_cli.py`; bug B3].
 
 ### `-tag`
 
@@ -2302,7 +2292,7 @@ cheapest probe for `.rscmd` argument expansion (§3, `-execRSCMD`).
 **RETIRED IN THIS REPO.** [VERIFIED] It allocates a **console window per instance boot**,
 and nothing reads instance stdout here — progress comes from `-writeProgress` and process
 results from the `appProcessExecCmd` hook. Removed from the boot line on 2026-07-23
-[`startRealityScan.bat` comment + FINDINGS]. It is not deprecated by Epic; it is simply
+[`startRealityScan.bat` comment; project testing 2026-07-23]. It is not deprecated by Epic; it is simply
 wrong for headless multi-instance operation.
 
 ### `-importGlobalSettings` / `-exportGlobalSettings`
@@ -2326,15 +2316,15 @@ Authorities and IDs come from the databases in the installation folder — `epsg
 
 **Behavior notes**
 
-- This repo does **not** use these commands: the per-cruise coordinate system is carried by
+- This repo does **not** use these commands: the per-survey coordinate system is carried by
   the flight-log import params XML instead, whose `CoordinateSystemFlightLog` /
   `CoordinateSystemFlightLogType` keys are generated from the UTM zone tag in the flight
   log's filename (`flight_log_53N_UTM.txt` → EPSG:32653) by
   `modules/flight_logs.write_flight_log_params` [VERIFIED-as-architecture: ARCHITECTURE.md].
-- [VERIFIED — why that matters] The UTM zone must be **derived per cruise, never hand-edited**.
-  A template carrying 4N (EPSG:32604) from an earlier project was used on a cruise that is
+- [VERIFIED — why that matters] The UTM zone must be **derived per survey, never hand-edited**.
+  A template carrying 4N (EPSG:32604) from an earlier project was used on a survey that is
   57S (EPSG:32757). **A wrong zone imports silently and misplaces everything**
-  [NA167 #6; FINDINGS 2026-07-21/22].
+  [earlier multi-camera dataset, 2026-07; project testing 2026-07-21/22].
 
 ---
 
@@ -2384,10 +2374,9 @@ the RealityScan 2.2 offline Help. The documented name for the operation is
 `-importTrajectory` (§6.2), and both drive process ID `20598 IMPORT_FLIGHT_LOG`
 [UNDOCUMENTED].
 
-It nevertheless works, and it is this repository's **only** georeferencing import path — six
-call sites across `AlignZone.bat`, `AlignImageList.bat`, `GrowZone.bat`,
-`MergeZoneComponents.bat`, `SequentialAlignGrow.bat` and `AlignImagesFromFolder.bat`. Known
-by execution on two independent machines [VERIFIED: FINDINGS 2026-07-21 onward].
+It nevertheless works, and it is this repository's **only** georeferencing import path — call
+sites in `AlignZone.bat`, `GrowZone.bat` and `MergeZoneComponents.bat`. Known by execution on
+two independent machines [VERIFIED: project testing 2026-07-21 onward].
 
 **Behavior notes**
 
@@ -2396,30 +2385,30 @@ by execution on two independent machines [VERIFIED: FINDINGS 2026-07-21 onward].
   imports fine. Filter logs to the scene's images, or tolerate exactly that code. Confirmed
   benign by matching all 102 "not found in the current scene" images against every component
   manifest: **zero overlap** — they were exactly the unregistered remainder
-  (4,598 log rows − 4,496 cameras = 102) [FINDINGS 2026-07-21 and 2026-07-25].
+  (4,598 log rows − 4,496 cameras = 102) [project testing 2026-07-21 and 2026-07-25].
 - [VERIFIED] Name matching is by **basename**, and it finds images in subfolders — bare
-  filenames matched images living in `wca/` and `zeuss/` [NA167 #5, 2026-07-22].
+  filenames matched images living in per-camera subfolders [earlier multi-camera dataset, 2026-07-22].
 - [VERIFIED] It leaves the matched images **actively selected**. `-deselectAllImages` before
-  any export (§3) [FINDINGS 2026-07-23].
+  any export (§3) [project testing 2026-07-23].
 - [VERIFIED] The params XML's `CoordinateSystemFlightLog` / `CoordinateSystemFlightLogType`
   must match the log's UTM zone — a wrong zone imports **silently** and misplaces everything
-  [NA167 #6].
+  [earlier multi-camera dataset, 2026-07].
 - [VERIFIED] Format definitions live in `flightlogs.xml` in the install folder. The custom
   13-column format used here (`{B438A617-2434-5A24-C1B7-58980F28345A}`, YPR at indices
   7/8/9, per-image position **and** orientation accuracies) was **never installed** until
   2026-07-25: `FlightLogParams.xml` referenced it but the stock `flightlogs.xml` did not
   contain it, so **orientation and per-image accuracies were silently dropped on every
   import** to that date. The file in Program Files is now hand-edited and must be re-checked
-  after any application update [PRIORS_DISTORTION_TEST_PLAN audit item 1, 2026-07-25]
+  after any application update [project test records, 2026-07-25]
   [OPEN: whether the hand-merged format survives an app update].
 - Other format GUIDs in play: `{0E9850E2-…}` a 7-column position-only format;
   `{97F08A22-…}` the stock 10-column format (X, Y, Alt, three accuracies, YPR), kept as the
-  no-admin fallback [VERIFIED: FINDINGS 2026-07-26].
+  no-admin fallback [VERIFIED: project testing 2026-07-26].
 - [UNDOCUMENTED] `ifKGrp` and `ifKmode` in the params XML are the only plausible carriers of
   the "Euler angles order (YPR)" and "Camera mount" import settings. Their value mapping is
   undocumented, and **neither string appears in any file under the RealityScan install** —
   both are compiled into the binary. Current values, unchanged since the template was
-  written: `ifKGrp=2`, `ifKmode=0x0` [FINDINGS 2026-07-26]
+  written: `ifKGrp=2`, `ifKmode=0x0` [project testing 2026-07-26]
   [OPEN: (1) set the two dropdowns in the GUI import dialog, save params, diff against the
   template — one minute, needs the GUI; (2) headless — align the smoke fixture at several
   `ifKmode` values and read camera attitudes out of the pose XMPs, ~2 min per cell].
@@ -2427,7 +2416,7 @@ by execution on two independent machines [VERIFIED: FINDINGS 2026-07-21 onward].
 **Example — tolerant import wrapper** [VERIFIED: `MergeZoneComponents.bat` `:run_geoimport`]
 
 ```bat
-call :run_geoimport -importFlightLog "F:\na156_h2024\merged\union_flight_log_04Q_UTM.txt" "F:\na156_h2024\merged\FlightLogParams.xml"
+call :run_geoimport -importFlightLog "F:\survey\merged\union_flight_log_04Q_UTM.txt" "F:\survey\merged\FlightLogParams.xml"
 ```
 
 The wrapper is the standard `:run` with one addition: if the error marker is non-empty it
@@ -2445,7 +2434,7 @@ each part contains geometry just in its cluster box."
 `C:\Program Files\Epic Games\RealityScan_2.2\Help\en-US\appbasics\allcommands.htm`, in the
 Model Tools table, **inside an HTML comment** (`<!-- <tr> <td class="command">undercut</td> …
 </tr>-->`). It is the **only** commented-out command row in the whole file, so it does not
-appear on the rendered Help page, in the plain-text conversion, or in `SURVEY_commands.md`.
+appear on the rendered Help page or in the plain-text conversion.
 Corroboration that the feature is real and shipped: the public process-ID table lists
 `27 UNDERCUT_MODEL_PARTS` [OFFICIAL: tutorials/processids] — a process ID with no visible
 command driving it, exactly like `23 CHECK_MODEL_INTEGRITY` and `28 CHECK_MODEL_TOPOLOGY`
@@ -2471,7 +2460,7 @@ fixture's model and watch for `algId 27` in `-writeProgress`. Until one of those
 ### `-selectAllComponents` — does not exist in RealityScan 2.2
 
 [VERIFIED] Fails as an unknown/invalid command, process result `0x82000060`. It had lived
-unnoticed in a legacy workflow script [NA167 #13 / B2, 2026-07-23; historical FINDINGS log #13].
+unnoticed in a legacy workflow script [bug B2, 2026-07-23].
 
 **Use instead:** `-selectComponent <name>`, `-selectMaximalComponent`, or
 `-selectComponentWithLeastReprojectionError` — those are the only three component-selection
@@ -2483,15 +2472,15 @@ without a selection.
 
 | assumed | reality | use instead |
 |---|---|---|
-| a params XML argument to `-align` | silently **ignored** [VERIFIED: FINDINGS 2026-07-21] | `-set` each `sfm*`/`lis*` key first, then a bare `-align` |
+| a params XML argument to `-align` | silently **ignored** [VERIFIED: project testing 2026-07-21] | `-set` each `sfm*`/`lis*` key first, then a bare `-align` |
 | a query for "how many components remain" | none exists [UNDOCUMENTED, VERIFIED by exhaustion] | peel until `-renameSelectedComponent` fails `0x80070057` on the empty scene; or count exported `.rsalign` files |
 | a query for per-component camera counts | none exists; component files are opaque `TBSM` binary | XMP pose census (`-exportXMP` / `-exportXMPForSelectedComponent`) |
-| a CLI "Check Integrity" / "Check Topology" | no commands, although process IDs `23 CHECK_MODEL_INTEGRITY` and `28 CHECK_MODEL_TOPOLOGY` exist | `-cleanModel` + `-closeHoles` [VERIFIED: FINDINGS 2026-07-23] |
+| a CLI "Check Integrity" / "Check Topology" | no commands, although process IDs `23 CHECK_MODEL_INTEGRITY` and `28 CHECK_MODEL_TOPOLOGY` exist | `-cleanModel` + `-closeHoles` [VERIFIED: project testing 2026-07-23] |
 | a per-part trim after a by-parts export | `-undercut` exists in the Help **source** but is commented out of the rendered table; process ID `27 UNDERCUT_MODEL_PARTS` is public | §12.2 — unverified, do not use in a workflow yet |
 | `-selectAllTriangles` | not in the command table | `-deselectModelTriangles` then `-invertTrianglesSelection` [INFERRED] |
 | `-selectAllModels` | not in the command table | select by name in a loop |
-| regexp selection with `-selectImage` | documented, but **selects nothing** in this build | one `-selectImage "<full path>" union` call per image [VERIFIED: FINDINGS 2026-07-23] |
-| per-camera distortion model via XMP | `sfmDistortionModel` is global and all-or-nothing [CONTRADICTED: FINDINGS 2026-07-26] | one global model; separate cameras by calibration/lens **group** instead |
+| regexp selection with `-selectImage` | documented, but **selects nothing** in this build | one `-selectImage "<full path>" union` call per image [VERIFIED: project testing 2026-07-23] |
+| per-camera distortion model via XMP | `sfmDistortionModel` is global and all-or-nothing [CONTRADICTED: project testing 2026-07-26] | one global model; separate cameras by calibration/lens **group** instead |
 | stereo-rig support | staff-confirmed **absent** through Aug 2025 | GCPs, distance constraints, or locked XMP poses for metric scale |
 
 ---
@@ -2500,13 +2489,12 @@ without a selection.
 
 | Command | Status | Evidence | Replacement |
 |---|---|---|---|
-| `-setMinComponentSize` | **Deprecated by Epic** — the application logs "will be removed in the next release" | [VERIFIED: read from a per-cell `RealityScan.log` snapshot, NA167 #22 / B11, 2026-07-24] | **None documented, and it is still required** — without it components below the default 5 are silently excluded from selection and from XMP export |
+| `-setMinComponentSize` | **Deprecated by Epic** — the application logs "will be removed in the next release" | [VERIFIED: read from a per-cell `RealityScan.log` snapshot, bug B11, 2026-07-24] | **None documented, and it is still required** — without it components below the default 5 are silently excluded from selection and from XMP export |
 | `-exportComponent` | Legacy name, absent from the master table | [INFERRED: §11] | `-exportLatestComponents` / `-exportSelectedComponentDir` / `-exportSelectedComponentFile` |
 | `-minComponentSize` | Legacy name, absent from the master table | [INFERRED: §11] | `-setMinComponentSize` |
 | `-exportUndistoredImages` | Typo spelling | [INFERRED: §11] | `-exportUndistortedImages` |
 | `-stdConsole` | Not deprecated by Epic; **retired in this repo** | [VERIFIED: allocates a console window per instance boot, 2026-07-23] | `-writeProgress` + the `appProcessExecCmd` completion hook |
-| `RealityCapture*` setting keys | **Dead** in 2.x | [VERIFIED: overhaul commit 2, 2026-07-21] | the `app*` keys — see `03-settings-keys.md` |
-| `AlignImagesFromFolder.bat` (this repo) | Deprecated workflow, kept only for one legacy test driver | [VERIFIED: ARCHITECTURE.md] | `AlignZone.bat` |
+| `RealityCapture*` setting keys | **Dead** in 2.x | [VERIFIED: project testing 2026-07-21] | the `app*` keys — see `03-settings-keys.md` |
 
 Legacy **file extensions** that are still accepted and are not deprecated spellings to be
 "fixed": `.rcproj` (`-unlockPPIProject` requires it), `.rcalign`, `.rccmd`, `.rcconfig`
@@ -2523,9 +2511,9 @@ Legacy **file extensions** that are still accepted and are not deprecated spelli
 | `-headless` | must be given at startup | [OFFICIAL: stated **indirectly** — `appbasics/allcommands`' own `-headless` row only links out, but its `-hideUI` and `-showUI` rows both read "Unlike headless, this command doesn't need to be run at startup"] |
 | `-silent` | "has to be used at the startup" | [OFFICIAL: appbasics/allcommands **only** — `tutorials/commandline_5` and `commandline_4` state no such requirement, see §10] |
 | `-translatorMode` | startup mode | [OFFICIAL: appbasics/localization] |
-| `-exportRegistration` **without** a params XML | blocks forever headless | [VERIFIED: FINDINGS 2026-07-21] |
+| `-exportRegistration` **without** a params XML | blocks forever headless | [VERIFIED: project testing 2026-07-21] |
 | `-tag`, `-printProgress`, `-stdConsole` | write to a Command Prompt; under delegation the output belongs to the instance's console, not the delegating process | [INFERRED — not stated in the Help; settled by delegating `-tag` and looking for the string] |
-| any selection-driven export while a selection is active, under `-silent` | exports **nothing**, silently | [VERIFIED: FINDINGS 2026-07-23] |
+| any selection-driven export while a selection is active, under `-silent` | exports **nothing**, silently | [VERIFIED: project testing 2026-07-23] |
 | `-continueModelCalculation` after a crash | requires `appAutoSaveMode` to have been enabled and `-load … recoverAutosave` | [OFFICIAL: tutorials/commandline_2] |
 | anything requiring interaction (e.g. a log-in window) | forces the application out of headless mode | [OFFICIAL: tutorials/headless] |
 
@@ -2546,7 +2534,7 @@ through the `:run` double-wait [VERIFIED: `RS_CLI/Scripts/*.bat`].
 
 Reference points for "long": `-importComponent` ~2 s per 0.7 GB **in place**; a real
 `-mergeComponents` ~1 h for 1–4k-camera pairs; `-align` 4–444 min depending on scene and
-size; the full model recipe 40–384 min [VERIFIED: FINDINGS, various 2026-07].
+size; the full model recipe 40–384 min [VERIFIED: project testing, 2026-07].
 
 ---
 
@@ -2623,9 +2611,11 @@ returned `taskID` and recording the response timing].
 
 ## 18. Production usage map of this repository
 
-52 commands are exercised in production, all of them from
-`modules/realityscan_interface/RS_CLI/Scripts/*.bat`
-[VERIFIED-by-inspection of every `%RealityScan%` / `call :run*` call site, 2026-08-04].
+56 commands are exercised in production: 55 from
+`modules/realityscan_interface/RS_CLI/Scripts/*.bat`, plus `-addImageWithCalibration`, which
+the generated calibration `.rscmd` issues (§3, `-execRSCMD`)
+[VERIFIED-by-inspection of every `%RealityScan%` / `call :run*` call site and of
+`calibration_sidecars.rscmd_text`].
 Everything that acts on a live instance goes through `-delegateTo %RS_INSTANCE%` inside the
 shared `:run` subroutine; the exceptions are the boot arguments (`-headless`, `-silent`,
 `-setInstanceName`, `-set`, `-writeProgress` on the `start ""` line), the readiness/teardown
@@ -2634,32 +2624,30 @@ probes (`-getStatus`), and the bare delegated `-quit` that ends every workflow.
 | workflow | commands, in order of use |
 |---|---|
 | `startRealityScan.bat` | `-getStatus`, `-delegateTo`, `-newScene` (+`-deleteAutosave`), `-headless`, `-silent`, `-setInstanceName`, `-set`, `-writeProgress` |
-| `AlignZone.bat` (canonical per-zone align) | `-newScene`, `-set "appIncSubdirs=true"`, `-addFolder`, `-importFlightLog`, `-set` (each `sfm*`/`lis*` key), `-align`, `-deselectAllImages`, `-setMinComponentSize`, `-save`, then the destructive identity loop: `-exportXMP`, `-selectMaximalComponent`, `-renameSelectedComponent`, `-exportSelectedComponentDir`, `-deleteSelectedComponent`; `-quit` **without saving** |
+| `AlignZone.bat` (canonical per-zone align) | `-newScene`, `-set "appIncSubdirs=true"`, `-addFolder` \| `-execRSCMD` (calibration `.rscmd`) \| `-add` (`.imagelist`), `-importFlightLog`, `-set` (each `sfm*`/`lis*` key), `-align`, `-deselectAllImages`, `-setMinComponentSize`, `-save`, then the destructive identity loop: `-exportXMP`, `-selectMaximalComponent`, `-renameSelectedComponent`, `-exportSelectedComponentDir`, `-deleteSelectedComponent`; `-quit` **without saving** |
 | `MergeZoneComponents.bat` | `-newScene`, `-importComponent` (from a `.complist` of in-place paths), `-set`, `-importFlightLog`, `-mergeComponents` \| `-align`, `-update`, `-deselectAllImages`, `-setMinComponentSize`, `-exportLatestComponents` (align mode only), `-save`, `-selectMaximalComponent`, `-renameSelectedComponent`, `-exportSelectedComponentDir`, `-exportXMPForSelectedComponent`, `-deleteSelectedComponent`, `-quit` |
 | `GenerateModel.bat` | `-load`, `-selectComponent` \| `-selectMaximalComponent`, `-calculateHighModel`, `-renameSelectedModel`, `-selectMarginalTriangles`, `-selectLargeTrianglesRel`, `-selectLargestModelComponent`, `-invertTrianglesSelection`, `-removeSelectedTriangles`, `-closeHoles`, `-cleanModel`, `-simplify`, `-calculateTexture`, `-unwrap`, `-reprojectTexture`, `-selectModel`, `-deleteSelectedModel`, `-save`, `-quit` |
 | `ExportDeliverables.bat` | `-load`, `-selectModel`, `-deleteSelectedModel`, `-save`, `-calculateVertexColors`, `-exportModel` (OBJ by parts, FBX by parts, dense PLY), `-quit` **without saving** |
-| `AlignImageList.bat` | `-newScene`, `-add`, `-importFlightLog`, `-align`, `-setMinComponentSize`, `-selectMaximalComponent`, `-renameSelectedComponent`, `-exportSelectedComponentDir`, `-exportXMPForSelectedComponent`, `-save`, `-quit` |
-| `SequentialAlignGrow.bat` | `-newScene`, then per pair: `-add`, `-importFlightLog`, `-align`; then the export block above |
+| `ModelToFinal.bat` (finishing pass on an existing model, e.g. one computed in the GUI) | `-getStatus`, `-waitCompleted`, `-selectModel`, `-correctColors`, `-cleanModel`, `-selectLargeTrianglesRel`, `-removeSelectedTriangles`, `-renameSelectedModel`, `-deleteSelectedModel`, `-calculateTexture`, `-simplify`, `-unwrap`, `-reprojectTexture`, `-exportSelectedModel`, `-save` |
+| `FlushCache.bat` | `-newScene`, `-save`, `-set`, `-clearCache`, `-quit` |
 | `GrowZone.bat` | `-load`, `-deselectAllImages`, `-selectAllImages`, `-editInputSelection` (`inpEnabled`, `aligFeaturesMode`, `inpPose`), `-enableAlignment` / `-setFeatureSource` (legacy fallback), `-selectImage … union`, `-add`, `-importFlightLog`, `-align`, `-setMinComponentSize`, `-exportLatestComponents`, `-exportXMP`, `-mergeComponents`, `-selectComponent`, `-deleteSelectedComponent`, `-save`, `-quit` |
-| `ProbeLockAlign.bat` | `-load`, `-selectAllImages`, `-editInputSelection`, `-setMinComponentSize`, `-align`, `-deselectAllImages`, `-exportXMP`, `-quit` (no `-selectImage`, no `-deleteAllComponents`) |
-| `ProbeSubsetAlign.bat`, `ProbeSubsetAlign2.bat` | as above **plus** `-selectImage … union` and `-deleteAllComponents` — the **only** two scripts that call `-deleteAllComponents` |
 | `SaveProjectCopy.bat` | `-load`, `-save`, `-quit` |
-| `AlignImagesFromFolder.bat` (**deprecated**) | the `AlignZone.bat` vocabulary with `-exportXMPForSelectedComponent` instead of the identity loop, **and** a full inline model recipe: `-calculateHighModel`, `-selectLargeTrianglesRel`, `-removeSelectedTriangles`, `-cleanModel`, `-simplify`, `-unwrap`, `-calculateTexture`, `-reprojectTexture`, `-renameSelectedModel`, `-selectModel`, `-deleteSelectedModel`. This is why it is deprecated: align and model in one non-restartable pass |
+| generated calibration `.rscmd` (run by `AlignZone.bat`) | `-addImageWithCalibration` per image with a sidecar, `-add` otherwise |
 
 Commands used in production, alphabetically:
 
 ```
--add -addFolder -align -calculateHighModel -calculateTexture -calculateVertexColors
--cleanModel -closeHoles -delegateTo -deleteAllComponents -deleteSelectedComponent
--deleteSelectedModel -deselectAllImages -editInputSelection -enableAlignment
--exportLatestComponents -exportModel -exportSelectedComponentDir -exportXMP
--exportXMPForSelectedComponent -getStatus -headless -importComponent -importFlightLog
--invertTrianglesSelection -load -mergeComponents -newScene -quit -removeSelectedTriangles
--renameSelectedComponent -renameSelectedModel -reprojectTexture -save -selectAllImages
--selectComponent -selectImage -selectLargeTrianglesRel -selectLargestModelComponent
--selectMarginalTriangles -selectMaximalComponent -selectModel -set -setFeatureSource
--setInstanceName -setMinComponentSize -silent -simplify -unwrap -update -waitCompleted
--writeProgress
+-add -addFolder -addImageWithCalibration -align -calculateHighModel -calculateTexture
+-calculateVertexColors -cleanModel -clearCache -closeHoles -correctColors -delegateTo
+-deleteSelectedComponent -deleteSelectedModel -deselectAllImages -editInputSelection
+-enableAlignment -execRSCMD -exportLatestComponents -exportModel
+-exportSelectedComponentDir -exportSelectedModel -exportXMP -exportXMPForSelectedComponent
+-getStatus -headless -importComponent -importFlightLog -invertTrianglesSelection -load
+-mergeComponents -newScene -quit -removeSelectedTriangles -renameSelectedComponent
+-renameSelectedModel -reprojectTexture -save -selectAllImages -selectComponent
+-selectImage -selectLargeTrianglesRel -selectLargestModelComponent -selectMarginalTriangles
+-selectMaximalComponent -selectModel -set -setFeatureSource -setInstanceName
+-setMinComponentSize -silent -simplify -unwrap -update -waitCompleted -writeProgress
 ```
 
 Retired from production: `-stdConsole` (removed 2026-07-23).
@@ -2678,7 +2666,7 @@ document. `*` marks a command used in production by this repository.
 -abortInstance                              §5
 -add                                     *  §3
 -addFolder                               *  §3
--addImageWithCalibration                    §3
+-addImageWithCalibration                 *  §3
 -addShapeToSelection                        §8.4
 -align                                   *  §6.1
 -calculateCrossSections                     §8.4
@@ -2692,15 +2680,15 @@ document. `*` marks a command used in production by this repository.
 -calculateTexture                        *  §8.1
 -calculateVertexColors                   *  §8.1
 -cleanModel                              *  §8.2
--clearCache                                 §3
+-clearCache                              *  §3
 -closeHoles                              *  §8.2
 -colorModelBySelectedClassification         §9
 -computeContours                            §8.4
 -continueModelCalculation                   §7
--correctColors                              §8.1
+-correctColors                           *  §8.1
 -cutByBox                                   §8.2
 -defineDistance                             §6.2   two parameter forms
--deleteAllComponents                     *  §6.1
+-deleteAllComponents                        §6.1
 -deleteComponent                            §6.1
 -deleteConstraint                           §6.2
 -deleteControlPoint                         §6.2
@@ -2728,7 +2716,7 @@ document. `*` marks a command used in production by this repository.
 -enableInComponent                          §4
 -enableMeshing                              §4
 -enableTexturingAndColoring                 §4
--execRSCMD                                  §3
+-execRSCMD                               *  §3
 -execRSCMDIndirect                          §5
 -execrscmd                                  §11    Help-prose lowercase spelling of -execRSCMD
 -export3dTiles                              §8.3
@@ -2757,7 +2745,7 @@ document. `*` marks a command used in production by this repository.
 -exportSelectedClassificationFormat         §9
 -exportSelectedComponentDir              *  §6.1
 -exportSelectedComponentFile                §6.1
--exportSelectedModel                        §8.3
+-exportSelectedModel                     *  §8.3
 -exportShapes                               §8.4
 -exportSparsePointCloud                     §6.1
 -exportUndistoredImages                     §11    Help-prose typo; do not use
@@ -2952,7 +2940,7 @@ rest are headless and scriptable.
 | Q24 | Does the hand-merged 13-column flight-log format in `flightlogs.xml` survive a RealityScan update? | Re-check the file after any update. Standing item. |
 | Q25 | How long does `-quit` → `-getStatus` gone take on a 4,000+ camera scene? The shutdown bound is verified only on small scenes. | One teardown. |
 | Q26 | Do two concurrent instances on different GPUs stay isolated (marker files, cache)? Never run. | Boot RS1 on GPU 0 and RS2 on GPU 1, align two small zones simultaneously. |
-| Q27 | Does RealityScan's own `-importVideo` frame extraction carry a timestamp offset like this repo's retired OpenCV extractor did (one output interval early)? | Extract a synthetic per-frame-gray video and read the resulting timestamps. |
+| Q27 | Does RealityScan's own `-importVideo` frame extraction carry a timestamp offset (frames stamped one output interval early)? | Extract a synthetic per-frame-gray video and read the resulting timestamps. |
 | Q28 | Does the `RSNode.exe` HTTP channel report completion more reliably than `-waitCompleted`? | One `align` call on the smoke fixture with response timing recorded. |
 | Q29 | Does `appCopyImportedComponentsToCache` interact with the relocated-`-importComponent` hang (hard rule 7)? | Copy a component elsewhere, set the key, `-importComponent`, watchdog at 45 min. |
 | Q30 | Has the `-selectLargeTrianglesRel 30` threshold ever been visually validated on a real model? No. | Render before/after at two thresholds and look. **GUI** for the judgement. |
@@ -2961,6 +2949,6 @@ rest are headless and scriptable.
 
 | # | Item |
 |---|---|
-| Q31 | The deterministic standalone-alignment failure `MSS_STR001` (generic `0x8000FFFF`) on one 1,476-image zone with fully exonerated data has **never been reported to Epic**. Forensic log at `docs/validation/results/z14_forensic_rslog.txt`. |
+| Q31 | The deterministic standalone-alignment failure `MSS_STR001` (generic `0x8000FFFF`) on one 1,476-image zone with fully exonerated data has **never been reported to Epic**. A forensic log is kept with the project test records (2026-07). |
 | Q32 | `-setMinComponentSize` is deprecated with **no documented replacement** while remaining required. What replaces it in the next release is unknown; nothing in the 2.2 Help says. |
 | Q33 | Whether "no re-optimization" still describes `-mergeComponents` in the current build. The staff claim is from 2021, pre-rename and outside the trust window; the observed 56-minute merge reconstruction argues against it. |

@@ -1,26 +1,24 @@
 """Workspace model: pure artifact-census logic, no UI, no subprocesses.
 
-Moved here from wildscan/workspace.py (2026-08-07, consolidation step 8):
-run_models.py needs the census without dragging in the TUI package, and
-the layering rule is that wildscan may import modules, never the reverse.
+Lives in modules rather than wildscan because run_models.py needs the
+census without dragging in the TUI package, and the layering rule is that wildscan may import modules, never the reverse.
 wildscan.workspace remains as a re-export shim for compatibility.
 
 Everything the app shows is derived from artifacts the canonical pipeline
 already writes - the same signals the unattended drivers use to resume:
 
-    raw_images/                     extraction output / user input
-    flight_log_*_UTM.txt            georeference terminal artifact
+    raw_images/wildsync_intake.json Wild Sync Intake manifest
     preprocessed_images/            CLAHE output
     batched_images_by_zone/         zoning + batch_inputs.json fingerprint
     aligned_components/<zone>/      *.rsalign + *.rsalign.manifest.json
     <merge>/merge_report.json       merge terminal + EVALUATION_READY.txt
     <merge>/assembly/*.rsproj       the assembly project
     models_report.json              modelled components (run_models.py -
-                                    the CURRENT writer; the two H2024
+                                    the CURRENT writer; the two
                                     names below are legacy and kept
                                     readable so old workspaces still
                                     census)
-    final_report.json               modelled components (legacy H2024)
+    final_report.json               modelled components (legacy)
     fused_models_report.json        fused-component models + measured scale
     exports/<comp>/{obj,fbx,ply}    deliverable exports
 
@@ -39,17 +37,19 @@ from typing import Optional
 from .align_fingerprint import (component_input_fingerprint,
                                 model_input_fingerprint, project_state)
 from .harvest_guard import assert_harvestable
+from .wildsync_intake.intake import load_manifest
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".heif"}
 
 STAGE_ORDER = [
-    "extract", "georeference", "preprocess", "batch",
+    "extract", "georeference", "intake", "preprocess", "batch",
     "align", "merge", "model", "export", "publish",
 ]
 
 STAGE_TITLES = {
     "extract": "Extract Images",
     "georeference": "Georeference",
+    "intake": "Wild Sync Intake",
     "preprocess": "Preprocess (CLAHE)",
     "batch": "Batch into Zones",
     "align": "Align Zones",
@@ -99,10 +99,10 @@ def _find_flight_logs(root: Path) -> list[Path]:
 
 
 # Model-report filenames, newest convention FIRST. run_models.py writes
-# models_report.json (both modes); the other two are the retired H2024
+# models_report.json (both modes); the other two are retired
 # driver names, still read so an old workspace censuses correctly. Adding
 # models_report.json here is what stops the portal re-ticking a finished
-# model stage on every resume (audit 2026-08-07).
+# model stage on every resume.
 MODEL_REPORT_NAMES = ("models_report.json", "final_report.json",
                       "fused_models_report.json")
 
@@ -122,7 +122,7 @@ def _records(report: dict, *keys: str) -> list[dict]:
     _load_json guards I/O and JSON errors but not SHAPE: a report whose
     ``clusters`` is a dict (or whose entries are strings) used to crash the
     census with ``AttributeError: 'str' object has no attribute 'get'``
-    (audit 2026-08-07). Anything that is not a dict record is dropped.
+    Anything that is not a dict record is dropped.
     """
     for key in keys:
         value = report.get(key)
@@ -208,6 +208,7 @@ class Workspace:
                                f"{loose:,} images at workspace root")
         return StageStatus("extract", "pending", "no imagery found yet")
 
+
     def _detect_georeference(self) -> StageStatus:
         logs = _find_flight_logs(self.raw_images) or _find_flight_logs(self.root)
         logs = [p for p in logs if self.batched not in p.parents]
@@ -237,6 +238,30 @@ class Workspace:
             return StageStatus("georeference", "done",
                                f"{logs[0].name} ({rows:,} rows)")
         return StageStatus("georeference", "pending", "no flight_log_*_UTM.txt")
+
+
+    def _detect_intake(self) -> StageStatus:
+        """Status of the Wild Sync Intake stage from its manifest in
+        raw_images/. A manifest that does not load as complete is never
+        'done': a later stage must not act on a partial intake."""
+        try:
+            manifest = load_manifest(str(self.raw_images))
+        except ValueError as exc:
+            return StageStatus("intake", "partial",
+                               "intake manifest is not complete", [str(exc)])
+        if manifest is None:
+            return StageStatus("intake", "pending",
+                               "no Wild Sync intake manifest")
+        try:
+            matched = manifest["images"]["matched"]
+            runs = len(manifest["sources"])
+            variant = manifest["variant"]
+        except (KeyError, TypeError) as exc:
+            return StageStatus("intake", "partial",
+                               "intake manifest is missing a field",
+                               [f"missing {exc}"])
+        return StageStatus("intake", "done",
+                           f"{matched:,} {variant} images from {runs} run(s)")
 
     def _detect_preprocess(self) -> StageStatus:
         """Check completion and file metadata; the producer verifies SHA.
@@ -327,7 +352,7 @@ class Workspace:
         # Zone folders that hold NO images are the flight-log/disk filename
         # mismatch artifact - the batcher created the folders and copied
         # nothing. Counting folders alone reported that 'done' and handed
-        # empty trees to alignment (audit 2026-08-07).
+        # empty trees to alignment.
         if zones and total == 0:
             return StageStatus("batch", "blocked",
                                f"{len(zones)} zone folders but ZERO images "
@@ -387,7 +412,7 @@ class Workspace:
         # The gate file alone is not proof: merge_zones used to write it
         # BEFORE checking the assembly workflow's result, so a failed
         # assembly left a document declaring a terminal state for a project
-        # that was never saved (audit 2026-08-07). Require the recorded
+        # that was never saved. Require the recorded
         # workflow_success too - absent (older reports) still counts.
         assembly = report.get("assembly")
         assembly_ok = (not isinstance(assembly, dict)
@@ -483,7 +508,7 @@ class Workspace:
                 details.append(f"{c.name}: {', '.join(sorted(kinds))}")
         # The denominator is what the MERGE declared final, not what
         # exports/ happens to contain: measuring exports against itself
-        # reported "1 of 1" for a 1-of-6 export (audit 2026-08-07).
+        # reported "1 of 1" for a 1-of-6 export.
         expected = set()
         merge = self.latest_merge()
         if merge:

@@ -16,6 +16,7 @@ the merge pair gate mis-classifies vertically separated structure
 from __future__ import annotations
 
 import json
+import ntpath
 import os
 from dataclasses import dataclass, field
 
@@ -27,7 +28,7 @@ def _basename_key(name) -> str:
     exact-string matching made every such component "no nav extent"
     (colmap_studio FINDINGS C-20260827-06). Lowercased because Windows
     filesystems are case-insensitive (the batcher's convention)."""
-    return os.path.basename(str(name)).lower()
+    return ntpath.basename(str(name)).lower()
 
 
 def _normalize_nav(nav: dict) -> dict:
@@ -74,7 +75,7 @@ def load_nav_positions(flight_log_path: str) -> dict:
             except ValueError:
                 continue
             raw = parts[0].strip('"')
-            key = os.path.basename(raw)
+            key = ntpath.basename(raw)
             prior = raw_of.setdefault(key.lower(), raw)
             if prior.lower() != raw.lower():
                 raise ValueError(

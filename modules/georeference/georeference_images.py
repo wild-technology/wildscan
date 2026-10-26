@@ -129,6 +129,16 @@ NO_ASSUMED_MOUNT_FAMILIES: frozenset[str] = frozenset({
 })
 
 
+def require_vehicle_nav_family(family: str | None) -> None:
+    """Keep Wild Sync per-camera timing/attitude on its own intake path."""
+    if family in ('cam1', 'cam2'):
+        raise ValueError(
+            'Wild Sync camera images require Wild Sync Intake, not the '
+            'WCA/Zeuss vehicle-navigation workflow. Select Wild Sync Intake '
+            'with --w_input pointing at the original run directory in a '
+            'separate workspace.')
+
+
 def assumed_pitch_prior(family: str | None, enabled: bool = True,
                         pitch_deg: float | None = None,
                         accuracy_deg: float | None = None
@@ -140,6 +150,7 @@ def assumed_pitch_prior(family: str | None, enabled: bool = True,
     must reach this ONLY after MOUNTS has returned nothing, so a measured
     mount can never be overridden.
     """
+    require_vehicle_nav_family(family)
     if not enabled or family in NO_ASSUMED_MOUNT_FAMILIES:
         return (None, None)
     pitch = ASSUMED_MOUNT_DEFAULTS['pitch'] if pitch_deg is None else pitch_deg
@@ -353,6 +364,7 @@ class GeoreferenceImages(RSModule):
         "images that got no usable prior".
         """
         fam = camera_registry.family(filename)
+        require_vehicle_nav_family(fam)
         mount = MOUNTS.get(fam) if fam else None
         if mount is None:
             if fam is None:
@@ -1090,6 +1102,16 @@ class GeoreferenceImages(RSModule):
         dtype = dtype_value.lower()
         if dtype not in ["zeuss", "wca", "wca2025", "all"]:
             return False, 'Invalid data type specified'
+
+        if dtype == 'all':
+            for _root, _dirs, files in os.walk(input_dir):
+                for filename in files:
+                    if os.path.splitext(filename)[1].lower() not in self.ACCEPTED_EXTENSIONS:
+                        continue
+                    try:
+                        require_vehicle_nav_family(camera_registry.family(filename))
+                    except ValueError as exc:
+                        return False, str(exc)
 
         if dtype == "wca":
             self.params['geo_input_type'].set_value("WCA")

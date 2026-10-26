@@ -12,6 +12,7 @@ from module_base.rs_module import RSModule
 from module_base.settings_store import SettingsStore
 from modules.extract_images.extract_images import ExtractImages
 from modules.georeference.georeference_images import GeoreferenceImages
+from modules.wildsync_intake.wildsync_intake import WildSyncIntake
 from modules.preprocess_images.preprocess_images import PreprocessImages
 from modules.image_batcher.batch_directory import BatchDirectory
 from modules.realityscan_interface.realityscan_interface import RealityScanAlignment
@@ -21,7 +22,7 @@ def initialize_logger() -> logging.Logger:
     logger = logging.getLogger(__name__)
     return logger
 
-def initialize_modules(logger) -> dict[str, RSModule]:
+def initialize_modules(logger, *, help_only=False) -> dict[str, RSModule]:
     """
     Initializes the modules and returns a dict of the active modules.
 
@@ -29,18 +30,32 @@ def initialize_modules(logger) -> dict[str, RSModule]:
     inquirer checkbox requires a real terminal, which automated drivers
     do not have):
     - RS_MODULES: comma-separated list of module display names to enable
-    - RS_NO_INTERACTIVE: truthy value enables all modules (or the
-      RS_MODULES selection) without prompting
+    - RS_NO_INTERACTIVE: truthy value enables the legacy module chain (or
+      the explicit RS_MODULES selection) without prompting. Wild Sync Intake
+      is an alternative input workflow and must be selected explicitly.
     """
     available_modules: dict[str, RSModule] = {
         'Extract Images': ExtractImages(logger),
         'Georeference Images': GeoreferenceImages(logger),
+        'Wild Sync Intake': WildSyncIntake(logger),
         'Preprocess Images': PreprocessImages(logger),
         'Batch Directory': BatchDirectory(logger),
         'RealityScan Alignment': RealityScanAlignment(logger)
     }
+    if help_only:
+        return available_modules
+    default_modules = [name for name in available_modules
+                       if name != 'Wild Sync Intake']
 
-    no_interactive = os.environ.get('RS_NO_INTERACTIVE', '').strip().lower() in ('1', 'true', 'yes', 'y')
+    def selected(names):
+        if ('Wild Sync Intake' in names
+                and any(name in names for name in ('Extract Images', 'Georeference Images'))):
+            logger.error('Select Wild Sync Intake OR Extract Images/Georeference Images; '
+                         'they are alternative input workflows. Use separate workspaces.')
+            sys.exit(2)
+        return {name: mod for name, mod in available_modules.items() if name in names}
+
+    no_interactive = _no_interactive()
     modules_env = os.environ.get('RS_MODULES')
     if no_interactive or modules_env:
         if modules_env:
@@ -50,16 +65,15 @@ def initialize_modules(logger) -> dict[str, RSModule]:
                 logger.error(f'RS_MODULES names unknown modules: {unknown}. '
                              f'Valid names: {list(available_modules.keys())}')
                 sys.exit(1)
-            return {name: mod for name, mod in available_modules.items()
-                    if name in wanted}
-        return dict(available_modules)
+            return selected(wanted)
+        return selected(default_modules)
 
     module_choices = [
         inquirer.Checkbox(
             'modules',
             message='Select modules to enable (arrow keys to move, space to select, enter to confirm)',
             choices=list(available_modules.keys()),
-            default=list(available_modules.keys()),
+            default=default_modules,
             carousel=True
         )
     ]
@@ -69,12 +83,7 @@ def initialize_modules(logger) -> dict[str, RSModule]:
         # user cancelled (Ctrl-C) or no interactive terminal
         sys.exit(1)
 
-    enabled_modules: dict[str, RSModule] = {}
-    for name, mod in available_modules.items():
-        if name in answers.get('modules', []):
-            enabled_modules[name] = mod
-
-    return enabled_modules
+    return selected(answers.get('modules', []))
 
 def initialize_parameters(modules) -> dict[str, Parameter]:
     """
@@ -90,7 +99,8 @@ def initialize_parameters(modules) -> dict[str, Parameter]:
         type=str,
         default_value=None,
         description='Path to the output directory',
-        prompt_user=True
+        prompt_user=True,
+        required=True
     )
 
     params['continue_automatically'] = Parameter(
@@ -131,7 +141,7 @@ def build_arg_parser(params) -> argparse.ArgumentParser:
     command line (the WildScan portal) can be tested against the real
     parser instead of a parallel list of flag names. A flag not defined
     here is an argparse exit-2 "unrecognized arguments" before any stage
-    runs (audit 2026-08-07).
+    runs.
     """
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -139,10 +149,8 @@ def build_arg_parser(params) -> argparse.ArgumentParser:
             "environment variables:\n"
             "  RS_MODULES         comma-separated module names to enable "
             "non-interactively\n"
-            "                     (module-specific flags appear in --help "
-            "only for enabled\n"
-            "                     modules; bare --help enables all modules "
-            "to show everything)\n"
+            "                     (--help itself always shows the flags of "
+            "every module)\n"
             "  RS_NO_INTERACTIVE  1 = never prompt; missing required values "
             "fail fast\n"
             "  RS_ALIGN_PARAMS    alignment-settings XML override (changes "
@@ -158,7 +166,10 @@ def build_arg_parser(params) -> argparse.ArgumentParser:
         # percent in a description (e.g. "96.3% -> 89.6%") crashes --help
         # and every argparse error path. Descriptions stay human-readable
         # for the interactive prompts; the escaping belongs here.
-        parser.add_argument(f'-{p.cli_short}', f'--{p.cli_long}',
+        flags = [f'--{p.cli_long}']
+        if p.cli_short:
+            flags.insert(0, f'-{p.cli_short}')
+        parser.add_argument(*flags,
                             type=arg_type,
                             help=p.get_description().replace('%', '%%'))
     return parser
@@ -170,17 +181,42 @@ def parse_arguments(argv, params, logger) -> None:
 
     Prompted values are persisted to rs_settings.json (section "main") and
     offered as the default on the next run - press enter to reuse them.
+
+    With RS_NO_INTERACTIVE set, nothing is prompted: a missing value takes
+    its stored or default value, and required values that have neither are
+    reported together, naming their flags, before the process exits with
+    status 2. The same error ends a prompt that finds stdin closed with no
+    value to fall back on for a required parameter.
     """
     str_to_bool = _str_to_bool
     parser = build_arg_parser(params)
     args = parser.parse_args(argv[1:])
+    no_interactive = _no_interactive()
 
     settings = SettingsStore()
+    missing: list[Parameter] = []
 
     for p in params.values():
         val = getattr(args, p.cli_long, None)
         if val is None and p.prompt_user:
             last_value = settings.get('main', p.cli_long, p.get_default_value())
+            if (p.cli_long == 'w_calibration'
+                    and str(last_value).strip().lower() == 'auto'):
+                # Older sessions saved auto as their default. They cannot
+                # establish a deliberate opt-in to measured Sony priors
+                # after groups became the default. Explicit CLI input is
+                # already handled above and remains authoritative.
+                last_value = 'groups'
+                logger.info('Stored automatic Sony calibration is no longer '
+                            'the default; using groups. Select auto again or '
+                            'pass --w_calibration auto to opt in.')
+            if no_interactive:
+                if last_value is None and p.required:
+                    missing.append(p)
+                    continue
+                logger.info(f'Non-interactive: {p.get_name()} = {last_value}')
+                p.set_value(last_value)
+                continue
             prompt = f'{p.get_description()}'
             if last_value is not None:
                 prompt += f' [{last_value}]'
@@ -193,10 +229,11 @@ def parse_arguments(argv, params, logger) -> None:
                 else:
                     val = p.get_type()(inp)
             except EOFError:
-                # Unattended run (stdin closed / hidden console): take the
-                # stored default silently - same convention as the module
-                # prompts (Windows trap registry: isatty() lies, input()
-                # must always be EOF-safe).
+                # stdin is closed (an unattended or hidden console): take
+                # the stored value, or report the value as missing.
+                if last_value is None and p.required:
+                    missing.append(p)
+                    continue
                 logger.info(f'Non-interactive: {p.get_name()} = {last_value}')
                 val = last_value
             except ValueError:
@@ -207,6 +244,18 @@ def parse_arguments(argv, params, logger) -> None:
         if val is None and not p.prompt_user:
             val = p.get_default_value()
         p.set_value(val)
+
+    if missing:
+        flags = ', '.join(f'--{p.cli_long} ({p.get_name()})' for p in missing)
+        parser.exit(2, f'{parser.prog}: error: no value for {flags}; '
+                       'pass the flag(s) on the command line (prompting is '
+                       'off or stdin is closed)\n')
+
+
+def _no_interactive() -> bool:
+    """True when RS_NO_INTERACTIVE asks for a run without any prompt."""
+    return os.environ.get('RS_NO_INTERACTIVE', '').strip().lower() in (
+        '1', 'true', 'yes', 'y')
 
 def update_parameters(params, modules) -> None:
     """
@@ -229,17 +278,21 @@ def log_output_data(logger, output_data: dict[str, object], indent: int = 0) -> 
 
 def main(argv) -> None:
     logger = initialize_logger()
-    # --help must never block on the interactive module checkbox (verified
-    # live 2026-08-08: `python main.py --help` under redirected output hung
-    # past 60 s with no message, because initialize_modules() ran before
-    # argparse ever saw argv). With -h/--help present, enable every module
+    # --help must never block on the interactive module checkbox: under
+    # redirected output initialize_modules() would otherwise wait for input
+    # before argparse ever sees argv. With -h/--help present, enable every module
     # non-interactively so the FULL parser - all modules' options - builds,
     # prints, and exits.
-    if any(a in ('-h', '--help') for a in argv[1:]):
-        os.environ.setdefault('RS_NO_INTERACTIVE', '1')
-        os.environ.pop('RS_MODULES', None)
-    modules = initialize_modules(logger)
-    params = initialize_parameters(modules)
+    help_only = any(a in ('-h', '--help') for a in argv[1:])
+    modules = initialize_modules(logger, help_only=help_only)
+    if help_only:
+        # Alternative producers suppress each other's input parameters during
+        # execution. Help must still show every standalone/resume flag.
+        params = {}
+        for name, module in modules.items():
+            params.update(initialize_parameters({name: module}))
+    else:
+        params = initialize_parameters(modules)
     parse_arguments(argv, params, logger)
     update_parameters(params, modules)
 
@@ -253,9 +306,7 @@ def main(argv) -> None:
         if not ok:
             # sys.exit(1), NOT a bare return: a bare return exits 0, so an
             # unattended caller gating on exit status reads a refused run as
-            # success. Surfaced 2026-07-26 when the batcher correctly refused
-            # to reuse zones built from a different flight log and main.py
-            # still reported 0 - the same silent-failure shape as the
+            # success - the same silent-failure shape as the
             # module-failure branch below, which has always exited 1.
             logger.error(msg)
             sys.exit(1)
@@ -277,13 +328,13 @@ def main(argv) -> None:
             log_output_data(logger, overall_data)
             sys.exit(1)
 
-        if not params['continue_automatically'].get_value() and idx < len(modules) - 1:
+        if (not _no_interactive()
+                and not params['continue_automatically'].get_value()
+                and idx < len(modules) - 1):
             # isatty() lies under hidden consoles and redirected pipes, so
             # this gate cannot be reached only when a human is present.
             # Unattended, stdin is at EOF immediately: continue rather than
-            # crash the chain between two modules that both succeeded
-            # (observed on the H2024 run - georeference finished 8,197/8,197
-            # and the pipeline died here before preprocessing).
+            # crash the chain between two modules that both succeeded.
             try:
                 input("Press enter to continue...")
             except EOFError:

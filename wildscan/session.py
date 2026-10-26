@@ -2,22 +2,21 @@
 
 The portal mirrors the flow the pipeline has had since RC_Main:
 
-    1. expedition / dive / data location / results root   (this module)
+    1. generic imagery/video and navigation, or a Wild Sync run, and workspace
     2. checkbox stage selection, everything sensible pre-selected
     3. ONE question at a time, in module order, each parameter's own
        DESCRIPTION as the prompt, honouring disable_when_module_active
     4. parameter summary, then run - with gates between stages
 
-This file owns the non-UI halves: raw-data auto-detection, results-root
-structure, last-run persistence, the question list, and command assembly.
-It is a PORTAL ONLY - the pipeline scripts are untouched, and chained
-modules run in a single main.py invocation exactly as they always have
-(the in-process hand-off between Batch Directory and Alignment IS the
-current data handling; splitting them would change behaviour).
+This file owns the non-UI halves: generic source and Wild Sync run
+detection, camera scans, results-root structure, persistence, questions,
+and command assembly. Chained modules run in one main.py invocation,
+preserving their in-process hand-off. The two input workflows share the
+later processing stages but are never selected together.
 
 Last-run answers persist via the pipeline's own SettingsStore under the
 'wildscan' section of rs_settings.json, so the next session opens with the
-previous expedition, dive, data location and results root as defaults.
+previous source paths, expedition/dive labels and workspace as defaults.
 """
 from __future__ import annotations
 
@@ -28,6 +27,18 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from modules import camera_registry
+from modules.calibration_sidecars import MODES as CALIBRATION_MODES
+from modules.wildsync_intake.intake import (
+    VARIANTS,
+    IntakeError,
+    find_run_directories,
+    image_variant,
+    node_directories,
+    split_run_paths,
+)
+
+from .workspace import STAGE_TITLES as CENSUS_TITLES
 from .workspace import StageStatus, Workspace, _find_flight_logs, _load_json
 
 REPO = Path(__file__).resolve().parent.parent
@@ -36,31 +47,35 @@ _quiet = logging.getLogger("wildscan.session")
 _quiet.addHandler(logging.NullHandler())
 _quiet.propagate = False
 
-# The extraction module accepts these containers; detection must match it.
 VIDEO_EXTS = {".mov", ".mp4"}
 NAV_HINTS = ("datatable", "nav", "flight", "rumi")
 NAV_EXTS = {".csv", ".txt", ".tsv"}
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 
-# Pipeline module chain, in RC_Main's order, plus the post-align stages the
+# Pipeline module chain, in main.py's order, plus the post-align stages the
 # portal drives as separate commands.
-CHAIN_STAGES = ["extract", "georeference", "preprocess", "batch", "align"]
+CHAIN_STAGES = ["extract", "georeference", "intake", "preprocess", "batch", "align"]
+LEGACY_CHAIN_STAGES = ["extract", "georeference", "preprocess", "batch", "align"]
+WILDSYNC_CHAIN_STAGES = ["intake", "preprocess", "batch", "align"]
 POST_STAGES = ["merge", "model", "export", "publish"]
 ALL_STAGES = CHAIN_STAGES + POST_STAGES
 
 MODULE_DISPLAY = {
     "extract": "Extract Images",
     "georeference": "Georeference Images",
+    "intake": "Wild Sync Intake",
     "preprocess": "Preprocess Images",
     "batch": "Batch Directory",
     "align": "RealityScan Alignment",
 }
 
+STAGE_TITLES = {key: CENSUS_TITLES[key] for key in ALL_STAGES}
+
 # The results layout the pipeline itself creates under the results root -
 # shown to the operator so "auto-created structure" is explicit, created by
 # the MODULES, never by the portal.
 RESULTS_LAYOUT = [
-    ("raw_images/", "extracted or copied survey imagery"),
+    ("raw_images/", "extracted or copied imagery, flight logs and optional intake manifest"),
     ("preprocessed_images/", "CLAHE output (align + texture source)"),
     ("batched_images_by_zone/", "per-zone trees + batch_inputs.json"),
     ("aligned_components/", "per-zone .rsalign + identity manifests"),
@@ -71,13 +86,105 @@ RESULTS_LAYOUT = [
 ]
 
 
-# ----------------------------------------------------------------- cameras
+# ------------------------------------------------------- run directories
 
-# The operator's official camera table (2026-07-29) - suggestions offered when
-# an unrecognised filename prefix matches a letter. The PIPELINE's camera
-# truth stays in modules/camera_registry.py; the portal only identifies,
-# asks, and records.
-# superseded-by modules/cameras.json cameras/families - pending migration step (c+)
+@dataclass(frozen=True)
+class CameraCount:
+    """One camera node folder of a run: frame files per image variant."""
+    node: str
+    camera: str                  # camera key from modules/cameras.json, or ""
+    card: int = 0
+    review: int = 0
+    raw: int = 0
+    hidden_files: int = 0
+
+    def summary_line(self) -> str:
+        who = (f"{self.node} ({self.camera})" if self.camera
+               else f"{self.node} (matches no camera in modules/cameras.json)")
+        return (f"{who}: {self.card:,} card, {self.review:,} review, "
+                f"{self.raw:,} RAW (RAW is not an input)")
+
+
+@dataclass(frozen=True)
+class RunInfo:
+    """A detected Wild Sync run directory."""
+    path: Path
+    has_run_json: bool
+    cameras: tuple[CameraCount, ...] = ()
+
+    @property
+    def run_id(self) -> str:
+        return self.path.name
+
+
+@dataclass
+class RunDataScan:
+    """What the run-directory field actually holds - drives the preview."""
+    runs: list[RunInfo] = field(default_factory=list)
+    problems: list[str] = field(default_factory=list)
+
+    def summary_lines(self) -> list[str]:
+        lines = []
+        for run in self.runs:
+            lines.append(f"run {run.run_id}"
+                         + ("" if run.has_run_json else " (no run.json)"))
+            lines += [f"  {cam.summary_line()}" for cam in run.cameras]
+        lines += self.problems
+        if not lines:
+            lines.append("nothing recognised yet - point me at a Wild Sync "
+                         "run directory")
+        return lines
+
+
+def scan_run_cameras(run_dir: str | Path) -> tuple[CameraCount, ...]:
+    """Frame files per camera node and image variant of one run directory.
+
+    Node folders, variants and frame suffixes come from the intake module's
+    own helpers; hidden files (names starting with '.', such as macOS '._*'
+    copies) are never frames, exactly as in the intake.
+    """
+    counts = []
+    for node_dir in node_directories(str(run_dir)):
+        node = os.path.basename(node_dir)
+        family = next((f for f in camera_registry.REGISTRY.families
+                       if f.name.lower() == node.lower()), None)
+        found = {"card": 0, "review": 0, "raw": 0}
+        hidden = 0
+        for name in os.listdir(node_dir):
+            if name.startswith("."):
+                hidden += 1
+                continue
+            variant = image_variant(name)
+            if variant in found and os.path.isfile(os.path.join(node_dir, name)):
+                found[variant] += 1
+        counts.append(CameraCount(node, family.camera if family else "",
+                                  hidden_files=hidden, **found))
+    return tuple(counts)
+
+
+def scan_run_data(location: str | Path) -> RunDataScan:
+    """Read-only census of the run-directory field: each ';'-separated path
+    is a Wild Sync run directory or a folder of them (the intake's own
+    rule). Anything else is reported as a problem."""
+    scan = RunDataScan()
+    seen: set[Path] = set()
+    for path in split_run_paths(str(location)):
+        try:
+            runs = find_run_directories([path])
+        except IntakeError as exc:
+            scan.problems.append(str(exc))
+            continue
+        for run in runs:
+            run_path = Path(run)
+            if run_path in seen:
+                continue
+            seen.add(run_path)
+            scan.runs.append(RunInfo(run_path,
+                                     (run_path / "run.json").is_file(),
+                                     scan_run_cameras(run_path)))
+    return scan
+
+
 OFFICIAL_CAMERAS = {
     "Z": "Zeuss 24mm rectilinear zoom (Standard Science Camera)",
     "C": "Cinema (fisheye; 16mm) - Widefield Camera Array",
@@ -115,7 +222,7 @@ class CameraScan:
 _PREFIX_RE = None
 
 
-def scan_cameras(image_dir: str | Path, sample_per_dir: int = 200) -> CameraScan:
+def scan_image_cameras(image_dir: str | Path, sample_per_dir: int = 200) -> CameraScan:
     """Parse camera identities from filenames: the registry decides KNOWN
     (priors on file); anything else groups by its leading alpha prefix and
     becomes a question."""
@@ -250,6 +357,15 @@ def scan_raw_data(location: str | Path) -> RawDataScan:
     return scan
 
 
+
+
+def scan_cameras(location, sample_per_dir=200):
+    """Census of Wild Sync node folders or generic camera image names."""
+    if node_directories(str(location)):
+        return scan_run_cameras(location)
+    return scan_image_cameras(location, sample_per_dir)
+
+
 # -------------------------------------------------------------- persistence
 
 def _settings():
@@ -257,13 +373,13 @@ def _settings():
     return SettingsStore()
 
 
-_PERSISTED_FIELDS = ("expedition", "dive", "cruise_folder", "raw_images_dir",
-                     "video_path", "processed_data", "results_root", "results_base",
-                     "continue_automatically")
+_PERSISTED_FIELDS = ("run_dirs", "expedition", "dive", "cruise_folder",
+                     "raw_images_dir", "video_path", "processed_data",
+                     "results_root", "results_base", "continue_automatically")
 
 
 def load_last_run() -> dict:
-    """The previous session's answers - the new defaults (project decision)."""
+    """The previous session's answers - the new defaults."""
     store = _settings()
     out = {}
     for key in _PERSISTED_FIELDS:
@@ -273,11 +389,17 @@ def load_last_run() -> dict:
     answers = store.get("wildscan", "answers", None)
     if isinstance(answers, dict):
         out["answers"] = {str(k): str(v) for k, v in answers.items()}
+        if out['answers'].get('w_calibration', '').strip().lower() == 'auto':
+            # A former default is not an opt-in for the next intake. Do
+            # this only at the persisted-state boundary: a live wizard
+            # choice of auto or prior must reach command assembly intact.
+            out['answers']['w_calibration'] = 'groups'
     return out
 
 
 def save_last_run(session: "Session") -> None:
     store = _settings()
+    store.set("wildscan", "run_dirs", session.run_dirs)
     store.set("wildscan", "expedition", session.expedition)
     store.set("wildscan", "dive", session.dive)
     store.set("wildscan", "cruise_folder", session.cruise_folder)
@@ -295,6 +417,7 @@ def save_last_run(session: "Session") -> None:
 
 @dataclass
 class Session:
+    run_dirs: str = ""
     expedition: str = ""
     dive: str = ""
     # Raw data - three separate lines (decision 2026-07-29): the cruise dive
@@ -329,6 +452,7 @@ class Session:
 def default_session() -> Session:
     last = load_last_run()
     s = Session(
+        run_dirs=last.get("run_dirs", ""),
         expedition=last.get("expedition", ""),
         dive=last.get("dive", ""),
         cruise_folder=last.get("cruise_folder", ""),
@@ -346,17 +470,55 @@ def default_session() -> Session:
     return s
 
 
+def stage_statuses(ws: Workspace) -> dict[str, StageStatus]:
+    """The census of both input workflows and the shared processing stages."""
+    census = ws.detect()
+    return {key: census[key] for key in ALL_STAGES}
+
+
+def workspace_workflow(ws: Workspace) -> str:
+    """Recognize a prior intake even if it stopped before its manifest."""
+    interrupted = _load_json(ws.root / "interrupted_stage.json").get("stages", [])
+    intake_interrupted = isinstance(interrupted, list) and 'intake' in interrupted
+    return ('wildsync' if intake_interrupted or
+            (ws.raw_images / 'wildsync_intake.json').exists() else 'legacy')
+
+
+def select_workspace(session: Session, root: str) -> None:
+    """Apply an explicit workspace without carrying an incompatible workflow.
+
+    A previous session's source selection remains useful when reopening the
+    same workspace, including an intake that has not run yet. A workspace's
+    own intake manifest/interrupt marker is authoritative; clear only source
+    fields belonging to the other input workflow. An unmarked different
+    workspace uses the generic workflow.
+    """
+    same_workspace = bool(session.results_root) and (
+        os.path.normcase(os.path.abspath(session.results_root))
+        == os.path.normcase(os.path.abspath(root)))
+    session.results_root = root
+    if workspace_workflow(session.workspace()) == 'wildsync':
+        for name in ('cruise_folder', 'raw_images_dir', 'video_path', 'processed_data'):
+            setattr(session, name, '')
+    elif not same_workspace:
+        session.run_dirs = ''
+
+
 def default_enabled(ws: Workspace,
-                    statuses: dict[str, StageStatus] | None = None) -> list[str]:
+                    statuses: dict[str, StageStatus] | None = None,
+                    *, workflow: str | None = None) -> list[str]:
     """Resume-aware pre-selection: stages already DONE are unticked, the
     rest ticked - RC_Main pre-selected everything; a resumable portal
     pre-selects what remains."""
     if statuses is None:
-        statuses = ws.detect()
+        statuses = stage_statuses(ws)
     interrupted = _load_json(ws.root / "interrupted_stage.json").get("stages", [])
     if not isinstance(interrupted, list):
         interrupted = []
-    return [k for k in ALL_STAGES
+    if workflow is None:
+        workflow = workspace_workflow(ws)
+    stages = (WILDSYNC_CHAIN_STAGES if workflow == "wildsync" else LEGACY_CHAIN_STAGES) + POST_STAGES
+    return [k for k in stages
             if k in interrupted or statuses.get(k) is None or statuses[k].status != "done"]
 
 
@@ -367,7 +529,7 @@ class Question:
     stage: str                   # stage key it belongs to
     arg: str                     # cli_long
     prompt: str                  # the parameter's own description (RC_Main)
-    kind: str                    # text | path | file | video | number | bool
+    kind: str                    # text | path | file | rundirs | number | bool
     default: str = ""
     required: bool = False
     choices: tuple[str, ...] = ()
@@ -385,6 +547,11 @@ class Question:
             return f"{value} is not a directory"
         if self.kind == "file" and not Path(value).is_file():
             return f"{value} is not a file"
+        if self.kind == "rundirs":
+            try:
+                find_run_directories(split_run_paths(value))
+            except IntakeError as exc:
+                return str(exc)
         if self.kind == "video":
             path = Path(value)
             if not (path.is_file() or path.is_dir()):
@@ -407,6 +574,7 @@ _KIND_BY_NAME = {
     "image_input_video": "video",
     "geo_input_image_dir": "path",
     "geo_input_flight_log": "file",
+    "ws_run_dirs": "rundirs",
     "pre_input_image_dir": "path",
     "batch_input_image_dir": "path",
     "batch_flight_log_path": "file",
@@ -414,18 +582,19 @@ _KIND_BY_NAME = {
     "rs_flight_log_path": "file",
     "rs_flight_log_params": "file",
 }
-# geo_input_type is REQUIRED (audit 2026-08-07): it has default_value None,
-# so a blank answer used to be accepted, dropped from argv, and only
-# rejected by GeoreferenceImages.validate_parameters ("No data type
-# specified") after the operator had already pressed Run.
+# Parameters that must be answered even though the module gives them a
+# default (a parameter whose default is None is always required).
 _REQUIRED = {"image_input_video", "geo_input_image_dir",
              "geo_input_flight_log", "geo_input_type"}
 # Answers constrained to a fixed set - validated at the question, not four
 # screens later.
-_CHOICES_BY_NAME = {
+_CHOICES_BY_NAME: dict[str, tuple[str, ...]] = {
     "geo_input_type": ("Zeuss", "WCA", "WCA2025", "All"),
+    "ws_variant": VARIANTS,
+    "ws_calibration": tuple(CALIBRATION_MODES),
 }
-# Alignment's per-zone model flags are a separate, gated stage here.
+# Alignment answers the portal fixes instead of asking: RealityScan's own
+# console display stays off.
 _FORCED_ANSWERS = {"r_model_generate": "false", "r_model_cull_poly": "false",
                    "r_model_texture": "false", "r_model_simplify": "false",
                    "r_display_output": "false"}
@@ -441,10 +610,13 @@ def _module_registry() -> dict:
         from modules.image_batcher.batch_directory import BatchDirectory
         from modules.preprocess_images.preprocess_images import PreprocessImages
         from modules.realityscan_interface.realityscan_interface import (
-            RealityScanAlignment)
+            RealityScanAlignment,
+        )
+        from modules.wildsync_intake.wildsync_intake import WildSyncIntake
         _MODULES = {
             "extract": ExtractImages(_quiet),
             "georeference": GeoreferenceImages(_quiet),
+            "intake": WildSyncIntake(_quiet),
             "preprocess": PreprocessImages(_quiet),
             "batch": BatchDirectory(_quiet),
             "align": RealityScanAlignment(_quiet),
@@ -462,7 +634,7 @@ def chain_arg_names(chain: list[str]) -> set[str]:
     with exit 2, so forwarding the full persisted answer set made the
     portal's own command unrunnable on 29 of 31 stage selections - and
     default_enabled() unticks completed stages, so the SECOND session
-    always landed in the broken region (audit 2026-08-07).
+    always landed in the broken region.
     """
     names = {"output_dir", "continue_automatically"}
     enabled_displays = {MODULE_DISPLAY[k] for k in chain if k in MODULE_DISPLAY}
@@ -504,13 +676,16 @@ def scan_processed_data(location: str | Path) -> dict[str, list[Path]]:
     return out
 
 
-def _detection_prefills(session: Session, scan: RawDataScan) -> dict[str, str]:
+def _detection_prefills(session: Session, scan: RawDataScan | None = None) -> dict[str, str]:
     """Auto-detected answers, keyed by cli_long. Only offered as defaults -
     every one still passes through its question. Source priority: the
     operator's explicit lines (video / raw images / processed data) beat the
     cruise-folder scan."""
+    scan = scan or (scan_raw_data(session.cruise_folder) if session.cruise_folder else RawDataScan())
     ws = session.workspace()
     out: dict[str, str] = {}
+    if session.run_dirs.strip():
+        out["w_input"] = session.run_dirs.strip()
     if session.video_path and Path(session.video_path).is_file():
         out["i_input"] = session.video_path
     elif scan.videos:
@@ -552,7 +727,7 @@ def _detection_prefills(session: Session, scan: RawDataScan) -> dict[str, str]:
     return out
 
 
-def build_questions(session: Session, scan: RawDataScan) -> list[Question]:
+def build_questions(session: Session, scan: RawDataScan | None = None) -> list[Question]:
     """RC_Main's question list: per enabled chain module, in order, each
     prompt_user parameter - SKIPPING any whose disable_when_module_active
     names another enabled module (the upstream module will hand the value
@@ -561,14 +736,9 @@ def build_questions(session: Session, scan: RawDataScan) -> list[Question]:
                         if k in MODULE_DISPLAY}
     detected = _detection_prefills(session, scan)
     questions: list[Question] = []
-
-    # Camera identification comes FIRST: parse the imagery's camera names;
-    # recognised families carry priors on file; unrecognised prefixes may
-    # record optional notes without inventing measured camera priors.
     image_source = detected.get("g_input") or session.raw_images_dir
-    if image_source:
-        cam_scan = scan_cameras(image_source)
-        questions += camera_questions(cam_scan, session.answers)
+    if image_source and "intake" not in session.enabled:
+        questions += camera_questions(scan_image_cameras(image_source), session.answers)
 
     for key in CHAIN_STAGES:
         if key not in session.enabled:
@@ -618,6 +788,12 @@ class StageCommand:
         return " ".join(a if " " not in a else f'"{a}"' for a in self.argv)
 
 
+def _anchor_run_dirs(value: str, cwd: Path) -> str:
+    """Run-directory paths made absolute against ``cwd``, joined with ';'."""
+    return ";".join(os.path.abspath(os.path.join(cwd, part))
+                    for part in split_run_paths(value))
+
+
 def build_commands(session: Session) -> list[StageCommand]:
     """The run plan: ONE main.py invocation for every enabled chain module
     (in-process hand-off preserved - portal only), then each post stage as
@@ -626,27 +802,34 @@ def build_commands(session: Session) -> list[StageCommand]:
     caller_cwd = Path.cwd()
     # Absolute paths survive the native workflow's separate working directory.
     # abspath preserves aliases so downstream alias guards can still inspect them.
-    for name in ('cruise_folder', 'raw_images_dir', 'video_path',
-                 'processed_data', 'results_root'):
+    for name in ("cruise_folder", "raw_images_dir", "video_path", "processed_data", "results_root"):
         value = getattr(session, name).strip()
         if value:
             setattr(session, name, os.path.abspath(os.path.join(caller_cwd, value)))
+    session.run_dirs = _anchor_run_dirs(session.run_dirs, caller_cwd)
     chain = [k for k in CHAIN_STAGES if k in session.enabled]
+    if "intake" in chain and any(k in chain for k in ("extract", "georeference")):
+        raise ValueError("Wild Sync Intake and legacy extraction/georeferencing are alternative input workflows; select one.")
     path_args = {'output_dir'}
+    run_dir_args = set()
     for module in _module_registry().values():
         for name, parameter in module.get_parameters().items():
             if _KIND_BY_NAME.get(name) in ('path', 'file', 'video'):
                 path_args.add(parameter.cli_long)
+            elif _KIND_BY_NAME.get(name) == 'rundirs':
+                run_dir_args.add(parameter.cli_long)
     for arg, value in session.answers.items():
         if arg in path_args and value.strip():
             session.answers[arg] = os.path.abspath(os.path.join(caller_cwd, value.strip()))
+        elif arg in run_dir_args:
+            session.answers[arg] = _anchor_run_dirs(value, caller_cwd)
     ws = session.workspace()
 
     # RealityScan machine constants (RS_INSTANCE / RS_CACHE_DIR /
     # RS_HEADLESS), resolved ONCE per run plan from the settings store's
     # 'realityscan' section (module_base.settings_store.realityscan_env -
-    # the single source of truth; headless defaults False = visible, project
-    # decision 2026-08-07). PRECEDENCE: a variable already set in the
+    # the single source of truth; headless defaults False = visible).
+    # PRECEDENCE: a variable already set in the
     # user's environment wins over the stored default - realityscan_env
     # returns the env value unchanged in that case, so when CommandRunner
     # overlays this dict onto the inherited environment the user's
@@ -665,18 +848,13 @@ def build_commands(session: Session) -> list[StageCommand]:
         # "unrecognized arguments" before a single stage ran.
         accepted = chain_arg_names(chain)
         for arg, value in session.answers.items():
-            # cam_* answers are the portal's camera record (persisted for
-            # the maintainers and the next run), never main.py arguments.
-            if arg.startswith("cam_"):
-                continue
             if arg not in accepted:
                 continue
             if value.strip() or arg in ('r_flight_log', 'r_project_label'):
                 argv += [f"--{arg}", value.strip()]
-        # The forced model flags belong to RealityScan Alignment, so they
-        # are only legal when 'align' is in the chain; they used to be
-        # appended unconditionally, which alone rejected every
-        # align-less selection.
+        # The forced answers belong to RealityScan Alignment, so they are
+        # only legal when 'align' is in the chain; they used to be appended
+        # unconditionally, which alone rejected every align-less selection.
         if "align" in chain:
             for arg, value in _FORCED_ANSWERS.items():
                 argv += [f"--{arg}", value]
@@ -700,17 +878,16 @@ def build_commands(session: Session) -> list[StageCommand]:
                 "--visible", "true", "--auto_model", "false",
                 "--ladder", "merge_first", "--merge_scope", "neighbour",
                 "--pair_gate", "overlap", "--assemble_only", "false",
-                # 0.0025 = the bounded-loss decision (2026-07-28):
-                # 0.25% of input cameras, sized from the hull's real loss
-                # (5-11 of 4,865) with an order of magnitude of headroom.
+                # 0.0025 = the bounded-loss decision:
+                # 0.25% of input cameras, an order of magnitude above the
+                # loss of a sound joint solve.
                 # Pinned HERE deliberately (not rs_settings): drivers that
                 # left merge options unpinned inherited another session's
-                # stored values (final review 2026-07-29, item c), and
+                # stored values, and
                 # test_wildscan pins this flag by test. Scale band 0.90-1.10
-                # is the metric-scale oracle gate (2026-07-26), set after two
-                # align-time scale collapses (0.175, 0.236) shipped with
-                # camera-count oracles green; known-good components measure
-                # 0.937-1.119. Full provenance: merge_zones.merge_cluster's
+                # is the metric-scale oracle gate: align-time scale collapses
+                # can pass camera-count oracles, and known-good components
+                # fall inside the band. Full provenance: merge_zones.merge_cluster's
                 # loss_tolerance_frac comment.
                 "--loss_tolerance", "0.0025", "--scale_gate", "true",
                 "--scale_min", "0.9", "--scale_max", "1.1"]
@@ -733,7 +910,7 @@ def build_commands(session: Session) -> list[StageCommand]:
         # Popen had no instance lock, no marker hygiene, no verified
         # shutdown, broke on space-containing checkout paths, and let the
         # 'start ""'-booted RealityScan GUI inherit the runner's stdout
-        # PIPE (WINDOWS TRAP 2026-08-07) - run_batch_script gives the .bat
+        # PIPE (a Windows trap) - run_batch_script gives the .bat
         # a log file instead. Deliverable pinning (OBJ_NiraParts /
         # FBX_Parts / dense PLY) stays in ExportDeliverables.bat and its
         # Metadata presets; the driver only carries the same three
@@ -758,10 +935,9 @@ def build_commands(session: Session) -> list[StageCommand]:
         # what the exporter actually did. The flight log is pinned here as the
         # INDEPENDENT nav check on that reading - and pinned rather than left
         # to publish_batch for the same reason --loss_tolerance is: the portal
-        # states what it ran (audit 2026-08-07). Before 2026-08-31 this passed
-        # --input-crs, which the exports needed because they carry raw UTM
-        # metres; that flag is gone, and the vertical it could never express
-        # was the reason every published wreck sat at the sea surface.
+        # states what it ran. --input-crs is no longer passed: it could not
+        # express the vertical, which left published models at the sea
+        # surface.
         log = workspace_flight_log(ws)
         if log:
             argv += ["--flight-log", str(log)]
@@ -779,13 +955,13 @@ def build_commands(session: Session) -> list[StageCommand]:
 
 
 def workspace_flight_log(ws: Workspace) -> Path | None:
-    """The workspace's zone-tagged flight log, or None for a local-frame
-    campaign (no zone tag anywhere).
+    """The workspace's zone-tagged flight log, or None when no flight log
+    carries a zone tag.
 
     The merge output is searched first: the exported components were built
     against the merge's union log.
     """
-    from modules.flight_logs import crs_for_flight_log  # noqa: PLC0415
+    from modules.flight_logs import crs_for_flight_log
     candidates = list(_find_flight_logs(ws.raw_images)) or \
         list(_find_flight_logs(ws.root))
     merge = ws.latest_merge()
@@ -803,7 +979,7 @@ def workspace_input_crs(ws: Workspace) -> str | None:
     No longer what places an asset - that comes from each mesh's `.rsInfo`
     sidecar - but still the quickest way to state a workspace's zone.
     """
-    from modules.flight_logs import crs_for_flight_log  # noqa: PLC0415
+    from modules.flight_logs import crs_for_flight_log
     log = workspace_flight_log(ws)
     return crs_for_flight_log(str(log)) if log else None
 
@@ -865,7 +1041,7 @@ def export_names_file(session: Session) -> None:
     merge = ws.latest_merge()
     if not merge:
         return
-    from .workspace import _load_json, _records  # noqa: PLC0415
+    from .workspace import _load_json, _records
     rep = _load_json(merge / "merge_report.json")
     names = [c.get("key", "").split("/")[-1]
              for rec in _records(rep, "clusters")

@@ -12,16 +12,16 @@ import poses_to_flight_log
 
 def _inputs(tmp_path):
     poses = tmp_path / 'poses'
-    camera = poses / 'CamLower'
+    camera = poses / 'Cam1'
     camera.mkdir(parents=True)
-    names = [f'camlower_20260930T01000{i}Z' for i in range(3)]
+    names = [f'cam1_20260820_19254{i}.42' for i in range(3)]
     for index, name in enumerate(names):
         (camera / f'{name}.xmp').write_text(
             f'<xcr:Position>{index} {index * index} 0</xcr:Position>', encoding='utf-8')
     log = tmp_path / 'flight_log.txt'
     header = ('Name;X (East);Y (North);Alt;X Accuracy;Y Accuracy;Alt Accuracy;'
               'Yaw;Pitch;Roll;Yaw Accuracy;Pitch Accuracy;Roll Accuracy\n')
-    rows = [f'CamLower/{name.upper()}.JPG;{500000 + index};'
+    rows = [f'Cam1/{name.upper()}.JPG;{500000 + index};'
             f'{4000000 + index * index};-100;10;10;1;0;10;0;15;5;15'
             for index, name in enumerate(names)]
     log.write_text(header + '\n'.join(rows) + '\n', encoding='utf-8')
@@ -48,7 +48,7 @@ def test_path_bearing_names_match_and_preserve_written_identity(tmp_path, monkey
 def test_two_log_paths_one_stem_are_refused_before_output(tmp_path, monkeypatch):
     poses, log, _names, rows = _inputs(tmp_path)
     with log.open('a', encoding='utf-8') as stream:
-        stream.write(rows[0].replace('CamLower/', 'other/') + '\n')
+        stream.write(rows[0].replace('Cam1/', 'other/') + '\n')
     output = tmp_path / 'refined.txt'
     with pytest.raises(SystemExit, match='Ambiguous flight-log image stem'):
         _run(poses, log, output, monkeypatch)
@@ -68,8 +68,8 @@ def test_two_xmp_paths_one_stem_are_refused(tmp_path):
 def test_registered_pose_without_prior_is_refined_but_excluded_from_fit(tmp_path,
                                                                      monkeypatch):
     poses, log, _names, _rows = _inputs(tmp_path)
-    name = 'camlower_20260930T010003Z'
-    (poses / 'CamLower' / f'{name}.xmp').write_text(
+    name = 'cam1_20260820_192543.42'
+    (poses / 'Cam1' / f'{name}.xmp').write_text(
         '<xcr:Position>3 9 0</xcr:Position>', encoding='utf-8')
     with log.open('a', encoding='utf-8') as stream:
         stream.write(f'{name}.jpg;;;;10;10;1;0;10;0;15;5;15\n')
@@ -86,8 +86,8 @@ def test_registered_pose_without_prior_is_refined_but_excluded_from_fit(tmp_path
 @pytest.mark.parametrize('value', ['nan', 'inf', '-inf'])
 def test_nonfinite_pose_prior_is_excluded_and_refined(tmp_path, monkeypatch, value):
     poses, log, _names, _rows = _inputs(tmp_path)
-    name = 'camlower_20260930T010003Z'
-    (poses / 'CamLower' / f'{name}.xmp').write_text(
+    name = 'cam1_20260820_192543.42'
+    (poses / 'Cam1' / f'{name}.xmp').write_text(
         '<xcr:Position>3 9 0</xcr:Position>', encoding='utf-8')
     with log.open('a', encoding='utf-8') as stream:
         stream.write(f'{name}.jpg;{value};4000009;-100;10;10;1;0;10;0;15;5;15\n')
@@ -103,7 +103,7 @@ def test_nonfinite_pose_prior_is_excluded_and_refined(tmp_path, monkeypatch, val
 @pytest.mark.parametrize('coordinates', ['nan 0 0', '0 inf 0', '0 0 -inf', '1 2', '1 2 3 4'])
 def test_invalid_xmp_positions_are_refused_before_output(tmp_path, monkeypatch, coordinates):
     poses, log, names, _rows = _inputs(tmp_path)
-    (poses / 'CamLower' / f'{names[0]}.xmp').write_text(
+    (poses / 'Cam1' / f'{names[0]}.xmp').write_text(
         f'<xcr:Position>{coordinates}</xcr:Position>', encoding='utf-8')
     output = tmp_path / 'refined.txt'
     with pytest.raises(SystemExit, match='three finite coordinates'):

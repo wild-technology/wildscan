@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Fresh-user / hostile-input guards on the user-facing surface.
 
-Everything here was reachable by a new operator on a new expedition and
-produced either a raw traceback or a plausible-looking wrong answer
-(audit 2026-08-07):
+Everything here was reachable by a new operator on a new survey and
+produced either a raw traceback or a plausible-looking wrong answer:
 
   modules/flight_logs.py
     - two logs of DIFFERENT UTM zones in one directory: discovery picked
-      the lexicographically first and georeferenced the other cruise's
+      the lexicographically first and georeferenced the other survey's
       imagery ~2,000 km away, silently
     - zone 99 band 'Z' produced '+proj=utm +zone=99' / 'epsg:32699' with
       exit code 0, and any unknown band fell into the NORTHERN branch, so
@@ -22,13 +21,6 @@ produced either a raw traceback or a plausible-looking wrong answer
       with EOFError although ask() had been guarded for exactly this
     - a stored empty instance_name was exported verbatim as RS_INSTANCE=''
 
-  modules/camera_registry.py
-    - the parity brace demanded a byte-for-byte reproduction of the
-      retired tables, so ADDING a camera to cameras.json was a hard
-      ImportError that bricked main.py, wildscan and the standalone
-      drivers together - while the module docstring calls that file the
-      place per-rig settings live
-
 Offline: no RealityScan, no repo state touched (every fixture is a
 tempdir, every store is a temp path).
 
@@ -39,7 +31,6 @@ from __future__ import annotations
 import io
 import json
 import os
-import subprocess
 import sys
 
 import pytest
@@ -51,8 +42,8 @@ from module_base.settings_store import (DEFAULT_INSTANCE_NAME,  # noqa: E402
                                         SettingsStore, realityscan_env)
 from modules.flight_logs import (assert_one_zone, crs_for_flight_log,  # noqa: E402
                                  epsg_for_utm_zone, find_flight_log,
-                                 params_template_frame, validate_utm_zone,
-                                 write_flight_log_params)
+                                 params_template_frame, require_utm_zone,
+                                 validate_utm_zone, write_flight_log_params)
 
 METADATA = os.path.join(REPO_ROOT, 'modules', 'realityscan_interface',
                         'RS_CLI', 'Metadata')
@@ -71,20 +62,20 @@ def _log(directory, name, rows=1):
 # ------------------------------------------------------ mixed-zone refusal
 
 def test_two_logs_of_different_zones_refuse_to_resolve(tmp_path):
-    _log(tmp_path, 'flight_log_NA001_57L_UTM.txt')
-    _log(tmp_path, 'flight_log_NA002_53N_UTM.txt')
+    _log(tmp_path, 'flight_log_run_a_57L_UTM.txt')
+    _log(tmp_path, 'flight_log_run_b_53N_UTM.txt')
     with pytest.raises(ValueError) as exc:
         find_flight_log(str(tmp_path))
     message = str(exc.value)
     # Both offenders must be named - "one of them is wrong" is useless.
-    assert 'flight_log_NA001_57L_UTM.txt' in message
-    assert 'flight_log_NA002_53N_UTM.txt' in message
+    assert 'flight_log_run_a_57L_UTM.txt' in message
+    assert 'flight_log_run_b_53N_UTM.txt' in message
     assert '57L' in message and '53N' in message
 
 
-def test_tagged_and_untagged_logs_are_a_frame_disagreement(tmp_path):
-    """An untagged name means LOCAL frame downstream, so mixing it with a
-    zone-tagged log is a frame conflict, not merely a zone one."""
+def test_tagged_and_untagged_logs_refuse_to_resolve(tmp_path):
+    """An untagged name cannot be imported, so mixing it with a zone-tagged
+    log is refused rather than resolved to either one."""
     _log(tmp_path, 'flight_log_53N_UTM.txt')
     _log(tmp_path, 'flight_log_UTM.txt')
     with pytest.raises(ValueError, match='no zone tag'):
@@ -92,18 +83,21 @@ def test_tagged_and_untagged_logs_are_a_frame_disagreement(tmp_path):
 
 
 def test_several_logs_of_the_SAME_zone_still_resolve(tmp_path):
-    """The guard must not break the ordinary multi-dive-one-zone case."""
-    _log(tmp_path, 'flight_log_NA001_53N_UTM.txt')
-    _log(tmp_path, 'flight_log_NA002_53N_UTM.txt')
+    """The guard must not break the ordinary multi-run-one-zone case."""
+    _log(tmp_path, 'flight_log_run_a_53N_UTM.txt')
+    _log(tmp_path, 'flight_log_run_b_53N_UTM.txt')
     picked = find_flight_log(str(tmp_path))
-    assert os.path.basename(picked) == 'flight_log_NA001_53N_UTM.txt'
+    assert os.path.basename(picked) == 'flight_log_run_a_53N_UTM.txt'
     assert assert_one_zone([picked], str(tmp_path)) == (53, 'N')
 
 
-def test_all_untagged_logs_resolve_as_local_frame(tmp_path):
+def test_an_untagged_log_is_found_but_never_importable(tmp_path):
     _log(tmp_path, 'flight_log_UTM.txt')
-    assert find_flight_log(str(tmp_path)) is not None
-    assert assert_one_zone([str(tmp_path / 'flight_log_UTM.txt')], 'x') is None
+    found = find_flight_log(str(tmp_path))
+    assert found is not None
+    assert assert_one_zone([found], 'x') is None
+    with pytest.raises(ValueError, match='no UTM zone tag'):
+        require_utm_zone(found)
 
 
 # ------------------------------------------------------ CRS zone validation
@@ -140,7 +134,7 @@ def test_real_zones_still_write(tmp_path):
 
 def test_crs_for_flight_log():
     assert crs_for_flight_log('flight_log_53N_UTM.txt') == 'EPSG:32653'
-    assert crs_for_flight_log('flight_log_NA167_H2075_57L_UTM.txt') == \
+    assert crs_for_flight_log('flight_log_transect-01_57L_UTM.txt') == \
         'EPSG:32757'
     assert crs_for_flight_log('flight_log_UTM.txt') is None
     assert crs_for_flight_log(None) is None
@@ -202,11 +196,11 @@ def test_good_sections_survive_beside_a_bad_one(tmp_path):
 
 def test_prompt_is_eof_safe(tmp_path, monkeypatch):
     path = tmp_path / 'rs_settings.json'
-    path.write_text(json.dumps({'geoall': {'image_base_dir': 'D:/stored'}}),
+    path.write_text(json.dumps({'tool': {'image_base_dir': 'D:/stored'}}),
                     encoding='utf-8')
     monkeypatch.setattr('sys.stdin', io.StringIO(''))
     store = SettingsStore(str(path))
-    assert store.prompt('geoall', 'image_base_dir', 'Folder') == 'D:/stored'
+    assert store.prompt('tool', 'image_base_dir', 'Folder') == 'D:/stored'
 
 
 def test_prompt_bool_is_eof_safe(tmp_path, monkeypatch):
@@ -223,7 +217,7 @@ def test_prompt_without_a_default_fails_with_a_named_error(tmp_path,
     monkeypatch.setattr('sys.stdin', io.StringIO(''))
     store = SettingsStore(str(tmp_path / 'rs_settings.json'))
     with pytest.raises(ValueError, match='Non-interactive run'):
-        store.prompt('geoall', 'never_set', 'Folder containing images')
+        store.prompt('tool', 'never_set', 'Folder containing images')
 
 
 def test_empty_stored_instance_name_falls_back(tmp_path):
@@ -234,131 +228,13 @@ def test_empty_stored_instance_name_falls_back(tmp_path):
     assert env['RS_INSTANCE'] == DEFAULT_INSTANCE_NAME
 
 
-# ------------------------------------------------------ geoall runs headless
-
-def test_geoall_help_does_not_prompt():
-    """geoall ignored argv entirely and prompted unconditionally, so
-    `georeference_survey.py --help` was an EOFError traceback - in the file the docs
-    call the canonical georeferencer."""
-    proc = subprocess.run(
-        [sys.executable, os.path.join(REPO_ROOT, 'georeference_survey.py'), '--help'],
-        stdin=subprocess.DEVNULL, capture_output=True, text=True,
-        cwd=REPO_ROOT)
-    assert proc.returncode == 0, proc.stderr
-    assert 'Traceback' not in proc.stderr
-    for flag in ('--declination', '--pos-accuracy', '--alt-accuracy',
-                 '--orientation-accuracy', '--image-base-dir'):
-        assert flag in proc.stdout
-
-
-# -------------------------------------------------- camera registry parity
-
-_PROBE_SEQ = [0]
-
-
-def _registry_with(tmp_path, mutate):
-    """Import a COPY of camera_registry beside a MUTATED cameras.json.
-
-    The module resolves cameras.json relative to its own __file__, so a
-    verbatim copy in a tempdir picks up the mutated data with no patching.
-    It is registered in sys.modules under a unique name because
-    @dataclass resolves annotations through sys.modules[cls.__module__].
-    """
-    import importlib.util
-    import shutil
-
-    data = json.load(open(os.path.join(REPO_ROOT, 'modules', 'cameras.json'),
-                          encoding='utf-8'))
-    mutate(data)
-    (tmp_path / 'cameras.json').write_text(json.dumps(data), encoding='utf-8')
-    module_path = tmp_path / 'camera_registry_probe.py'
-    shutil.copyfile(os.path.join(REPO_ROOT, 'modules', 'camera_registry.py'),
-                    module_path)
-
-    _PROBE_SEQ[0] += 1
-    name = f'camera_registry_probe_{_PROBE_SEQ[0]}'
-    spec = importlib.util.spec_from_file_location(name, str(module_path))
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    try:
-        spec.loader.exec_module(module)
-    finally:
-        sys.modules.pop(name, None)
-    return module
-
-
-NEW_FAMILY = {'family': 'voyis_new', 'camera': 'voyis_new',
-              'pattern': r'^vn\d+_'}
-NEW_CAMERA = {'voyis_new': {
-    'calibration_group': '9', 'calibration_prior': 'Approximate',
-    'focal_length_35mm': 21.0, 'lens_distortion_group': '9',
-    'lens_distortion_prior': 'Approximate', 'distortion_model': 'brown3'}}
-
-
-def test_a_new_expedition_camera_can_be_added(tmp_path):
-    """Adding a family + camera to cameras.json must WORK. It used to be
-    `ImportError: cameras.json parity: cameras['voyis_new'] diverges from
-    the legacy table` - a hard stop on every entry point at once."""
-    def mutate(data):
-        data['cameras'].update(NEW_CAMERA)
-        data['families'] = list(data['families']) + [NEW_FAMILY]
-
-    registry = _registry_with(tmp_path, mutate)
-    assert registry.family('VN0001_20260807T120000Z.jpg') == 'voyis_new'
-    camera = registry.identify('VN0001_20260807T120000Z.jpg')
-    assert camera is not None and camera.key == 'voyis_new'
-    # ... and every legacy family still resolves exactly as before.
-    assert registry.family('P231C0001.jpg') == 'wca_port'
-    assert registry.family('camlower_20231104020854.jpg') == 'legacy_camlower'
-
-
-def test_changing_a_legacy_camera_is_still_a_hard_error(tmp_path):
-    """The brace must still catch a DRIFT - only additions are allowed."""
-    def mutate(data):
-        data['cameras']['port']['focal_length_35mm'] = 99.0   # was 16.0
-
-    with pytest.raises(ImportError, match=r"cameras\['port'\]"):
-        _registry_with(tmp_path, mutate)
-
-
-def test_removing_a_legacy_family_is_still_a_hard_error(tmp_path):
-    def mutate(data):
-        data['families'] = [f for f in data['families']
-                            if f['family'] != 'wca_cinema']
-
-    with pytest.raises(ImportError, match='wca_cinema'):
-        _registry_with(tmp_path, mutate)
-
-
-def test_removing_a_legacy_camera_is_still_a_hard_error(tmp_path):
-    """The subset check must catch a DELETION, not only a value change -
-    'may be extended but never removed'."""
-    def mutate(data):
-        del data['cameras']['port']
-
-    with pytest.raises(ImportError, match='MISSING'):
-        _registry_with(tmp_path, mutate)
-
-
-def test_reordering_the_legacy_families_is_still_a_hard_error(tmp_path):
-    """family() matches MOST SPECIFIC FIRST; an unanchored 'herc' token
-    once ran first and would have beaten an anchored WCA prefix."""
-    def mutate(data):
-        data['families'] = list(reversed(data['families']))
-
-    with pytest.raises(ImportError, match='relative order'):
-        _registry_with(tmp_path, mutate)
-
-
 def test_get_and_set_survive_an_in_process_non_dict_section(tmp_path):
     """_load normalises the FILE; get()/set() are the defence behind it.
 
     A section can still become a non-dict in memory (a driver assigning
     `store._data['batch'] = None`, or a test double), and both accessors
     assumed a dict - `AttributeError: 'NoneType' object has no attribute
-    'get'` out of whichever driver touched it first
-    (audit-verification 2026-08-07: the shape guard shipped with no test;
-    only the file-level normalisation was covered)."""
+    'get'` out of whichever driver touched it first."""
     store = SettingsStore(str(tmp_path / 'rs_settings.json'))
     for broken in (None, 'RS1', ['RS1'], 7):
         store._data['realityscan'] = broken

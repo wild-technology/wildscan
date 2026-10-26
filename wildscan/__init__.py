@@ -1,4 +1,4 @@
-"""WildScan - Wild Technology's interactive subsea photogrammetry console.
+"""WildScan - Wild Technologies' interactive subsea photogrammetry console.
 
 A Textual interface over the repository's canonical pipeline drivers:
 main.py's module chain, merge_zones.py, the native workflows, and the
@@ -10,7 +10,7 @@ Run:  wildscan [workspace]   (or: python -m wildscan [workspace])
 """
 from __future__ import annotations
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 APP_NAME = "WildScan"
-ORG = "Wild Technology"
+ORG = "Wild Technologies"
 TAGLINE = "Subsea Photogrammetry Pipeline"

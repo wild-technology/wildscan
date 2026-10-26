@@ -1,9 +1,7 @@
 @echo off
 setlocal
-:: Canonical per-zone alignment workflow (2026-07 consolidation of
-:: AlignImagesFromFolder.bat's chaining/CRS handling and
-:: AlignZonesSequentially.bat's settings application - see
-:: docs/settings-evaluation-2026-07.md).
+:: Canonical per-zone alignment workflow: chaining, CRS handling and the
+:: explicit application of the canonical alignment settings.
 ::
 :: Aligns one zone as ONE scene and exports ALL resulting components
 :: (>= min size), not just the maximal one: underwater zones routinely
@@ -17,7 +15,16 @@ setlocal
 ::   %3 flight log path (or "" to align without georeferencing priors)
 ::   %4 flight log params xml (or "")
 ::   %5 scene name (used for the saved .rsproj)
-::   %6 minimum component size in cameras (e.g. 50)
+::   %6 minimum component size in cameras (default 50). Direct callers
+::      keep this native export threshold. The Sony intake orchestrator
+::      opts into RS_CAPTURE_ALL_COMPONENTS=1 and filters after the census.
+::
+:: Argument (optional):
+::   %7 calibration command file (.rscmd). When given, images are added by
+::      executing it (-execRSCMD: one -addImageWithCalibration "<image>"
+::      "<xmp>" line per image with a calibration sidecar, a plain -add
+::      line for the rest) instead of -addFolder. It cannot be combined
+::      with the pool layout (RS_ALIGN_POOL_DIR).
 ::
 :: Alignment settings ALWAYS come from Metadata\AlignmentParams.xml -
 :: never from instance defaults (an instance carries whatever the last
@@ -27,7 +34,7 @@ echo Reading default variables
 call "%~dp0SetVariables.bat"
 if errorlevel 1 exit /b 1
 set "AlignmentParams=%Metadata%\AlignmentParams.xml"
-:: Test-cell override (PRIORS_DISTORTION_TEST_PLAN): a cell may point at
+:: Test override: RS_ALIGN_PARAMS may point at
 :: a variant params file without touching the canonical Metadata copy.
 if defined RS_ALIGN_PARAMS if not "%RS_ALIGN_PARAMS%" == "" set "AlignmentParams=%RS_ALIGN_PARAMS%"
 
@@ -44,10 +51,11 @@ set "flight_log_params_dir=%~4"
 set "scene_name=%~5"
 set "min_component_size=%~6"
 if "%min_component_size%" == "" set "min_component_size=50"
+set "calibration_rscmd=%~7"
 
 if not exist "%input_dir%" ( echo ERROR: input directory not found: %input_dir% & exit /b 1 )
 
-:: POOL layout (project decision 2026-08-08/09, FLIGHTLOG_ARCHITECTURE):
+:: POOL layout:
 :: RS_ALIGN_POOL_DIR set = the zone holds NO images, only a .imagelist
 :: of canonical pool paths + a full-path flight log. Images are added
 :: from the list, and the identity harvest sweeps the POOL (exportXMP
@@ -56,6 +64,8 @@ if not exist "%input_dir%" ( echo ERROR: input directory not found: %input_dir% 
 set "harvest_dir=%input_dir%"
 if defined RS_ALIGN_POOL_DIR if not "%RS_ALIGN_POOL_DIR%" == "" set "harvest_dir=%RS_ALIGN_POOL_DIR%"
 if not exist "%AlignmentParams%" ( echo ERROR: AlignmentParams.xml not found: %AlignmentParams% & exit /b 1 )
+if not "%calibration_rscmd%" == "" if not exist "%calibration_rscmd%" goto :rscmdMissing
+if not "%calibration_rscmd%" == "" if defined RS_ALIGN_POOL_DIR if not "%RS_ALIGN_POOL_DIR%" == "" goto :rscmdWithPool
 if not exist "%output_dir%" mkdir "%output_dir%"
 
 echo Zone Input: %input_dir%
@@ -64,6 +74,7 @@ echo Flight Log: %flight_log_dir%
 echo Flight Log Params: %flight_log_params_dir%
 echo Scene Name: %scene_name%
 echo Min Component Size: %min_component_size%
+if not "%calibration_rscmd%" == "" echo Calibration Command File: %calibration_rscmd%
 
 echo Starting RealityScan
 call "%~dp0startRealityScan.bat"
@@ -73,14 +84,20 @@ echo Creating new scene
 call :run -newScene || goto :fail
 
 if defined RS_ALIGN_POOL_DIR if not "%RS_ALIGN_POOL_DIR%" == "" goto :addViaList
+if not "%calibration_rscmd%" == "" goto :addViaRscmd
 echo Adding images to project
 :: Subfolder recursion is NOT the default in this 2.2 build: without
 :: appIncSubdirs a zone tree whose images live in per-camera or
 :: preprocessed_images subfolders adds 0 layer images and the flight-log
-:: import then fails err:18002 (observed live on NA156 H2023). Instant
+:: import then fails err:18002. Instant
 :: -set, FIFO-ordered before the queued addFolder, no wait needed.
 %RealityScan% -delegateTo %RS_INSTANCE% -set "appIncSubdirs=true"
 call :run -addFolder "%input_dir%" || goto :fail
+goto :imagesAdded
+
+:addViaRscmd
+echo Adding images with their calibration sidecars from %calibration_rscmd%
+call :run -execRSCMD "%calibration_rscmd%" || goto :fail
 goto :imagesAdded
 
 :addViaList
@@ -105,7 +122,7 @@ echo Applying alignment settings from AlignmentParams.xml
 :: RS_ALIGN_PARAMS variant yields no matching tokens, this loop applied
 :: ZERO settings and -align then succeeded on whatever the instance last
 :: held - contradicting this file own header, silently, with exit code 0
-:: (audit 2026-08-07). set /a inside the block is safe under plain
+:: set /a inside the block is safe under plain
 :: expansion because the total is only READ after the loop.
 set /a applied_settings=0
 for /f usebackq^ tokens^=2^,4^ delims^=^" %%A in ("%AlignmentParams%") do (
@@ -123,18 +140,23 @@ call :run -align || goto :fail
 
 :: Flight-log import leaves its matched images ACTIVELY SELECTED, and
 :: selection-driven exports under -silent then silently export NOTHING
-:: (the "Export Selection" dialog is auto-answered; see FINDINGS,
-:: 2026-07-23). Clear the selection before every export step.
+:: (the "Export Selection" dialog is auto-answered). Clear the selection
+:: before every export step.
 call :run -deselectAllImages || goto :fail
 
-call :run -setMinComponentSize %min_component_size% || goto :fail
+:: The legacy direct-call contract applies the requested native threshold.
+:: Sony intake alone asks for exhaustive capture, so Python can report the
+:: components it sets aside without changing legacy campaign exports.
+set "native_min_component_size=%min_component_size%"
+if "%RS_CAPTURE_ALL_COMPONENTS%" == "1" set "native_min_component_size=1"
+call :run -setMinComponentSize %native_min_component_size% || goto :fail
 
 echo Saving project BEFORE the destructive identity loop
 call :run -save "%output_dir%\%scene_name%.rsproj" || goto :fail
 
-:: Daily project-save schema (project requirement 2026-07-23): a dated copy
+:: Daily project-save schema: a dated copy
 :: in RC_projects (one level up from the zone image directory) after the
-:: components milestone, named {expedition_dive}_{zone}_YYYYMMDD.
+:: components milestone, named {label}_{zone}_YYYYMMDD.
 :: RS_PROJECT_LABEL/RS_PROJECT_DATE are computed by the Python
 :: orchestrator.
 if defined RS_PROJECTS_DIR if defined RS_PROJECT_LABEL (
@@ -147,20 +169,20 @@ if defined RS_PROJECTS_DIR if defined RS_PROJECT_LABEL (
 :: In-session identity capture. The scene (with all components) is
 :: already saved above, so this loop is destructive IN MEMORY ONLY and
 :: the workflow quits WITHOUT saving.
-:: Membership by SUCCESSIVE DIFFERENCE (2026-07-23 rework): only
+:: Membership by SUCCESSIVE DIFFERENCE: only
 :: -exportXMP writes stem-named sidecars; -exportXMPForSelectedComponent
-:: is ALWAYS ordinal (FINDINGS). So each lap exports the stems of ALL
-:: remaining components (>= min size, still gated by the earlier
-:: setMinComponentSize), harvests them to identity_r<K>, then exports +
+:: is ALWAYS ordinal. So each lap exports the stems of ALL
+:: remaining eligible components (using the threshold above), harvests
+:: them to identity_r<K>, then exports +
 :: deletes the maximal component. members(c<K>) = stems(r<K>) minus
 :: stems(r<K+1>), computed by the Python orchestrator. An EMPTY harvest
-:: is the exhaustion terminal (also fires when only sub-min components
-:: remain) - selectMaximalComponent/rename/delete silently no-op on an
+:: is the exhaustion terminal -
+:: selectMaximalComponent/rename/delete silently no-op on an
 :: empty scene, so file-existence checks, not errors, drive the loop.
 echo Capturing per-component identity (destructive in-memory loop)
 set /a comp_index=0
 :identityLoop
-if %comp_index% GEQ 20 goto :identityDone
+if %comp_index% GEQ 100 goto :identityDone
 if not exist "%output_dir%\identity_r%comp_index%" mkdir "%output_dir%\identity_r%comp_index%"
 call :run -deselectAllImages || goto :fail
 call :run -exportXMP || goto :fail
@@ -169,7 +191,7 @@ call :run -exportXMP || goto :fail
 :: this step had no errorlevel check at all. Membership is
 :: stems(identity_r<K>) minus stems(r<K+1>), so an under-harvest shifts
 :: members BETWEEN components - and the merge camera-count attribution
-:: is built on those numbers (audit 2026-08-07).
+:: is built on those numbers.
 powershell -NoProfile -Command "$ErrorActionPreference='Stop'; try { Get-ChildItem -LiteralPath '%harvest_dir%' -Recurse -Filter *.xmp | Where-Object { Select-String -LiteralPath $_.FullName -Pattern 'xcr:Position' -Quiet } | Move-Item -Destination '%output_dir%\identity_r%comp_index%' -Force } catch { Write-Output $_.Exception.Message; exit 1 }"
 if errorlevel 1 ( echo ERROR: identity harvest move failed & goto :fail )
 set "have_poses="
@@ -188,6 +210,14 @@ echo Identity capture finished after %comp_index% component(s)
 echo Shutting down RealityScan instance %RS_INSTANCE% - NO save after identity loop
 %RealityScan% -delegateTo %RS_INSTANCE% -quit
 exit /b 0
+
+:rscmdMissing
+echo ERROR: calibration command file not found: %calibration_rscmd%
+exit /b 1
+
+:rscmdWithPool
+echo ERROR: a calibration command file cannot be combined with the pool layout (RS_ALIGN_POOL_DIR)
+exit /b 1
 
 :noSettings
 echo ERROR: ZERO alignment settings were applied from %AlignmentParams%.

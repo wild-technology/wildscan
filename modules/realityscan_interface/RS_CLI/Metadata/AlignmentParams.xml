@@ -4,10 +4,9 @@
   <entry key="s251l" value="0.05"/>
   <entry key="sfmMaxFeaturesPerImage" value="0xc350"/>
   <entry key="sfmForceComponentRematch" value="false"/>
-  <!-- Global fallback only: mixed rig, so the real distortion model is
-       per-camera via XMP sidecars (fisheye Port/Starboard: division;
-       rectilinear Cinema/Zeuss: brown3). Division was the NA167
-       fisheye-era global. See docs/settings-evaluation-2026-07.md. -->
+  <!-- Historical WCA/Zeuss fallback. This setting is global: per-image
+       calibration sidecars do not override it. Sony/Wild Sync intake
+       selects AlignmentParamsSony.xml; RS_ALIGN_PARAMS always wins. -->
   <entry key="sfmDistortionModel" value="Division"/>
   <entry key="sfmCameraPriorAccuracyRoll" value="10.0"/>
   <entry key="sfmMaxFeatureReprojectionError" value="1.29999995"/>

@@ -5,8 +5,7 @@ setlocal
 :: Exists because the daily RC_projects copy is now DEFERRED: GenerateModel.bat
 :: takes two copies per component - one of them MID-RECIPE with every
 :: intermediate model still live - and a project carrying ~15 models saves
-:: inordinately slowly (observed 2026-07-28; zone_1_c0's saves cost
-:: ~81 GB). Drivers therefore run the model workflow with RS_PROJECTS_DIR
+:: inordinately slowly and very large. Drivers therefore run the model workflow with RS_PROJECTS_DIR
 :: UNSET, which skips both copies, and call this once at the end when the
 :: project holds only the three kept models per component.
 ::
