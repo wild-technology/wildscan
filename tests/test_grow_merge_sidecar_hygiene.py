@@ -132,6 +132,16 @@ def test_workspace_calibration_refuses_an_unusable_manifest(tmp_path):
         intake.workspace_calibration(str(ws / 'batched_images_by_zone'))
 
 
+@pytest.mark.parametrize('name', ['wca_images', 'zeuss_images', 'raw_images',
+                                  'preprocessed_images'])
+def test_nearby_sony_manifest_does_not_change_an_unrelated_image_tree(tmp_path, name):
+    ws = _workspace(tmp_path)
+    unrelated = ws / name
+    unrelated.mkdir(exist_ok=True)
+    assert intake.workspace_calibration(str(unrelated)) is None
+    assert intake.workspace_calibration(str(unrelated / 'camera')) is None
+
+
 # ------------------------------------------------- grow_zone.take_census
 
 def test_take_census_keeps_the_calibration_sidecars(tmp_path):

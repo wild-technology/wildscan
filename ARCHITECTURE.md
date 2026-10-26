@@ -1,241 +1,419 @@
-# Wild Scan architecture
+# wildscan architecture
 
-Wild Scan drives **RealityScan 2.2** (Epic Games; formerly RealityCapture)
-through its command line to reconstruct imagery from one rig: two Sony
-ILX-LR1 cameras in a stereo pair, recorded with Wild Sync. It runs on native
-Windows with one or more CUDA GPUs. The rig and the conventions applied to it
-are described in [The ILX-LR1 stereo rig](docs/ILX-LR1.md); installation and
-command lines in [Setup and run](docs/SETUP-AND-RUN.md).
+ROV underwater photogrammetry pipeline driving **RealityScan 2.2** (Epic
+Games; the product formerly named RealityCapture) via its CLI. Runs on
+Windows with a multi-GPU CUDA setup.
 
-## Data flow
+The package is **wildscan**. Pre-release development and some of the dated
+empirical records came from predecessor repositories.
 
-```text
-Wild Sync run directory (read only)
-  cam1/ flight_log.csv + images      cam2/ flight_log.csv + images
-        |
-        v  Wild Sync Intake                         modules/wildsync_intake/
-<workspace>/raw_images/
-  ilx_left/  ilx_right/              copied images, unchanged
-  flight_log_<zone><band>_UTM.txt    13-column priors for both cameras
-  wildsync_intake.json               manifest, incl. calibration mode per camera
-        |
-        v  Preprocess Images                        modules/preprocess_images/
-<workspace>/preprocessed_images/     CLAHE copies, same names, original EXIF
-        |
-        v  Batch Directory                          modules/image_batcher/
-<workspace>/batched_images_by_zone/zone_<n>/
-  ilx_left/  ilx_right/  flight_log_<zone><band>_UTM.txt
-        |
-        v  RealityScan Alignment                    modules/realityscan_interface/
-<workspace>/aligned_components/zone_<n>/
-  zone_<n>.rsproj  zone_<n>_c<k>.rsalign + manifests  zone_<n>.rscmd
-        |
-        v  merge_zones.py -> run_models.py -> export_deliverables.py -> publish_batch.py
-<workspace>/merged/   <workspace>/exports/
-```
+For a first dataset, start with [Analyze a dataset](docs/ANALYZE_A_DATASET.md).
+The [documentation index](docs/README.md) separates current guidance from
+historical experiment records.
 
-The first four stages are `RSModule` subclasses chained by `main.py` in one
-process; a module that reports `Success: False` stops the chain with exit
-code 1. The later stages are separate drivers. The application in `wildscan/`
-runs the chain as one command and each later stage as its own command, with a
-gate between them.
+---
 
-The calibration decision is made once, at intake, from the original images
-the operator handed in, together with the focal length observed on them and
-the starting focal RealityScan gets in every mode. RealityScan Alignment reads
-both from `raw_images/wildsync_intake.json`; it never recomputes them. The
-preprocessed copies keep the original EXIF, so with calibration `off`
-RealityScan reads the focal from them.
+## Compatibility boundary
 
-## Getting started as a developer
+The generic workflow supports WCA, Zeuss and the other registered cameras:
+video extraction and navigation georeferencing are still available, and the
+legacy commands, camera families, mount transforms and saved setting names
+remain valid. A Sony Wild Sync recording uses an explicitly selected intake
+stage before the shared processing stages. An intake manifest carries its
+per-camera calibration decision and selects the Sony alignment template;
+without that manifest, existing calibration and alignment defaults apply.
+
+Add cameras and input types without rewriting the meaning of a different
+camera's settings. Do not use the presence of Sony support in the registry to
+infer that an arbitrary dataset is a Sony recording. Explicit alignment
+parameter overrides take precedence. Keep local and UTM coordinate systems
+separate and check them before invoking RealityScan.
+
+EXIF preservation is selected by the input's own intake manifest or an explicit
+preprocessing option; generic output and resume defaults stay historical.
+Python native-operation entry points snapshot and verify existing XMP files
+before native work. Direct batch-script entry points require working copies.
+Large datasets without spatial extent need explicit permission to exceed the
+configured zone-size maximum.
+
+## Getting started
+
+Set up the checkout in a virtual environment (dependencies are declared in
+`pyproject.toml`; step-by-step setup and run instructions in
+`docs/SETUP-AND-RUN.md`):
 
 ```powershell
 py -3.13 -m venv .venv
 & ".\.venv\Scripts\python.exe" -m pip install --upgrade "pip>=26.2"
 & ".\.venv\Scripts\python.exe" -m pip install -e ".[dev]"
+```
+
+Upgrade the environment installer before resolving dependencies. Baseline,
+from the checkout without activation:
+
+```powershell
 & ".\.venv\Scripts\python.exe" -m pytest
 ```
 
-The offline suite needs no RealityScan. Some path, process and NTFS checks
-require Windows. Passing tests do not establish native RealityScan behaviour.
-`modules/camera_registry.py` and `modules/calibration_sidecars.py` import with
-the standard library alone (the latter needs Pillow only to read images).
+Pytest collects the offline suite from `tests/`; its output is authoritative
+for the current count and skips. Investigate failures before processing data.
+Some path, process and NTFS checks require Windows; pure calculation checks
+are useful elsewhere too. The processing target is native Windows 11 Pro,
+and offline passing tests do not establish native RealityScan acceptance.
 
-For any RealityScan command-line question, start at
-[docs/rs-reference/README.md](docs/rs-reference/README.md).
+Manual validation lives in `scripts/validation/`, separate from pytest.
+`check_preprocessing.py` checks copies of a small image sample;
+`run_zone9_validation.py` and its `.bat` launcher run native alignment.
+`probe_cesium_depth.py` creates a real remote probe asset.
 
-## Components
+For any RealityScan CLI question, start at `docs/rs-reference/README.md`,
+the routing index of the RealityScan manual.
 
-**Entry points**
+## Operating practices
 
-- `main.py`: the module chain (Wild Sync Intake, Preprocess Images, Batch
-  Directory, RealityScan Alignment). `RS_MODULES` selects modules by name and
-  `RS_NO_INTERACTIVE=1` disables prompts. Its argument parser is built from the
-  enabled modules only.
-- `wildscan/`: the Textual application. `session.py` holds run-directory
-  detection, the camera scan, the question list and command assembly;
-  `app.py` the screens; `runner.py` process supervision.
-- `merge_zones.py`: component merge driver; writes `merge_report.json`.
-- `grow_zone.py`: within-zone component growth driver; writes `grow_report.json`.
-- `run_models.py`: per-component model generation, scale-gated; writes
-  `models_report.json`.
-- `modules/export_deliverables.py`: the export stage driver.
-- `publish_batch.py`, `publish_cesium.py`, `publish_nira.py`: publishers.
-- `finish_model.py`: finishes an existing model in a running instance
-  (`ModelToFinal.bat`).
-- `poses_to_flight_log.py`, `decimate_images.py`: data utilities; they do not
-  run RealityScan.
+These practices follow earlier native runs and failure investigations.
 
-**Rig and inputs**
+- **Verify by census, never by exit status.** RealityScan exits SUCCESS
+  while doing nothing — merges that do not fuse, settings that never
+  applied, exports that wrote zero files. Count cameras, count sidecars,
+  diff manifests. `docs/rs-reference/12-failure-modes-and-race-conditions.md`
+  is the catalogue of every silent-success mode found so far.
+- **Own your instance before you run anything.** On 2026-07-28 a probe ran
+  on `RS1` while its operator believed it was isolated on `RS2`, and it
+  overwrote a concurrent run's `rs_settings.json`. Resolve `RS_INSTANCE` and
+  `RS_GPU_DEVICES` explicitly, check no other instance holds that name, and
+  never write another run's settings.
+- **Preserve source data.** Alignment writes sidecars into its input folders;
+  align from prepared working trees instead of irreplaceable originals.
+  Preserve previous deliverables before exporting into an existing directory;
+  not every native export workflow refuses a same-name replacement.
+- **Record findings when they are made.** Refuted hypotheses stay in the
+  log, marked SUPERSEDED — deleting one guarantees rediscovering it.
+- **Declare a budget before any long run**: expected duration, expected
+  resource peak, abort criterion. Then "is it stuck?" is a lookup, not a
+  judgment call. Model generation has been measured to run 40–340 min per
+  component and to peak near total system commit; watch RAM.
+- **Run long jobs under Task Scheduler** (schtasks + a CRLF launcher), not
+  from an interactive shell: a parent's job object once killed a 14.4 h run.
+- **Snapshot evidence immediately.** `RealityScan.log` is global and
+  truncated on every instance boot — the reason line behind a generic
+  failure exists only until the next boot. Copy it inside the driver, right
+  after the failing call returns.
+- **One variable per iteration.** Escalation ladders change exactly one
+  thing per attempt with per-attempt evidence. A re-align that changed
+  several things at once cannot attribute its result to any of them.
+- **Checkpoint before mutating, and rehearse the restore.** A loop without
+  a tested rollback is a ratchet toward corruption.
+- **Prefer the mini fixture.** No workflow change touches production data
+  until it passes a <5 min smoke fixture. Smoke fixtures have caught the
+  large majority of workflow bugs at a fraction of the cost.
+- **Every science argument explicit.** Unattended runs pin every option
+  rather than inheriting `rs_settings.json`; review gates
+  (`confirmed: false`) are stops, never flags to flip.
+- **Leave no TODOs, stubs, or commented-out code behind.**
 
-- `modules/cameras.json` and `modules/camera_registry.py`: the single source
-  for the two cameras (`ilx_left`, `ilx_right`), their calibration, the Wild
-  Sync file name families (`Cam1_`, `Cam2_`; node `cam1` is the left eye,
-  `cam2` the right), each camera's mount, the rig `ilx_lr1_stereo` with its
-  `node_assignment_confirmed` switch, and the default prior accuracies. The
-  registry is validated at import; a malformed entry stops the import with a
-  message naming it. `calibration/ilx_lr1_stereo_dive_001.json` is the
-  calibration record; a test keeps the two files in agreement.
-- `modules/wildsync_intake/`: `intake.py` does the work (strict
-  `flight_log.csv` reader, frame matching, copying, priors, gates, manifest);
-  `wildsync_intake.py` is the `RSModule` with its parameters.
-- `modules/calibration_sidecars.py`: the per-camera decision between `prior`,
-  `groups` and `off`; the `xcr` 1.1 sidecar text for each mode; the `.rscmd`
-  builder; and the sidecar hygiene (`sanitize_and_census`,
-  `ensure_calibration_sidecars`), which only ever writes the decided form.
-- `modules/flight_logs.py`: the 13-column flight-log writer, flight-log
-  discovery (`find_flight_log`, the only way a stage locates a log), the UTM
-  zone tag in the file name, the regenerated `FlightLogParams` XML
-  (`write_flight_log_params`), and the orientation convention
-  (`realityscan_orientation`).
-
-**Processing modules**
-
-- `modules/preprocess_images/`: CLAHE and gray-world white balance; the
-  canonical transforms, also used by `scripts/validation/check_preprocessing.py`.
-- `modules/image_batcher/batch_directory.py`: spatial zoning. A dataset with
-  fewer images than `--b_single_zone_below` (default 4000) is one zone with no
-  clustering or overlap copies; fewer than 100 images logs a warning. The default copy
-  layout puts each zone's images in per-camera subfolders with a copy of the
-  zone's flight log; the pool layout (`--b_zone_layout pool`) writes an
-  `.imagelist` instead and cannot be combined with calibration delivery.
-- `modules/scale_oracle.py`: metric-scale measurement and the 0.90 to 1.10
-  acceptance band used by the merge and model stages.
-- `modules/component_analysis.py`, `modules/component_manifest.py`: component
-  census, membership and borders.
-- `modules/workspace_census.py`: what a workspace holds; the application's
-  status screen is built on it.
-- `modules/align_fingerprint.py`, `modules/publish_fingerprint.py`: input
-  fingerprints for safe retries and resumes.
-- `modules/cesium_placement.py`: placement of a mesh on the WGS84 globe from
-  its `.rsInfo`, with the sea-surface depth converted to an ellipsoidal height
-  through EGM2008.
-- `module_base/settings_store.py`: `rs_settings.json`, the stored answers and
-  the `realityscan` machine settings.
-
-**RealityScan execution**, in `modules/realityscan_interface/` only:
-
-- `realityscan_cli.py` (`RealityScanCLI`): executable discovery, one lock file
-  per instance, marker-file hygiene, progress tailing, stall warnings
-  (`STALL_WARNING_SECONDS`), and verified shutdown.
-- `realityscan_interface.py`: the RealityScan Alignment stage. Per zone it
-  writes the calibration sidecars and the `.rscmd` when the intake decided
-  `prior` or `groups` (first moving any sidecar in their place that the
-  pipeline did not write to `<zone output>/pre_existing_sidecars/`), regenerates the flight-log parameter XML for the log's
-  UTM zone, runs `AlignZone.bat`, restores the decided sidecars and builds the
-  component manifests.
-- `RS_CLI/Scripts/*.bat`: the workflows. Every operation runs through the
-  shared `:run` subroutine: `-delegateTo %RS_INSTANCE%`, a grace delay, two
-  `-waitCompleted` calls with a second grace between them, and an abort if
-  `RS_CLI/Errors/errors_<instance>.txt` is non-empty.
-  - `AlignZone.bat`: aligns one zone as one scene with the settings of
-    `Metadata/AlignmentParams.xml` applied by `-set`, imports the flight log,
-    saves the scene, then runs the in-session identity loop: each lap exports
-    the poses of all remaining components (`identity_r<k>`), and exports and
-    deletes the largest one as `<zone>_c<k>`; membership is the difference
-    between successive laps. It quits without saving after the loop and
-    builds no model. Optional seventh argument: an `.rscmd` file, executed
-    with `-execRSCMD` instead of `-addFolder`.
-  - `MergeZoneComponents.bat`, `GrowZone.bat`, `GenerateModel.bat`,
-    `ExportDeliverables.bat`, `SaveProjectCopy.bat`, `FlushCache.bat`.
-  - `startRealityScan.bat`, `SetVariables.bat`: instance start and paths.
-  - `ModelToFinal.bat` attaches to a running instance instead of starting one
-    and never creates a scene; it accepts `*` as the instance.
-- `RS_CLI/Errors/ErrorWriter.bat` and `ErrorWriterLaunch.vbs`: the completion
-  hook RealityScan calls (`appProcessAction=ExecuteProgram`); completions go to
-  `results_<instance>.log`, failures to `errors_<instance>.txt`.
-- `RS_CLI/Metadata/*.xml`: RealityScan parameter files (setting keys and
-  values) passed to RealityScan commands on its command line, documented in
-  [docs/rs-reference/09-xml-parameter-files.md](docs/rs-reference/09-xml-parameter-files.md).
-  `AlignmentParams.xml` sets `sfmDistortionModel=Brown3`, which is global for
-  all cameras.
-
-## RealityScan facts the code depends on
-
-Each comes from the RealityScan 2.2 CLI help or was verified on an earlier
-dataset. Details and evidence are in [docs/rs-reference/](docs/rs-reference/README.md).
-
-- Delegated commands (`-delegateTo <instance> <cmd>`) are queued; the
-  delegating process returns at hand-over, not at completion.
-- `-waitCompleted <instance>` can return before the instance picks up a queued
-  command, hence the double wait in `:run`.
-- `-align` takes no parameters in 2.x; alignment settings must be applied with
-  `-set` first.
-- RealityScan reports success while doing nothing in several cases (merges
-  that do not fuse, exports that write nothing). Verify by counting cameras,
-  sidecars and manifests, never by exit status.
-- A sidecar named `<stem>.xmp` beside an image is imported automatically on the
-  next add, including any pose it carries. The sidecar hygiene exists for this.
-- An unresolved flight-log format GUID imports positions only, without
-  orientation or accuracies, and still exits 0.
-- `RealityScan.log` is global and truncated whenever an instance starts.
-- `*` as an instance name means "first available instance".
-- Exit codes: 0 success; with `appQuitOnError=true` the error's decimal code;
-  3 for a crash (minidump at the `-silent` path).
+Escalate rather than work around: invariant violations, two monitors
+disagreeing about one run, a resource trend projecting past capacity, a
+result that would revise an ESTABLISHED finding, or anything on the
+blindness list (GUI state, georeferencing correctness, seam quality)
+becoming load-bearing for a conclusion.
 
 ## Environment
 
-- Native Windows; no WSL. `.bat` and `.vbs` files must have CRLF line endings
-  (`.gitattributes` enforces it); with LF, cmd's label search fails
-  intermittently.
-- Python 3.13 (3.12 is the declared floor). Invoke the environment's interpreter directly
-  (`.venv\Scripts\python.exe`) or activate it; a version-qualified `py -3.13`
-  uses the global interpreter.
-- Legacy cp1252 consoles cannot print all Unicode output; set
-  `PYTHONIOENCODING=utf-8` and use a Unicode-capable terminal.
-- Data paths are user-specific; they are prompted for and stored through
-  `SettingsStore`, never hard-coded.
+- Windows 11, native. **No WSL** — cmd, `.bat`, PowerShell, VBS are the
+  substrate. `.bat` and `.vbs` must be CRLF (`.gitattributes` pins it);
+  LF breaks cmd's byte-offset label search nondeterministically.
+- Use 64-bit Python 3.13+ for development and native validation. The package's
+  declared installation floor is 3.12, matching the dependency floor.
+  Invoke `.venv\Scripts\python.exe` directly, or use `python` after successful
+  activation. A version-qualified `py -3.13` bypasses the environment.
+- Legacy cp1252 console streams can reject Unicode output. Use a Unicode-capable
+  terminal for the TUI; set `PYTHONIOENCODING=utf-8` for Python streams when
+  reading or emitting UTF-8 text in those environments.
+- Data lives on large local/NAS volumes with user-specific paths. Never
+  hardcode them — prompt through `SettingsStore`.
 
-## Hard rules
+---
 
-1. Run RealityScan only through `RealityScanCLI` and the `:run` pattern; never
-   add a second way to launch or monitor it.
-2. Never infer completion from process names.
-3. No overall timeouts on RealityScan operations; alignment and model
-   generation legitimately run for many hours. Only startup and shutdown are
-   bounded (`SHUTDOWN_VERIFY_TIMEOUT_SECONDS`, `STATUS_CALL_TIMEOUT_SECONDS` in
-   `realityscan_cli.py`; 120 s in `startRealityScan.bat`).
-4. Clear the progress, errors and results marker files only through
-   `RealityScanCLI`; they are the source of truth while a run is live.
-5. Never hard-code data paths; prompt through `SettingsStore` with the previous
-   value as default.
-6. One implementation each: the flight-log writer (`write_flight_log`), the
-   orientation convention (`realityscan_orientation`), the calibration decision
-   (`decide_calibration`), and the camera registry (`modules/cameras.json`).
-7. Import a component (`-importComponent`) only from its original export
-   location; a relocated `.rsalign` hangs the instance.
-8. Never pass delimited data as `.bat` arguments: cmd splits `;`, `,` and `=`.
-   Lists cross the boundary as files (`.complist`, `.imagelist`, `.rscmd`);
-   settings as `key:value`, converted inside the workflow.
-   `RealityScanCLI` rejects shell metacharacters in workflow arguments.
-9. Never pass a calibration prior as locked or exact: its conversion to
-   RealityScan's conventions is not verified.
-10. Consult `docs/rs-reference/` before writing a new workflow.
+## RealityScan reference
+
+**`docs/rs-reference/`** is the consolidated manual: the shipped offline
+Help (`C:\Program Files\Epic Games\RealityScan_2.2\Help\en-US\`, which is
+the only reliably readable form of the official docs — the public site is
+JS-rendered), the install-tree XML format dictionaries, and this repo's
+empirical record. 218 command names, 740 settings keys, 88 numbered failure
+modes. Every claim carries a provenance tag; `[CONTRADICTED]` entries state
+both what the docs claim and what was observed.
+
+Consult it before writing any new RealityScan workflow. Start at its
+`README.md`; the "facts that silently destroy a run" table is the highest
+-value page in the repo.
+
+The few facts worth carrying in context without a lookup:
+
+- Delegated commands (`-delegateTo <instance> <cmd>`) are QUEUED; the
+  delegating process returns at hand-over, not completion.
+- `-waitCompleted <instance>` returns prematurely if issued before the
+  instance picks up the queued command — hence the double-wait in `:run`.
+- `-getStatus <instance>` → errorlevel 0 iff the instance exists, but
+  "gone" precedes process teardown by seconds (file handles outlive it).
+  It also prints a live progress line on stdout (capture by redirecting;
+  RealityScan is a GUI-subsystem binary): `id:<op> progress:<pct>
+  runtime:<s> endEstimation:<s> rev:<n> lastError:<code>`. `rev:` tracks
+  scene MUTATIONS, not operations.
+- **`*` is a valid instance argument** meaning "first available instance",
+  accepted by `-delegateTo`, `-waitCompleted`, `-getStatus`,
+  `-pauseInstance`, `-unpauseInstance` and `-abortInstance`. A GUI or
+  Epic-Launcher RealityScan has no `-setInstanceName` and answers no named
+  lookup, but IS reachable via `*`. Ambiguous once two instances run — use
+  explicit names for multi-GPU, `*` only to attach to a single interactive
+  session.
+- App settings use `app*` key names. The legacy `RealityCapture*` names are
+  dead.
+- Exit codes: 0 = success; with `appQuitOnError=true` the error's decimal
+  code; 3 = crash (minidump at the `-silent` path).
+- Multi-GPU: RealityScan uses all CUDA GPUs by default. Pin via
+  `RS_INSTANCE` + `RS_GPU_DEVICES` (exported as `CUDA_VISIBLE_DEVICES`),
+  one instance name per GPU set.
+
+## Engineering log
+
+Every discovered fact — CLI behaviors, merge semantics, rig data, process
+conventions — is recorded, dated, with how it was discovered, in the
+project's engineering log, which is kept outside this repository. Citations
+in code and docs of the form `FINDINGS <date>` and `NA167 B<n>` / `NA167 #<n>`
+point into that log; `status log <date>` points into its companion record of
+project status and decisions. The distilled, self-contained counterpart is
+`docs/rs-reference/`; deep rationale lives in `docs/`.
 
 ## Naming
 
-Python files, functions and variables use `snake_case`, classes `PascalCase`.
-Preserve native workflow file names, command-line flags, environment
-variables and stored setting keys. The product is called RealityScan (`RS`)
-throughout; the legacy file extensions `.rcalign` and `.rcproj` are still
-read.
+Python files, functions and variables use `snake_case`; class names retain
+their established `PascalCase`. Names describe the operation:
+`georeference_survey.py`, `decimate_images.py`, `poses_to_flight_log.py`,
+`run_calibration_ladder.py`, and `score_yellow_pixels.py`.
+
+Preserve existing native commands, workflow filenames, public framework
+methods, environment variables, and serialized/settings keys. The former
+root filenames `geoall.py`, `decimator.py`, and `poses2flightlog.py` are
+compatibility aliases for commands and imports; the corresponding
+`SettingsStore` sections keep their existing keys.
+
+Everything in this repo says **RealityScan** (`RS`), never RealityCapture.
+Exceptions that must NOT be renamed:
+
+- RealityScan API identifiers that happen to be current product strings
+  (e.g. `reader="RealityScan.Import.CSVFlightLog"` in `flightlogs.xml`,
+  feature-detector ids in `Metadata/AlignmentParams.xml`);
+- legacy file extensions `.rcalign`/`.rcproj`, still accepted when reading
+  old outputs (new saves use `.rsproj`).
+
+---
+
+## Architecture
+
+**Entry points**
+
+- `tests/` — offline pytest tests and fixtures; no campaign launchers.
+- `scripts/campaigns/` — ON2026 run2/run3/union, workbench-night, and
+  calibration-ladder drivers. These are dataset-specific workflows.
+- `scripts/validation/` — explicit manual validations and their
+  preprocessing variant grid.
+- `scripts/analysis/` — reusable image-analysis commands.
+- `docs/validation/` — historical experiment plans;
+  `docs/validation/results/` preserves their result evidence. Dated plans
+  retain their original command paths; use the current script locations above.
+- `main.py` — interactive orchestrator over the `RSModule` framework
+  (`module_base/rs_module.py`): Extract Images → Georeference → Preprocess
+  Images → Batch Directory → RealityScan Alignment. `RS_MODULES` /
+  `RS_NO_INTERACTIVE` env vars select modules without a TTY; a module
+  reporting Success=False stops the chain (exit 1).
+- `wildscan/` — TUI interaction portal
+  (`& ".\.venv\Scripts\python.exe" -m wildscan` in PowerShell): intake,
+  runnable model/export/publish stages over the same drivers.
+- `merge_zones.py` — iterative component-merge driver (escalating
+  mechanism/flags, per-attempt RealityScan.log snapshots + census,
+  `merge_report.json`).
+- `grow_zone.py` — incremental grow-from-neighbor driver, the workaround
+  for zones that fail to align standalone.
+- `run_models.py` — per-component model generation, scale-gated.
+- `publish_nira.py` / `publish_cesium.py` / `publish_batch.py` —
+  deliverable publishers. Nira wants OBJ (not FBX) and refuses PLY point
+  clouds. Cesium ion takes raw OBJ as `sourceType=3D_CAPTURE`, placed by
+  `options.position` — see `modules/cesium_placement.py` below, and never
+  publish without `--verify`.
+
+**RealityScan execution — the ONLY place RealityScan is executed**
+
+`modules/realityscan_interface/`:
+
+- `realityscan_cli.py` — unified execution layer (`RealityScanCLI`). All
+  new RealityScan-invoking code goes through it. Owns executable discovery,
+  per-instance lock files, marker-file hygiene (60 s retry for the
+  getStatus/teardown handle race), progress tailing, stall warnings
+  (`#timeout`-aware), and verified instance shutdown.
+- `RS_CLI/Scripts/*.bat` — workflow definitions. Every operation runs
+  through the shared `:run` subroutine: `-delegateTo %RS_INSTANCE%` →
+  double `-waitCompleted` with a grace period → abort if
+  `RS_CLI/Errors/errors_<instance>.txt` is non-empty.
+  - Production: `AlignZone` (canonical per-zone align — applies
+    `AlignmentParams.xml`, saves the scene, then runs the destructive
+    in-session identity loop: per lap `-exportXMP` stems are harvested to
+    `identity_r<K>`, the maximal component is renamed `<zone>_c<K>`,
+    exported and deleted; membership = successive difference, census =
+    manifest sum; quits WITHOUT saving; NO model generation),
+    `MergeZoneComponents` (`.complist` of in-place `.rsalign` paths;
+    merge|align mode; min size; `key:value` settings — driven iteratively
+    by `merge_zones.py`), `GenerateModel` (mesh/cull/texture/simplify
+    ONCE, on the merged component), `ExportDeliverables` (OBJ-by-parts +
+    FBX-by-parts + ultra-dense colored PLY), `SaveProjectCopy`.
+  - Boot/env: `startRealityScan`, `SetVariables`. Boot honors
+    `RS_HEADLESS=0` for a GUI-visible instance.
+  - Supporting/testing: `GrowZone`, `NightGrow` (attach-only seed growth;
+    `%1` = target instance), `GuiWorkbench`, `ComputeModel`,
+    `CalibCellAlign`, `FlushCache` (sets retention 0 during the clear —
+    the 7-day default kept 918 GB), and `AlignImagesFromFolder`
+    (DEPRECATED; kept only because `scripts/validation/run_zone9_validation.py` drives it).
+    The one-off investigation probes and the superseded workflows were
+    removed at the wildscan release; they survive in the predecessor
+    repositories.
+  - **`ModelToFinal` is the one exception to the `:run` boot pattern.** It
+    finishes a mesh that ALREADY exists (texture → simplify → unwrap →
+    reproject → export → save) and **attaches** to a running instance
+    instead of booting one: it deliberately does NOT call
+    `startRealityScan.bat`, because that script issues
+    `-newScene -deleteAutosave` when `-getStatus` finds an instance already
+    running, which would destroy the very scene it was asked to finish. It
+    delegates to `%RS_TARGET%` (not `%RS_INSTANCE%`), accepts `*` as the
+    instance, and gates on the `lastError:` + `rev:` fields of `-getStatus`
+    rather than `errors_<instance>.txt` — that marker file only exists for
+    an instance booted by `startRealityScan.bat`, so a GUI or Epic-Launcher
+    instance never writes one. `finish_model.py` is its driver. Use
+    `GenerateModel` for the normal path where the pipeline owns the
+    instance and computes the mesh itself.
+- `RS_CLI/Errors/ErrorWriter.bat` — invoked by RealityScan itself
+  (`appProcessAction=ExecuteProgram`); appends every completion to
+  `results_<instance>.log`, failures to `errors_<instance>.txt`.
+  `ErrorWriterLaunch.vbs` is the
+  GUI-subsystem launcher that keeps console windows from popping.
+- `RS_CLI/Metadata/*.xml` — parameter presets passed to CLI commands.
+  Documented profile by profile in
+  `docs/rs-reference/09-xml-parameter-files.md`.
+
+**Domain modules**
+
+- `modules/camera_registry.py` — single source of truth for the FOUR
+  physical rig cameras (Zeuss rect 23mm, Port fisheye 14mm, Cinema rect
+  17mm, Starboard fisheye 14mm; legacy cammid/camlower/camupper and WCA
+  P/C/S###C filename families). Calibration XMP content and the pose-sidecar
+  sanitize/census live here. Mount geometry stays per-cruise in the
+  georeference module.
+- `modules/flight_logs.py` — flight-log discovery (`find_flight_log`, the
+  ONLY way any stage locates a log on disk) and per-cruise CRS generation
+  (`write_flight_log_params`: UTM zone parsed from the log's filename tag →
+  EPSG → FlightLogParams XML; never hand-edit the template's zone).
+  Consumers match by NORMALIZED BASENAME. Architecture and the P1/P3/P4
+  probe closures: `docs/FLIGHTLOG_ARCHITECTURE.md`.
+- `modules/calibration_sidecars.py` — per-eye approximate calibration XMPs
+  from manufacturer values, plus the sensor registry. The A/B/C ladder
+  verdict (prior content collapses registration) is in the engineering log.
+- `modules/preprocess_images/` — canonical CLAHE / white-balance transforms
+  + the pre-alignment preprocessing module (default CLAHE 2.0/8×8,
+  validated on zone_9 — baseline aligns to nothing on this imagery).
+  `scripts/validation/preprocess_variants.py` imports the transforms from here; keep
+  it that way (no second implementation).
+- `modules/image_batcher/batch_directory.py` — zone batching. Note the
+  duplicate-path identity problem: copying overlap images into two zones
+  gives one trajectory row two physical files.
+- `modules/scale_oracle.py` — metric-scale measurement and the 0.90–1.10
+  acceptance band. Fused components need the correspondence-free method
+  ([archive/campaign_drivers/run_h2024_fused_models.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/run_h2024_fused_models.py)), since merge-scene
+  XMP exports are ordinal.
+- `modules/component_analysis.py`, `modules/component_manifest.py` —
+  component census, membership, and border logic.
+- `modules/workspace_census.py` — workspace-level census: what components,
+  models and exports exist on disk for a project, and the name mapping
+  persisted at capture time.
+- `modules/feature_merge.py` — 3D extents, feature-box assignment, and
+  merge planning that reports what it can and cannot glue.
+- `modules/align_fingerprint.py` — alignment and model input fingerprints,
+  with saved-project state for safe retries, resumes and census checks.
+- `modules/publish_fingerprint.py` — selected publication payload hashes
+  and source inventories. Census checks file size and modification time
+  without hashing large assets on every refresh.
+- `modules/export_deliverables.py` — the Python side of the export stage.
+- `modules/cesium_placement.py` — where a mesh belongs on the WGS84 globe.
+  Reads the export's `.rsInfo` for the CRS and `transformToModel`, DERIVES
+  which reading of that matrix is correct (validated against the CRS area of
+  use, the dive's nav envelope, and a determinant test that rules out
+  mirrored readings), then converts the anchor's SEA-SURFACE depth to an
+  ELLIPSOIDAL height through EGM2008 and localises the mesh into East-North-Up
+  metres. **The vertical is the whole point:** `georeference_survey.py` writes
+  `-abs(kalman_depth)`, i.e. a depth below the sea surface, and Cesium reads
+  every height as above the ellipsoid — the gap is the geoid undulation, up to
+  +72.7 m on this repo's own data. PROJ silently applies a ZERO correction
+  when the geoid grid is missing, so every transformer here passes
+  `allow_ballpark=False`.
+- `modules/file_metadata_parser.py` — image metadata extraction.
+- `module_base/settings_store.py` — persists last-entered prompt answers to
+  `rs_settings.json` (repo root, gitignored) and offers them as defaults.
+  All user-facing path prompts must go through it.
+
+**Standalone / retired**
+
+- `georeference_survey.py`, `poses_to_flight_log.py`, `decimate_images.py`, `timestamp_rename.py`,
+  `organize_by_date.py` — data prep; they do not invoke RealityScan.
+- [archive/colmap/](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/colmap/) — retired COLMAP scripts; do not resurrect into the
+  active pipeline. The live COLMAP work is the separate `colmap_studio`
+  project, whose fact base is frozen at `docs/COLMAP_FINDINGS_UNIFIED.md`
+  and whose crossover with this pipeline is tracked in
+  `docs/COLMAP_CROSSOVER.md`.
+- [Archived campaign drivers](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/)
+  and [superseded workflows](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/legacy_scripts/)
+  remain citation targets in the original Git snapshot. Retired files are
+  excluded from the published tree and retained locally under ignored
+  `archive/`. Read historical code for provenance; do not wire it back in.
+
+---
+
+## Hard rules
+
+1. Never add a second way to launch/monitor RealityScan — extend
+   `RealityScanCLI` and the `:run` pattern instead.
+2. Never infer completion from process names (`tasklist`); the pre-2.x code
+   did that with `RealityCapture.exe` and silently broke at the rename.
+3. No overall timeouts on RealityScan operations — 10+ hour runs are
+   normal. Startup and shutdown are the only bounds; the authoritative
+   values are the constants in `realityscan_cli.py`
+   (`SHUTDOWN_VERIFY_TIMEOUT_SECONDS`, `STATUS_CALL_TIMEOUT_SECONDS`),
+   not a number quoted in prose.
+4. Clear `progress.txt` / `errors.txt` / `results.log` only through
+   `RealityScanCLI` (it does this pre-run); they are the source of truth
+   while a run is live.
+5. Data lives on large local/NAS volumes with user-specific paths — never
+   hardcode them. Use `SettingsStore` prompts with the previous value as
+   default.
+6. `georeference_survey.py` is the canonical georeferencing implementation; port
+   improvements from it into `modules/georeference/` rather than letting
+   the two diverge further.
+7. Import components (`-importComponent`) ONLY from their original export
+   location — a relocated `.rsalign` hangs the instance forever in a
+   `#timeout` state.
+8. Never pass delimited data as `.bat` arguments: cmd splits unquoted
+   `;` `,` `=` and Python's subprocess only quotes on whitespace. Lists
+   cross the boundary as files (`.complist`/`.imagelist`); settings as
+   `key:value` (converted inside the workflow).
+9. `docs/rs-reference/` is the RealityScan documentation of record —
+   consult it before writing any new workflow. The historical test matrices
+   (`docs/validation/merge_test_plan.md`,
+   `docs/validation/alignment_merge_hardening_plan.md`,
+   `docs/validation/priors_distortion_test_plan.md`) track design assumptions not
+   settled by documentation; cells graduate into the engineering log with
+   results.
+
+## History notes
+
+An earlier, richer iteration (delegation client, GUI, tests, docs) was
+reverted by the `main_v2` merge — it survives only in the predecessor
+repository's history, around commit `4bc8549`. Its race-condition lessons are baked into the current
+execution layer; consult it before re-deriving old solutions.

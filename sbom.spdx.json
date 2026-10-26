@@ -371,6 +371,24 @@
       "comment": "Development and test dependency. Declared licence taken from installed distribution metadata: License-Expression."
     },
     {
+      "SPDXID": "SPDXRef-Package-utm",
+      "name": "utm",
+      "versionInfo": "0.9.0",
+      "downloadLocation": "https://pypi.org/project/utm/0.9.0/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "Copyright (c) 2012-2017 Tobias Bieniek",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/utm@0.9.0"
+        }
+      ],
+      "comment": "Runtime dependency restored for existing navigation workflows. MIT licence verified in the installed distribution license file and classifier."
+    },
+    {
       "SPDXID": "SPDXRef-Package-RealityScan",
       "name": "RealityScan",
       "versionInfo": "2.2",
@@ -488,6 +506,11 @@
       "spdxElementId": "SPDXRef-Package-wildscan",
       "relationshipType": "HAS_PREREQUISITE",
       "relatedSpdxElement": "SPDXRef-Package-RealityScan"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-wildscan",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-utm"
     }
   ]
 }

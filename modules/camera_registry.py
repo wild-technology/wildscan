@@ -1,16 +1,11 @@
-"""Camera registry for the two-camera Sony ILX-LR1 rig, loaded from cameras.json.
+"""Camera registry for WCA, Zeuss, VOYIS and Sony Wild Sync workflows.
 
-``modules/cameras.json`` is the single source for:
-
-- the two physical cameras (``ilx_left``, ``ilx_right``) and their
-  calibration: calibration image size, the focal length the calibration was
-  solved at, the 35 mm-equivalent focal, the normalised principal point, the
-  distortion model and its measured coefficients, the sensor size, and one
-  calibration group and one lens-distortion group per camera;
-- the Wild Sync filename families (``Cam1_...`` and ``Cam2_...``), which say
-  which node is which eye, and the mount of each;
-- the stereo rig, including ``node_assignment_confirmed``;
-- the default flight-log prior accuracies.
+``modules/cameras.json`` holds optical profiles, ordered filename families,
+per-family mount geometry and per-rig accuracy defaults. Legacy optical
+profiles retain their historical initial focal and distortion policy;
+measured Sony calibrations additionally require applicability checks in
+``modules/calibration_sidecars.py``. Legacy raw JSON exports and constructor
+ordering remain available to the generic image/navigation tooling.
 
 The file is loaded and validated when this module is imported. A missing or
 mistyped field, a family naming an unknown camera, or a camera outside every
@@ -36,15 +31,14 @@ SCHEMA_VERSION = 2
 CAMERAS_JSON = os.path.join(
     os.path.dirname(os.path.realpath(__file__)), 'cameras.json')
 
-# The pipeline aligns with RealityScan's global Brown3 model
-# (sfmDistortionModel is global and all-or-nothing, verified on an earlier
-# dataset), so a camera may only declare that model.
-DISTORTION_MODELS = frozenset({'brown3'})
+# Keep legacy per-camera profiles intact. The global alignment model is
+# selected by the workflow: Sony uses its own Brown3 parameter file.
+DISTORTION_MODELS = frozenset({'brown3', 'division'})
 
 # 'approximate' = a starting value that alignment adjusts. The calibration
 # is never declared fixed: its conversion to RealityScan's coefficient and
 # principal-point conventions is not verified (see calibration_sidecars).
-CALIBRATION_PRIORS = frozenset({'approximate'})
+CALIBRATION_PRIORS = frozenset({'approximate', 'Approximate'})
 
 _KEY_RE = re.compile(r'^[a-z0-9_]+$')
 _GROUP_RE = re.compile(r'^\d+$')
@@ -59,19 +53,24 @@ class Camera:
     """One physical camera and the calibration it may be given."""
     key: str                                  # also the batch subfolder name
     calibration_group: str                    # one per physical camera
-    lens_distortion_group: str                # one per physical camera
-    calibration_prior: str                    # 'approximate'
-    distortion_model: str                     # 'brown3'
-    calibration_image_size: tuple[int, int]   # (width, height) in pixels
-    calibration_focal_mm: float               # lens focal length at calibration
-    sensor_size_mm: tuple[float, float]       # (width, height) of the sensor
-    focal_length_35mm: float                  # RealityScan normalised focal
-    principal_point_u: float                  # RealityScan normalised offsets
-    principal_point_v: float
-    opencv_distortion: tuple[float, float, float, float, float]  # k1 k2 p1 p2 k3
+    calibration_prior: str
+    focal_length_35mm: float
+    lens_distortion_group: str
+    lens_distortion_prior: str
+    distortion_model: str
+    principal_point_u: float | None = None
+    principal_point_v: float | None = None
+    opt_in_env: str | None = None
+    calibration_image_size: tuple[int, int] | None = None
+    calibration_focal_mm: float | None = None
+    sensor_size_mm: tuple[float, float] | None = None
+    opencv_distortion: tuple[float, float, float, float, float] | None = None
+    calibration_policy: str = 'legacy'
 
     @property
     def calibration_aspect(self) -> float:
+        if self.calibration_image_size is None:
+            raise ValueError(f'{self.key}: no measured calibration image size')
         width, height = self.calibration_image_size
         return width / height
 
@@ -99,7 +98,7 @@ class Family:
     name: str
     pattern: str
     camera: str
-    mount: Mount
+    mount: Mount | None
 
 
 @dataclass(frozen=True)
@@ -242,25 +241,59 @@ class _Loader:
         if not _KEY_RE.match(key):
             self.fail(where, 'camera keys are lower-case letters, digits and _')
         spec = self.obj(spec, where)
+        policy = spec.get('calibration_policy', 'measured')
+        if policy not in ('measured', 'legacy'):
+            self.fail(f'{where}.calibration_policy', 'must be measured or legacy')
+        if policy == 'legacy':
+            # These profiles predate per-image measured-calibration gates.
+            # In particular WCA JPEGs have no focal EXIF: their optical
+            # identity and initial focal must continue to come from here.
+            optional_number = lambda name: (
+                self.number(spec, name, where) if name in spec else None)
+            opt_in = spec.get('opt_in_env')
+            if opt_in is not None and (not isinstance(opt_in, str) or not opt_in):
+                self.fail(f'{where}.opt_in_env', 'must be a non-empty string')
+            if ('principal_point_u' in spec) != ('principal_point_v' in spec):
+                self.fail(where, 'principal_point_u and principal_point_v '
+                          'must be provided together')
+            return Camera(
+                key=key,
+                calibration_group=self.group(spec, 'calibration_group', where),
+                lens_distortion_group=self.group(spec, 'lens_distortion_group', where),
+                calibration_prior=self.choice(spec, 'calibration_prior', where,
+                                               CALIBRATION_PRIORS),
+                distortion_model=self.choice(spec, 'distortion_model', where,
+                                              DISTORTION_MODELS),
+                calibration_image_size=None, calibration_focal_mm=None,
+                sensor_size_mm=None,
+                focal_length_35mm=self.number(spec, 'focal_length_35mm', where,
+                                               positive=True),
+                principal_point_u=optional_number('principal_point_u'),
+                principal_point_v=optional_number('principal_point_v'),
+                opencv_distortion=None,
+                lens_distortion_prior=self.choice(spec, 'lens_distortion_prior',
+                                                  where, CALIBRATION_PRIORS),
+                opt_in_env=opt_in, calibration_policy=policy,
+            )
         size = self.require(spec, 'resolution', where)
         if (not isinstance(size, list) or len(size) != 2
                 or not all(isinstance(v, int) and not isinstance(v, bool)
                            and v > 0 for v in size)):
             self.fail(f'{where}.resolution',
                       f'must be [width, height] in whole pixels, got {size!r}')
-        model = self.choice(spec, 'distortion_model', where, DISTORTION_MODELS)
+        model = self.choice(spec, 'distortion_model', where, {'brown3'})
         coefficients = self.numbers(
             spec, 'opencv_distortion_k1_k2_p1_p2_k3', where, 5)
         if model == 'brown3' and (coefficients[2] or coefficients[3]):
             self.fail(f'{where}.opencv_distortion_k1_k2_p1_p2_k3',
                       'brown3 has no tangential terms, but p1/p2 are non-zero')
-        self.choice(spec, 'lens_distortion_prior', where, CALIBRATION_PRIORS)
+        self.choice(spec, 'lens_distortion_prior', where, {'approximate'})
         return Camera(
             key=key,
             calibration_group=self.group(spec, 'calibration_group', where),
             lens_distortion_group=self.group(spec, 'lens_distortion_group', where),
             calibration_prior=self.choice(spec, 'calibration_prior', where,
-                                          CALIBRATION_PRIORS),
+                                          {'approximate'}),
             distortion_model=model,
             calibration_image_size=(size[0], size[1]),
             calibration_focal_mm=self.number(spec, 'calibration_focal_mm', where,
@@ -271,10 +304,21 @@ class _Loader:
             principal_point_u=self.number(spec, 'principal_point_u', where),
             principal_point_v=self.number(spec, 'principal_point_v', where),
             opencv_distortion=coefficients,
+            lens_distortion_prior=spec['lens_distortion_prior'],
+            calibration_policy=policy,
         )
 
-    def mount(self, spec, where: str) -> Mount:
+    def mount(self, spec, where: str) -> Mount | None:
+        if spec is None:
+            return None
         spec = self.obj(spec, where)
+        if 'pitch' in spec:
+            return Mount(
+                down_tilt_deg=self.number(spec, 'pitch', where),
+                pitch_accuracy_deg=self.number(spec, 'p_acc', where, positive=True),
+                lever_arm_m=tuple(self.number(spec, key, where)
+                                  for key in ('fwd', 'lat', 'down')),
+            )
         lever = spec.get('lever_arm_m')
         if lever is not None:
             lever = self.numbers(spec, 'lever_arm_m', where, 3)
@@ -373,10 +417,13 @@ class _Loader:
                 self.fail(f'cameras[{camera!r}]',
                           f'must belong to exactly one rig, found {owners or "none"}')
 
-        if len(rigs) != 1:
-            self.fail('rigs', 'the pipeline runs one rig and takes its flight-log '
-                      f'prior accuracies from it; found {sorted(rigs) or "none"}')
-        accuracy = next(iter(rigs.values())).prior_accuracy
+        # PRIOR_ACCURACY is the Sony intake's backward-compatible default;
+        # generic imagery uses defaults/LEGACY_PRIOR_ACCURACY instead.
+        if not rigs:
+            self.fail('rigs', 'no rigs are defined')
+        accuracy = (rigs['ilx_lr1_stereo'].prior_accuracy
+                    if 'ilx_lr1_stereo' in rigs
+                    else next(iter(rigs.values())).prior_accuracy)
         matchers = tuple((re.compile(f.pattern, re.IGNORECASE), f) for f in families)
         return Registry(MappingProxyType(cameras), families,
                         MappingProxyType(rigs), accuracy, matchers)
@@ -396,6 +443,10 @@ def load_registry(path: str = CAMERAS_JSON) -> Registry:
 
 REGISTRY: Registry = load_registry()
 
+with open(CAMERAS_JSON, encoding='utf-8') as _registry_file:
+    _REGISTRY = json.load(_registry_file)
+_FAMILIES = tuple(_REGISTRY['families'])
+
 CAMERAS: Mapping[str, Camera] = REGISTRY.cameras
 FAMILIES: Mapping[str, Family] = MappingProxyType(
     {f.name: f for f in REGISTRY.families})
@@ -403,10 +454,15 @@ FAMILY_CAMERA: Mapping[str, str] = MappingProxyType(
     {f.name: f.camera for f in REGISTRY.families})
 RIGS: Mapping[str, Rig] = REGISTRY.rigs
 PRIOR_ACCURACY: PriorAccuracy = REGISTRY.prior_accuracy
+LEGACY_PRIOR_ACCURACY = PriorAccuracy(
+    _REGISTRY['defaults']['position_accuracy_m']['x'],
+    _REGISTRY['defaults']['position_accuracy_m']['alt'],
+    _REGISTRY['defaults']['orientation_accuracy_deg']['yaw'],
+)
 
 
 def family(filename: str) -> str | None:
-    """Name of the filename family a file belongs to ('cam1', 'cam2'), or None."""
+    """Name of the filename family a file belongs to, or None."""
     fam = REGISTRY.family(filename)
     return None if fam is None else fam.name
 
@@ -425,3 +481,74 @@ def mount_for(filename: str) -> Mount | None:
 def rig_for(camera_key: str) -> Rig:
     """The rig a camera belongs to; RegistryError for an unknown camera."""
     return REGISTRY.rig_for(camera_key)
+
+
+def calibration_xmp(camera: Camera) -> str:
+    """Calibration-ONLY XMP sidecar content for a camera.
+
+    Deliberately carries no pose entries: exported pose sidecars
+    auto-import as exact-pose priors on any later add (bug B7), and pose
+    priors measurably reduced registration on NA167. Calibration groups
+    are what separate the EXIF-identical WCA cameras.
+    """
+    if camera.calibration_policy != 'legacy':
+        from .calibration_sidecars import sidecar_xmp
+        return sidecar_xmp(camera, 'prior')
+    if camera.principal_point_u is not None:
+        return _calibration_xmp_full_intrinsics(camera)
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
+        '  <rdf:RDF>',
+        '    <rdf:Description xmlns:Camera="http://www.capturingreality.com/ns/camera/1.0/" xmlns:xcr="http://www.capturingreality.com/ns/xcr/1.0/">',
+        f'      <Camera:CalibrationGroup>{camera.calibration_group}</Camera:CalibrationGroup>',
+        f'      <Camera:CalibrationPrior>{camera.calibration_prior}</Camera:CalibrationPrior>',
+    ]
+    if camera.focal_length_35mm is not None:
+        lines.append(f'      <xcr:FocalLength35mm>{camera.focal_length_35mm}</xcr:FocalLength35mm>')
+    lines.extend([
+        f'      <Camera:LensDistortionGroup>{camera.lens_distortion_group}</Camera:LensDistortionGroup>',
+        f'      <Camera:LensDistortionPrior>{camera.lens_distortion_prior}</Camera:LensDistortionPrior>',
+        f'      <Camera:DistortionModel>{camera.distortion_model}</Camera:DistortionModel>',
+        '    </rdf:Description>',
+        '  </rdf:RDF>',
+        '</x:xmpmeta>',
+    ])
+    return '\n'.join(lines)
+
+
+def _calibration_xmp_full_intrinsics(camera: Camera) -> str:
+    """RS-native attribute-form calibration sidecar for cameras carrying a
+    full manufacturer-verified intrinsics prior (principal point present).
+    Mirrors the form RealityScan itself exports (verified on ON2026
+    zone_12 sidecars); no pose entries (B7)."""
+    return (
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/">\n'
+        '  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n'
+        '    <rdf:Description xcr:Version="4"\n'
+        f'       xcr:CalibrationPrior="{camera.calibration_prior}"'
+        f' xcr:CalibrationGroup="{camera.calibration_group}"\n'
+        f'       xcr:DistortionGroup="{camera.lens_distortion_group}"'
+        f' xcr:DistortionModel="{camera.distortion_model}"\n'
+        '       xcr:DistortionCoeficients="0 0 0 0 0 0"\n'
+        f'       xcr:FocalLength35mm="{camera.focal_length_35mm:.10f}"'
+        ' xcr:Skew="0"\n'
+        f'       xcr:AspectRatio="1"'
+        f' xcr:PrincipalPointU="{camera.principal_point_u:.10f}"\n'
+        f'       xcr:PrincipalPointV="{camera.principal_point_v:.10f}"\n'
+        '       xmlns:xcr="http://www.capturingreality.com/ns/xcr/1.1#">\n'
+        '    </rdf:Description>\n'
+        '  </rdf:RDF>\n'
+        '</x:xmpmeta>\n')
+
+
+def ensure_calibration_sidecars(image_root: str) -> tuple[int, int]:
+    """Restore legacy calibration sidecars without enabling Sony priors."""
+    from .calibration_sidecars import ensure_calibration_sidecars as ensure
+    return ensure(image_root)
+
+
+def sanitize_and_census(image_root: str) -> tuple[int, int, int]:
+    """Legacy caller interface; Sony callers pass explicit intake modes."""
+    from .calibration_sidecars import sanitize_and_census as sanitize
+    return sanitize(image_root)

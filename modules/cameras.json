@@ -1,19 +1,74 @@
 {
   "schema_version": 2,
   "_comment": [
-    "Camera registry for the two-camera Sony ILX-LR1 stereo rig captured",
-    "with Wild Sync. Loaded and validated by modules/camera_registry.py at",
-    "import time: a malformed entry stops the import with a message naming",
-    "it. Keys starting with '_' are comments; consumers ignore them.",
-    "cameras: one entry per physical camera, with the calibration",
-    "RealityScan may receive (modules/calibration_sidecars.py decides when).",
-    "The calibration record is calibration/ilx_lr1_stereo_dive_001.json;",
-    "tests/test_camera_registry.py asserts that both files agree.",
-    "families: Wild Sync filename families, searched in order",
-    "(case-insensitive); the first match wins.",
-    "rigs: the stereo pair, kept as data, and the flight-log prior accuracies (rigs.<rig>.prior_accuracy)."
+    "Camera registry for WCA, Zeuss, VOYIS and Sony Wild Sync workflows.",
+    "Legacy filename ordering, optical profiles and mount geometry are retained.",
+    "Sony measured-calibration safeguards apply only to the Sony intake."
   ],
   "cameras": {
+    "zeuss": {
+      "calibration_group": "1",
+      "calibration_prior": "Approximate",
+      "focal_length_35mm": 23.0,
+      "lens_distortion_group": "1",
+      "lens_distortion_prior": "Approximate",
+      "distortion_model": "brown3",
+      "calibration_policy": "legacy"
+    },
+    "port": {
+      "calibration_group": "2",
+      "calibration_prior": "Approximate",
+      "focal_length_35mm": 16.0,
+      "lens_distortion_group": "2",
+      "lens_distortion_prior": "Approximate",
+      "distortion_model": "division",
+      "calibration_policy": "legacy"
+    },
+    "cinema": {
+      "_comment": "Focal 17.0 -> 16.0: confirmed 2026-07-25 ('C=16'), corroborated by the solver's own median 16.37 mm 35-eq over 2,204 cameras.",
+      "calibration_group": "3",
+      "calibration_prior": "Approximate",
+      "focal_length_35mm": 16.0,
+      "lens_distortion_group": "3",
+      "lens_distortion_prior": "Approximate",
+      "distortion_model": "brown3",
+      "calibration_policy": "legacy"
+    },
+    "starboard": {
+      "calibration_group": "4",
+      "calibration_prior": "Approximate",
+      "focal_length_35mm": 16.0,
+      "lens_distortion_group": "4",
+      "lens_distortion_prior": "Approximate",
+      "distortion_model": "division",
+      "calibration_policy": "legacy"
+    },
+    "voyis_left": {
+      "_provenance": "VERIFIED 2026-08-08: manufacturer resized-corrected calibration (supplied), independently matched by COLMAP sparse/0's solved PINHOLE to the digit. Nominal 23 mm; fx=fy=1895.6747569500258 @2816^2. Runtime-enabled via the voyis families; sidecar CREATION gated by opt_in_env (RS_VOYIS_CALIB_SIDECARS) so registering the family does not flip production behavior - A/B VERDICT 2026-08-09: NOT ADOPTED - these values are correct manufacturer DATA but as RS approximate priors they collapse registration to 45% (clean ladder, confounds removed, 2x replicated; FINDINGS). Keep as reference; never auto-deliver.",
+      "calibration_group": "5",
+      "calibration_prior": "approximate",
+      "focal_length_35mm": 24.234478,
+      "lens_distortion_group": "5",
+      "lens_distortion_prior": "approximate",
+      "distortion_model": "division",
+      "principal_point_u": 0.01313138,
+      "principal_point_v": -0.00757196,
+      "opt_in_env": "RS_VOYIS_CALIB_SIDECARS",
+      "calibration_policy": "legacy"
+    },
+    "voyis_right": {
+      "_provenance": "VERIFIED 2026-08-08: manufacturer resized-corrected calibration (supplied), independently matched by COLMAP sparse/0's solved PINHOLE to the digit. Nominal 23 mm; fx=fy=1895.6747569500258 @2816^2. Runtime-enabled via the voyis families; sidecar CREATION gated by opt_in_env (RS_VOYIS_CALIB_SIDECARS) so registering the family does not flip production behavior - A/B VERDICT 2026-08-09: NOT ADOPTED - these values are correct manufacturer DATA but as RS approximate priors they collapse registration to 45% (clean ladder, confounds removed, 2x replicated; FINDINGS). Keep as reference; never auto-deliver.",
+      "calibration_group": "6",
+      "calibration_prior": "approximate",
+      "focal_length_35mm": 24.234478,
+      "lens_distortion_group": "6",
+      "lens_distortion_prior": "approximate",
+      "distortion_model": "division",
+      "principal_point_u": 0.01313138,
+      "principal_point_v": -0.00757196,
+      "opt_in_env": "RS_VOYIS_CALIB_SIDECARS",
+      "calibration_policy": "legacy"
+    },
     "_comment": [
       "One calibration group and one lens-distortion group per physical",
       "camera. resolution is the calibration image size in pixels and",
@@ -125,7 +180,166 @@
   },
   "families": [
     {
-      "_comment": "Wild Sync node cam1 is the left camera (ilx_left) and node cam2 the right camera (ilx_right). The maintainer confirmed this assignment on 2026-10-05; no file in this repository or in Wild Sync records it. These two rows are the only place it is encoded (see rigs.ilx_lr1_stereo.node_assignment_confirmed). Patterns match every Wild Sync file of the camera (.jpg, .card.JPG, .ARW, .xmp). mount: down_tilt_deg is the camera's tilt below the vehicle's forward axis (90 = looking straight down); yaw_offset_deg is the direction of the image top relative to the heading; pitch_accuracy_deg is the accuracy claimed for the pitch prior; lever_arm_m is the [forward, right, down] offset in metres from the navigation reference, or null when not measured (zero offset is used and a notice is logged). None of these mount values is measured: both cameras are nominally downward-looking with the image top along the heading, and the pitch accuracy equals the rig's orientation accuracy (rigs.ilx_lr1_stereo.prior_accuracy.orientation_deg, 10 deg) so one number describes the attitude prior.",
+      "_comment": "The family is the MOUNT identity, the camera the OPTICAL identity - deliberately separate: the same Cinema unit sits 10 deg down under legacy camlower names and 45 deg under WCA names, so keying geometry off the camera would silently change every legacy dataset by tens of degrees. Mount fields: fwd/lat/down = lever arm in metres (+ahead/+right/+below the vehicle reference point), pitch = camera down-tilt from the vehicle forward axis (deg), p_acc = claimed accuracy of that pitch prior (deg). A null mount means WARN, never zeros. WCA Port/Cinema lever arms VALIDATED on two independent metrically sound solves (bow c2, zone_2/PD-2b): C above P by +1.12 m and +1.03 m against the +1.00 m implied here; do NOT flatten them - the 0.22 m / 0.00 m FINDINGS figures came from the 0.175-scale hull and are scale-corrupted. WCA p_acc is 15 deg, not 3-5: tighter FRAGMENTS the solve (PD-0). timestamp_formats port the WCA/ZEUSS/WCA2025 constants; modules/file_metadata_parser.py accepts both forms for any family.",
+      "family": "wca_port",
+      "pattern": "^p\\d+c",
+      "camera": "port",
+      "era": "wca",
+      "mount": {
+        "fwd": 1.0,
+        "lat": 0.0,
+        "down": 1.0,
+        "pitch": 0.0,
+        "p_acc": 15.0
+      },
+      "timestamp_formats": [
+        "%Y%m%d%H%M%S",
+        "%Y%m%dT%H%M%SZ"
+      ]
+    },
+    {
+      "family": "wca_cinema",
+      "pattern": "^c\\d+c",
+      "camera": "cinema",
+      "era": "wca",
+      "mount": {
+        "fwd": 1.0,
+        "lat": 0.0,
+        "down": 0.0,
+        "pitch": 45.0,
+        "p_acc": 15.0
+      },
+      "timestamp_formats": [
+        "%Y%m%d%H%M%S",
+        "%Y%m%dT%H%M%SZ"
+      ]
+    },
+    {
+      "_comment": "Starboard's mount has NEVER been measured. The project excludes Starboard from photogrammetry, so this should not be reached - and if it is, the run must SAY SO rather than invent a zero lever arm and a 0 deg tilt. Inventing rig numbers is what produced the Port-1 m incident.",
+      "family": "wca_starboard",
+      "pattern": "^s\\d+c",
+      "camera": "starboard",
+      "era": "wca",
+      "mount": null,
+      "timestamp_formats": [
+        "%Y%m%d%H%M%S",
+        "%Y%m%dT%H%M%SZ"
+      ]
+    },
+    {
+      "family": "legacy_camupper",
+      "pattern": "^camupper",
+      "camera": "starboard",
+      "era": "legacy",
+      "mount": {
+        "fwd": 1.0,
+        "lat": 0.0,
+        "down": 0.0,
+        "pitch": 70.0,
+        "p_acc": 10.0
+      },
+      "timestamp_formats": [
+        "%Y%m%d%H%M%S",
+        "%Y%m%dT%H%M%SZ"
+      ]
+    },
+    {
+      "family": "legacy_cammid",
+      "pattern": "^cammid",
+      "camera": "port",
+      "era": "legacy",
+      "mount": {
+        "fwd": 1.0,
+        "lat": 0.0,
+        "down": 1.0,
+        "pitch": 20.0,
+        "p_acc": 10.0
+      },
+      "timestamp_formats": [
+        "%Y%m%d%H%M%S",
+        "%Y%m%dT%H%M%SZ"
+      ]
+    },
+    {
+      "family": "legacy_camlower",
+      "pattern": "^camlower",
+      "camera": "cinema",
+      "era": "legacy",
+      "mount": {
+        "fwd": 1.0,
+        "lat": 0.0,
+        "down": 1.0,
+        "pitch": 10.0,
+        "p_acc": 5.0
+      },
+      "timestamp_formats": [
+        "%Y%m%d%H%M%S",
+        "%Y%m%dT%H%M%SZ"
+      ]
+    },
+    {
+      "_comment": "Zeuss appears under 'zeuss'/'HERC' names across both eras, hence era 'all' and a delimiter-bounded token instead of an anchored prefix.",
+      "family": "zeuss",
+      "pattern": "(^|[_\\-.])(zeuss|herc)([_\\-.]|$)",
+      "camera": "zeuss",
+      "era": "all",
+      "mount": {
+        "fwd": 0.5,
+        "lat": 0.0,
+        "down": 0.5,
+        "pitch": 30.0,
+        "p_acc": 30.0
+      },
+      "timestamp_formats": [
+        "%Y%m%d%H%M%S"
+      ]
+    },
+    {
+      "era": "voyis",
+      "mount": null,
+      "timestamp_formats": [
+        "%Y-%m-%d_%H-%M-%S"
+      ],
+      "_comment": "VOYIS stereo eye. Staged names carry the L_/R_ prefix (colmap-studio bridge); ORIGINAL names carry image_left_/image_right_ tokens (never renamed going forward - project decision 2026-08-08, must-fix 15). Mount null by design: this pathway's pose priors are per-camera from COLMAP, never from vehicle nav + lever arms.",
+      "family": "voyis_left_staged",
+      "pattern": "^l_",
+      "camera": "voyis_left"
+    },
+    {
+      "era": "voyis",
+      "mount": null,
+      "timestamp_formats": [
+        "%Y-%m-%d_%H-%M-%S"
+      ],
+      "_comment": "VOYIS stereo eye. Staged names carry the L_/R_ prefix (colmap-studio bridge); ORIGINAL names carry image_left_/image_right_ tokens (never renamed going forward - project decision 2026-08-08, must-fix 15). Mount null by design: this pathway's pose priors are per-camera from COLMAP, never from vehicle nav + lever arms.",
+      "family": "voyis_right_staged",
+      "pattern": "^r_",
+      "camera": "voyis_right"
+    },
+    {
+      "era": "voyis",
+      "mount": null,
+      "timestamp_formats": [
+        "%Y-%m-%d_%H-%M-%S"
+      ],
+      "_comment": "VOYIS stereo eye. Staged names carry the L_/R_ prefix (colmap-studio bridge); ORIGINAL names carry image_left_/image_right_ tokens (never renamed going forward - project decision 2026-08-08, must-fix 15). Mount null by design: this pathway's pose priors are per-camera from COLMAP, never from vehicle nav + lever arms.",
+      "family": "voyis_left_original",
+      "pattern": "(^|[_])image_left_",
+      "camera": "voyis_left"
+    },
+    {
+      "era": "voyis",
+      "mount": null,
+      "timestamp_formats": [
+        "%Y-%m-%d_%H-%M-%S"
+      ],
+      "_comment": "VOYIS stereo eye. Staged names carry the L_/R_ prefix (colmap-studio bridge); ORIGINAL names carry image_left_/image_right_ tokens (never renamed going forward - project decision 2026-08-08, must-fix 15). Mount null by design: this pathway's pose priors are per-camera from COLMAP, never from vehicle nav + lever arms.",
+      "family": "voyis_right_original",
+      "pattern": "(^|[_])image_right_",
+      "camera": "voyis_right"
+    },
+    {
+      "_comment": "Wild Sync node cam1 is the left camera (ilx_left) and node cam2 the right camera (ilx_right). The maintainer confirmed this assignment on 2026-10-05; no file in this repository or in Wild Sync records it. These two rows are the only place it is encoded (see rigs.ilx_lr1_stereo.node_assignment_confirmed). Patterns match every Wild Sync file of the camera (.jpg, .card.JPG, .ARW, .xmp). mount: down_tilt_deg is the camera's tilt below the vehicle's forward axis (90 = looking straight down); yaw_offset_deg is the direction of the image top relative to the heading; pitch_accuracy_deg is the accuracy claimed for the pitch prior; lever_arm_m is the [forward, right, down] offset in metres from the navigation reference, or null when not measured (zero offset is used and a notice is logged). The maintainer confirmed these nominal mount assumptions on 2026-10-26; they are not measurements: both cameras are downward-looking with the image top along the heading, and the pitch accuracy equals the rig's orientation accuracy (rigs.ilx_lr1_stereo.prior_accuracy.orientation_deg, 10 deg) so one number describes the attitude prior.",
       "family": "cam1",
       "pattern": "^cam1_",
       "camera": "ilx_left",
@@ -161,11 +375,11 @@
       "node_assignment_confirmed": true,
       "_node_assignment_comment": "true: the families' cam1 -> ilx_left, cam2 -> ilx_right assignment is confirmed. Set it to false if the cameras are ever swapped between nodes or housings. While it is false, calibration that depends on the eye (principal point, distortion) is never applied; each camera still gets its own calibration and distortion group.",
       "prior_accuracy": {
-        "position_m": 0.1,
+        "position_m": 10.0,
         "altitude_m": 1.0,
         "orientation_deg": 10.0
       },
-      "_prior_accuracy_comment": "Flight-log prior accuracies the intake writes for this rig's images when no other value is given (owner, 2026-10-07). position_m is the GPS receiver's accuracy (10 cm) and applies only to a real track: a run whose positions never move (a static fix) gets no position prior at all. altitude_m applies when a depth is recorded; an empty depth gives no altitude prior. orientation_deg is written for yaw and roll and is the families' mount pitch_accuracy_deg; it is also the fallback RS_CLI/Metadata/AlignmentParams.xml sfmCameraPriorAccuracyYaw/Pitch/Roll carry, and stays at 10 deg until the IMU convention is validated on a live run.",
+      "_prior_accuracy_comment": "Flight-log prior accuracies for Sony intake images. Position defaults conservatively to 10 m until end-to-end uncertainty is established; a receiver specification alone is not image-position accuracy. A track spanning less than STATIC_FIX_SPREAD_M receives no position prior. Altitude accuracy applies only when depth is recorded. Orientation remains 10 degrees with nominal, unvalidated mount/IMU conventions. These defaults do not change the legacy navigation policies.",
       "eyes": {
         "L": {
           "camera": "ilx_left"
@@ -202,6 +416,137 @@
         ],
         "rotation_deg": 1.827
       }
+    },
+    "wca_zeuss": {
+      "node_assignment_confirmed": true,
+      "prior_accuracy": {
+        "position_m": 10.0,
+        "altitude_m": 1.0,
+        "orientation_deg": 15.0
+      },
+      "eyes": {
+        "zeuss": {
+          "camera": "zeuss"
+        },
+        "port": {
+          "camera": "port"
+        },
+        "cinema": {
+          "camera": "cinema"
+        },
+        "starboard": {
+          "camera": "starboard"
+        }
+      }
+    },
+    "on2026_voyis": {
+      "frame": "local_euclidean",
+      "axes": null,
+      "_axes_comment": "OPEN project decision (status log 2026-08-07 blocking question #2): is the ON2026 local Euclidean frame ENU or NED? Decides whether YPR needs converting. Settle it against the bundle-adjusted poses already in ON2026_final.rsproj before filling this in.",
+      "eyes": {
+        "L": {
+          "camera": "voyis_left",
+          "pattern": "^image_left_"
+        },
+        "R": {
+          "camera": "voyis_right",
+          "pattern": "^image_right_"
+        }
+      },
+      "_eyes_comment": "Per-eye filename patterns from the Voyis rectified-pair naming (image_left_/image_right_, same timestamp - COLMAP fact F-20260722-01). ON2026 rendered names UNVERIFIED against M: - verify before any consumer keys off these.",
+      "position_accuracy_m": 0.02,
+      "orientation_accuracy_deg": 10.0,
+      "_accuracy_comment": "0.02 m position (validated 6.3 mm median prior residual). Orientation floor 10.0 deg ADOPTED 2026-08-08 by the approved A/B under TRUE roll (beat 90 on every metric: 3503v3498 registered, p95 4.49v4.57 cm, 18% faster); 90 was the fabricated-roll-era conservative floor.",
+      "stereo_baseline_m": 0.16969684810099406,
+      "_stereo_baseline_comment": "Manufacturer resized-corrected value, supplied 2026-08-08; independently measured on ON2026: COLMAP rig solve 0.16970 (0.00% dev), flight-log L-R distance 0.16970 at p5=p50=p95.",
+      "resolution": [
+        2816,
+        2816
+      ],
+      "intrinsics": [
+        [
+          1895.6747569500258,
+          0,
+          1444.9779663085938
+        ],
+        [
+          0,
+          1895.6747569500258,
+          1386.6773681640625
+        ],
+        [
+          0,
+          0,
+          1
+        ]
+      ],
+      "focal_nominal_mm": 23,
+      "focal_35mm": 24.234478,
+      "principal_point_u": 0.01313138,
+      "principal_point_v": -0.00757196,
+      "calibration_prior": "approximate",
+      "calibration_groups": "per-eye",
+      "_calibration_comment": "Project decision 2026-08-08: when using COLMAP output, calibration groups are PER-CAMERA (per eye) and the manufacturer resized-corrected calibration is given as an APPROXIMATE prior (nominal 23 mm; pixel intrinsics authoritative). These pixel values equal COLMAP sparse/0's solved PINHOLE exactly - COLMAP recovered the factory calibration.",
+      "node_assignment_confirmed": false,
+      "prior_accuracy": {
+        "position_m": 0.02,
+        "altitude_m": 1.0,
+        "orientation_deg": 10.0
+      }
+    }
+  },
+  "defaults": {
+    "_comment": [
+      "Flight-log accuracy columns. Since 2026-08-07 these are the",
+      "DEFAULTS of real knobs, not literals:",
+      "modules/georeference/georeference_images.PRIOR_ACCURACY_DEFAULTS is",
+      "the one table, exposed as --g_pos_accuracy / --g_alt_accuracy /",
+      "--g_orientation_accuracy on the module and --pos-accuracy /",
+      "--alt-accuracy / --orientation-accuracy on geoall.py.",
+      "Position accuracy is END-TO-END PER-IMAGE UNCERTAINTY, not sensor",
+      "spec: claiming the sensor figure (1/1/0.1) measurably FRAGMENTS",
+      "solves (docs/validation/priors_distortion_test_plan.md 'bow 2x2').",
+      "Orientation stays at HONEST 15 deg until the mounts are",
+      "ground-truthed: PD-0/PD-0b measured 3-5 deg claimed accuracy",
+      "FRAGMENTING the solve while 15 deg gained registration.",
+      "",
+      "assumed_mount (2026-08-31, adopted) is the house convention for",
+      "a family with NO measured mount: the camera looks 10 deg down from",
+      "the vehicle forward axis and otherwise rides the vehicle attitude",
+      "(yaw and roll straight from the nav, pitch composed with it). A",
+      "MOUNTS entry always WINS - this only fills the gap where there is",
+      "none, and the VOYIS families are excluded outright because their",
+      "poses come from the COLMAP bridge, so a vehicle-nav prior there is",
+      "the wrong pipeline rather than a missing measurement.",
+      "This REVERSES part of the 2026-08-07 audit, which removed a fallback",
+      "of 0 deg ('this camera looks straight ahead') asserted at 10 deg",
+      "confidence. The surviving half of that reasoning is the ACCURACY:",
+      "the assumed tilt is claimed at 30 deg, no tighter than the loosest",
+      "MEASURED mount, because the geometry is assumed and PD-0 showed",
+      "over-tight orientation accuracy fragments solves. The LEVER ARM is",
+      "still never invented - an unmeasured mount contributes (0,0,0) m.",
+      "Knobs: --g_assumed_pitch / --g_assumed_pitch_accuracy on the module,",
+      "--assumed-pitch / --assumed-pitch-accuracy on geoall.py; a NEGATIVE",
+      "assumed pitch restores the 2026-08-07 no-prior behaviour."
+    ],
+    "position_accuracy_m": {
+      "x": 10.0,
+      "y": 10.0,
+      "alt": 1.0
+    },
+    "orientation_accuracy_deg": {
+      "yaw": 15.0,
+      "roll": 15.0
+    },
+    "assumed_mount": {
+      "pitch_deg": 10.0,
+      "pitch_accuracy_deg": 30.0,
+      "excluded_families": [
+        "voyis_left_staged",
+        "voyis_right_staged",
+        "voyis_left_original",
+        "voyis_right_original"
+      ]
     }
   }
 }

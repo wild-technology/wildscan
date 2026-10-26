@@ -471,7 +471,9 @@ def test_a_groups_sidecar_of_an_earlier_starting_focal_is_rewritten(
     assert module.run()['Success'] is True
     for image in (first, second):
         assert seen[_sidecar_of(image).name] == _xmp(left, 'groups')
-    assert not (ws / PRE_EXISTING).exists()
+    snapshots = list((ws / PRE_EXISTING).glob('*/backup_manifest.json'))
+    assert len(snapshots) == 1
+    assert len(json.loads(snapshots[0].read_text())['sidecars']) == 2
 
 
 def _sidecar_of(image: Path) -> Path:
@@ -524,8 +526,10 @@ def test_own_stale_sidecar_of_another_mode_is_replaced_not_moved(
     assert module.run()['Success'] is True
     assert _sidecar_of(image).read_text(encoding='utf-8') == \
         _xmp(camera, 'groups')
-    assert not (ws / PRE_EXISTING).exists()
-    assert not any('pre-existing' in m for m in logs.messages), logs.messages
+    copies = list((ws / PRE_EXISTING).rglob(_sidecar_of(image).name))
+    assert len(copies) == 1
+    assert copies[0].read_bytes() == sidecar_xmp(camera, 'prior').encode('utf-8')
+    assert not any('MOVED' in m for m in logs.messages), logs.messages
 
 
 @pytest.mark.parametrize('modes', [
@@ -543,12 +547,14 @@ def test_nothing_is_moved_aside_with_calibration_off(tmp_path, monkeypatch,
         on_run=lambda args: seen.update(_sidecars(ws)), min_size=2)
     module.run()
     assert seen == {foreign.name: POSE_SIDECAR}
-    assert not (ws / PRE_EXISTING).exists()
+    copies = list((ws / PRE_EXISTING).rglob(foreign.name))
+    assert len(copies) == 1
+    assert copies[0].read_bytes() == POSE_SIDECAR.encode('utf-8')
     heads_up = [m for m in logs.messages if 'HEADS UP' in m]
     assert len(heads_up) == 1, logs.messages
     assert 'imports them as pose priors' in heads_up[0]
-    assert 'not preserved' in heads_up[0]
-    assert 'pre_existing_sidecars' not in heads_up[0]
+    assert 'original bytes are preserved' in heads_up[0]
+    assert 'pre_existing_sidecars' in heads_up[0]
 
 
 def test_a_moved_sidecar_never_clobbers_an_earlier_one(tmp_path, monkeypatch,
@@ -900,7 +906,8 @@ def test_a_small_scene_exports_components_of_half_its_images(tmp_path,
                                                              monkeypatch,
                                                              logs):
     frames = tuple(f'20260820_1925{n:02d}.42' for n in range(10, 16))
-    ws = _workspace(tmp_path, None, frames=frames)
+    ws = _workspace(tmp_path, {'ilx_left': 'off', 'ilx_right': 'off'},
+                    frames=frames)
     assert len(_images(ws)) == 12
     # configured 50 (the 1.0.0 default) so the half rule applies to 12 images
     module, calls = _module(tmp_path, monkeypatch, ws,
@@ -922,7 +929,8 @@ def test_a_large_scene_keeps_the_configured_minimum(tmp_path, monkeypatch):
 
 
 def test_no_exported_component_is_explained(tmp_path, monkeypatch, logs):
-    ws = _workspace(tmp_path, None, frames=FRAMES[:1])
+    ws = _workspace(tmp_path, {'ilx_left': 'off', 'ilx_right': 'off'},
+                    frames=FRAMES[:1])
     module, _calls = _module(tmp_path, monkeypatch, ws,
                              logging.getLogger('align-calibration-test'))
     original = module.cli.run_batch_script
@@ -1029,7 +1037,7 @@ def test_align_zone_text_for_the_command_file_mode():
 
 STUB_RS = ('@echo off\r\n'
            '>>"%RS_STUB_LOG%" echo %*\r\n'
-           'if /I "%~3" == "-align" >"%RS_STUB_ERRORS%" echo stub align failure\r\n'
+           'if /I "%~3" == "-align" if not defined RS_STUB_CONTINUE >"%RS_STUB_ERRORS%" echo stub align failure\r\n'
            'exit /b 0\r\n')
 
 
@@ -1079,7 +1087,9 @@ windows_only = pytest.mark.skipif(os.name != 'nt', reason='runs cmd.exe')
 def test_align_zone_adds_images_from_the_command_file(tmp_path):
     rscmd = tmp_path / 'zone_1.rscmd'
     rscmd.write_bytes(b'-add "x.jpg"\r\n')
-    code, calls, stdout = _run_align_zone(tmp_path, [str(rscmd)])
+    code, calls, stdout = _run_align_zone(
+        tmp_path, [str(rscmd)],
+        {'RS_ALIGN_PARAMS': str(METADATA / 'AlignmentParamsSony.xml')})
     delegated = [c for c in calls if c.startswith('-delegateTo RS1 ')]
     assert f'-delegateTo RS1 -execRSCMD "{rscmd}"' in delegated, calls
     assert not any('-addFolder' in c or 'appIncSubdirs' in c for c in calls)
@@ -1124,7 +1134,7 @@ def test_align_zone_refuses_a_command_file_with_the_pool_layout(tmp_path):
 # ------------------------------------------------------ AlignmentParams.xml
 
 def test_alignment_params_use_the_global_brown3_model():
-    text = (METADATA / 'AlignmentParams.xml').read_text(encoding='utf-8')
+    text = (METADATA / 'AlignmentParamsSony.xml').read_text(encoding='utf-8')
     assert '<entry key="sfmDistortionModel" value="Brown3"/>' in text
     assert 'global and all-or-nothing' in text
     assert 'per-camera via XMP' not in text
@@ -1139,3 +1149,13 @@ def test_module_reads_the_manifest_from_the_workspace_raw_images(tmp_path):
     assert module.intake_calibration() == (
         {'ilx_left': 'prior', 'ilx_right': 'groups'}, FOCALS)
     assert ri_mod.MANIFEST_NAME == 'wildsync_intake.json'
+
+
+@windows_only
+@pytest.mark.parametrize('capture_all, expected', [(False, '2'), (True, '1')])
+def test_direct_align_zone_honors_threshold_unless_capture_is_explicit(
+        tmp_path, capture_all, expected):
+    env = {'RS_STUB_CONTINUE': '1', 'RS_CAPTURE_ALL_COMPONENTS': '1' if capture_all else '0'}
+    code, calls, _stdout = _run_align_zone(tmp_path, [], env)
+    assert f'-delegateTo RS1 -setMinComponentSize {expected}' in calls
+    assert code == 0

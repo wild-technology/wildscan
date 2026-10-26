@@ -289,6 +289,9 @@ class RealityScanCLI:
     def __init__(self, logger, settings: SettingsStore = None, instance_name: str = None):
         self.logger = logger
         self.settings = settings or SettingsStore()
+        # Per-driver default; the operator's RS_ALIGN_PARAMS always wins.
+        self.alignment_params_path: str | None = None
+        self.capture_all_components = False
         # Resolution order: constructor arg -> RS_INSTANCE env var ->
         # rs_settings.json -> default. The env var was previously only ever
         # WRITTEN (for the .bat layer), never read - so a driver exporting
@@ -622,6 +625,10 @@ class RealityScanCLI:
             f'resources_{os.path.splitext(os.path.basename(script_name))[0]}_{stamp}.csv')
 
         env = os.environ.copy()
+        if not env.get('RS_ALIGN_PARAMS') and getattr(self, 'alignment_params_path', None):
+            env['RS_ALIGN_PARAMS'] = self.alignment_params_path
+        if self.capture_all_components:
+            env.setdefault('RS_CAPTURE_ALL_COMPONENTS', '1')
         # Scripts run from SCRIPTS_DIR; overrides belong to the caller.
         for key in ('RS_ALIGN_PARAMS', 'RS_ALIGN_POOL_DIR', 'RS_CACHE_DIR',
                     'RS_PROJECTS_DIR', 'RS_SAVE_PATH'):

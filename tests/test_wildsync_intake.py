@@ -317,7 +317,7 @@ def test_golden_intake_of_the_card_variant(run_dir, workspace):
     assert [n['camera'] for n in source['nodes']] == ['ilx_left', 'ilx_right']
     assert manifest['static_fix'] is True
     assert manifest['position'] == {
-        'accuracy_m': 0.1, 'static_fix_spread_m': 1.0,
+        'accuracy_m': 10.0, 'static_fix_spread_m': 1.0,
         'images_without_position': 6}
     assert manifest['altitude'] == {
         'accuracy_m': 1.0, 'images_from_depth': 1,
@@ -338,11 +338,10 @@ def test_golden_intake_of_the_card_variant(run_dir, workspace):
     # observed on them as the starting focal of the groups sidecars
     for key, focal in (('ilx_left', 29.0), ('ilx_right', 24.0)):
         decision = manifest['calibration'][key]
-        assert decision['mode'] == 'groups' and decision['requested'] == 'auto'
+        assert decision['mode'] == 'groups' and decision['requested'] == 'groups'
         assert decision['image_sizes'] == [[48, 32]]
         assert decision['exif_focals_mm'] == [focal]
-        assert f'EXIF focal {focal:g} mm vs calibration 16 mm' in \
-            decision['reason']
+        assert decision['reason'] == 'calibration groups only, as requested'
         assert decision['exif_focal_mm'] == focal
         assert decision['exif_focal_35mm'] == focal
         assert decision['exif_focal_35mm_from'] == 'FocalLengthIn35mmFilm'
@@ -359,7 +358,8 @@ def test_golden_intake_of_the_card_variant(run_dir, workspace):
 def test_every_warn_only_case_is_warned_and_recorded(run_dir, workspace):
     """Static fix, empty depth, missing orientation, time_err_ms above the
     threshold and the calibration fallback warn - and nothing fails."""
-    result = run_intake([str(run_dir)], str(workspace), log=QUIET)
+    result = run_intake([str(run_dir)], str(workspace),
+                        IntakeOptions(calibration='auto'), log=QUIET)
     warnings = result.manifest['warnings']
     expected = [
         f'{RUN_ID}: every row carries the same position',
@@ -397,10 +397,10 @@ def test_a_moving_track_is_not_a_static_fix(tmp_path, workspace):
     assert result.manifest['static_fix'] is False
     assert not any('same position' in w for w in result.manifest['warnings'])
     lines = Path(result.flight_log_path).read_text('utf-8').splitlines()
-    # a real track: positions and the 10 cm accuracy are written; no depth,
+    # a real track: positions and the 10 m end-to-end uncertainty are written; no depth,
     # so no altitude
     assert lines[3].split(';')[1:7] == [
-        '294962.550000', '4588711.830000', '', '0.100000', '0.100000', '']
+        '294962.550000', '4588711.830000', '', '10.000000', '10.000000', '']
 
 
 def test_the_review_variant_takes_the_review_jpegs(run_dir, workspace):
@@ -646,7 +646,8 @@ def test_the_2026_08_20_card_size_comes_out_as_groups(tmp_path, workspace):
     run = build_run(tmp_path / 'runs', card=card, frames=FRAMES[:1],
                     rows={cam: [row(cam, FRAMES[0])]
                           for cam in ('cam1', 'cam2')})
-    result = run_intake([str(run)], str(workspace), log=QUIET)
+    result = run_intake([str(run)], str(workspace),
+                        IntakeOptions(calibration='auto'), log=QUIET)
     for key, focal in (('ilx_left', 29), ('ilx_right', 24)):
         decision = result.manifest['calibration'][key]
         assert decision['mode'] == 'groups'
@@ -657,9 +658,24 @@ def test_the_2026_08_20_card_size_comes_out_as_groups(tmp_path, workspace):
             decision['reason']
 
 
-def test_calibrated_images_get_the_prior(tmp_path, workspace):
+def test_matching_calibration_still_defaults_to_groups(tmp_path, workspace):
     run = build_run(tmp_path / 'runs', card=CALIBRATED_CARD)
+    before = tree(run)
     result = run_intake([str(run)], str(workspace), log=QUIET)
+    for key in ('ilx_left', 'ilx_right'):
+        entry = result.manifest['calibration'][key]
+        assert entry['requested'] == entry['mode'] == 'groups'
+        assert entry['starting_focal_35mm'] == 16.0
+        assert entry['starting_focal_source'] == 'exif'
+        assert entry['starting_focal_35mm'] != \
+            camera_registry.CAMERAS[key].focal_length_35mm
+    assert tree(run) == before
+
+
+def test_explicit_auto_can_give_calibrated_images_the_prior(tmp_path, workspace):
+    run = build_run(tmp_path / 'runs', card=CALIBRATED_CARD)
+    result = run_intake([str(run)], str(workspace),
+                        IntakeOptions(calibration='auto'), log=QUIET)
     assert intake.calibration_modes(result.manifest) == {
         'ilx_left': 'prior', 'ilx_right': 'prior'}
     assert not any('calibration' in w for w in result.manifest['warnings'])
@@ -687,7 +703,8 @@ def test_node_assignment_switch_gates_the_prior(tmp_path, workspace,
     registry = _registry(tmp_path, confirmed)
     assert registry.rig_for('ilx_left').node_assignment_confirmed is confirmed
     run = build_run(tmp_path / 'runs', card=CALIBRATED_CARD)
-    result = run_intake([str(run)], str(workspace), log=QUIET,
+    result = run_intake([str(run)], str(workspace),
+                        IntakeOptions(calibration='auto'), log=QUIET,
                         registry=registry)
     for key in ('ilx_left', 'ilx_right'):
         decision = result.manifest['calibration'][key]
@@ -779,7 +796,7 @@ def test_the_focal_override_replaces_the_exif_focal_and_is_recorded(
         'cam1': [(29.0, 29), (29.0, 29), (24.0, 24)],
         'cam2': [(None, None)] * 3})
     result = run_intake([str(run)], str(workspace),
-                        IntakeOptions(focal_override_mm=28.0), log=QUIET)
+                        IntakeOptions(calibration='auto', focal_override_mm=28.0), log=QUIET)
     for key in ('ilx_left', 'ilx_right'):
         entry = result.manifest['calibration'][key]
         assert entry['mode'] == 'groups'
@@ -800,7 +817,7 @@ def test_a_focal_override_at_the_calibration_focal_allows_the_prior(
     card = {cam: ((1024, 750), 29.0, 29) for cam in ('cam1', 'cam2')}
     run = build_run(tmp_path / 'runs', card=card)
     result = run_intake([str(run)], str(workspace),
-                        IntakeOptions(focal_override_mm=16.0), log=QUIET)
+                        IntakeOptions(calibration='auto', focal_override_mm=16.0), log=QUIET)
     assert intake.calibration_modes(result.manifest) == {
         'ilx_left': 'prior', 'ilx_right': 'prior'}
     assert result.manifest['calibration']['ilx_left'][
@@ -875,12 +892,12 @@ def test_module_parameters_follow_the_conventions():
     params = WildSyncIntake(QUIET).get_parameters()
     expected = {
         'ws_run_dirs': ('w_i', None), 'ws_variant': ('w_v', 'card'),
-        'ws_calibration': ('w_cal', 'auto'),
+        'ws_calibration': ('w_cal', 'groups'),
         'ws_assert_focal': ('w_af', False),
         'ws_focal_override_mm': ('w_fo', None),
         'ws_declination_deg': ('w_d', 0.0),
         'ws_heading_source': ('w_hs', 'auto'),
-        'ws_pos_accuracy_m': ('w_pa', 0.1),
+        'ws_pos_accuracy_m': ('w_pa', 10.0),
         'ws_alt_accuracy_m': ('w_aa', 1.0),
         'ws_orientation_accuracy_deg': ('w_oa', 10.0),
         'ws_min_match_pct': ('w_mr', 80.0),

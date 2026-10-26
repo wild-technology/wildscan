@@ -1,4 +1,4 @@
-"""Calibration delivery to RealityScan for the ILX-LR1 cameras.
+"""Calibration delivery for legacy cameras and the Sony Wild Sync intake.
 
 RealityScan takes per-image calibration only from XMP sidecars. The
 delivery that has worked from the command line is an ``.rscmd`` command
@@ -23,8 +23,9 @@ For each camera one of three modes applies (:func:`decide_calibration`):
     the focal length observed on the original images (EXIF, or the
     operator's override) as an initial (adjustable) 35 mm-equivalent focal:
     RealityScan solves each physical camera's intrinsics separately,
-    starting from that focal. The fallback whenever ``prior`` is not
-    applicable.
+    starting from that focal. The Sony default until measured-prior
+    conversion is validated, and the fallback when explicit ``auto`` finds
+    that ``prior`` is not applicable.
 ``off``
     No sidecars; calibration sidecars this pipeline wrote for the camera in
     an earlier run are removed before alignment. RealityScan reads the focal
@@ -62,6 +63,7 @@ from .image_exts import PROCESSABLE_IMAGE_EXTS
 logger = logging.getLogger(__name__)
 
 MODES = ('auto', 'prior', 'groups', 'off')      # what may be requested
+DEFAULT_SONY_CALIBRATION_MODE = 'groups'
 DECIDED_MODES = ('prior', 'groups', 'off')      # what a decision can be
 SIDECAR_MODES = ('prior', 'groups')             # modes that write a sidecar
 
@@ -90,6 +92,28 @@ XCR_NAMESPACE = 'http://www.capturingreality.com/ns/xcr/1.1#'
 _PRIOR_TOKEN = {'approximate': 'initial'}
 
 
+def default_calibration_modes() -> dict[str, str]:
+    """Historical calibration policy for a generic image workspace.
+
+    WCA and Zeuss use the stored per-camera optical profiles, including
+    when the source has no focal EXIF. VOYIS remains explicitly opt-in.
+    Sony is deliberately absent: its per-image intake decision is required
+    before any measured Sony prior can be delivered.
+    """
+    return {
+        camera.key: 'prior'
+        for camera in camera_registry.CAMERAS.values()
+        if camera.calibration_policy == 'legacy'
+        and (not camera.opt_in_env or os.environ.get(camera.opt_in_env))
+    }
+
+
+def default_calibration_focals() -> dict[str, float]:
+    """Stored 35 mm-equivalent initial focals for legacy optical profiles."""
+    return {key: camera_registry.CAMERAS[key].focal_length_35mm
+            for key in default_calibration_modes()}
+
+
 class CalibrationRefused(ValueError):
     """An explicitly requested prior cannot be applied safely."""
 
@@ -108,6 +132,7 @@ class ImageGeometry:
     height: int
     focal_mm: float | None = None
     focal_35mm_film: float | None = None
+    orientation: int = 1
 
 
 def _positive(value) -> float | None:
@@ -142,8 +167,9 @@ def read_image_geometry(path: str) -> ImageGeometry:
         exif = image.getexif()
         focal = _exif_tag(exif, 0x920A)          # FocalLength
         focal_35mm = _exif_tag(exif, 0xA405)     # FocalLengthIn35mmFilm
+        orientation = exif.get(0x0112, 1)       # IFD0 Orientation
     return ImageGeometry(int(width), int(height), _positive(focal),
-                         _positive(focal_35mm))
+                         _positive(focal_35mm), orientation)
 
 
 # ----------------------------------------------------------- decision
@@ -190,7 +216,7 @@ def _mm(value: float | None) -> str:
 
 def decide_calibration(camera: Camera, rig: Rig,
                        geometries: Iterable[ImageGeometry],
-                       requested: str = 'auto',
+                       requested: str = DEFAULT_SONY_CALIBRATION_MODE,
                        focal_asserted: bool = False,
                        focal_override_mm: float | None = None
                        ) -> CalibrationDecision:
@@ -204,7 +230,8 @@ def decide_calibration(camera: Camera, rig: Rig,
     operator's focal length for every image, is checked in place of the
     EXIF focal lengths (which the decision still records).
 
-    ``requested``: ``auto`` gives ``prior`` when all conditions hold and
+    ``groups`` is the default until measured-prior conversion is validated
+    in RealityScan. An explicit ``auto`` gives ``prior`` when all conditions hold and
     ``groups`` otherwise, with a warning naming each failed condition and
     both values. ``groups`` and ``off`` are honoured as given. ``prior`` is
     honoured with a warning when only the focal check fails, and raises
@@ -318,6 +345,9 @@ def focal_35mm_from_sensor(camera: Camera, focal_mm: float) -> float:
     """35 mm-equivalent of a lens focal length on ``camera``'s sensor:
     ``focal x 36 / sensor width`` (the scale of RealityScan's
     FocalLength35mm)."""
+    if camera.sensor_size_mm is None:
+        raise FocalRefused(f'{camera.key}: sensor size is not recorded; use '
+                           'the legacy stored 35 mm-equivalent focal profile')
     return focal_mm * FILM_WIDTH_MM / camera.sensor_size_mm[0]
 
 
@@ -333,7 +363,8 @@ def _check_spread(camera: Camera, values: list[float], what: str) -> None:
 
 
 def observe_focal(camera: Camera, geometries: Iterable[ImageGeometry],
-                  focal_override_mm: float | None = None) -> ObservedFocal:
+                  focal_override_mm: float | None = None, *,
+                  asserted_calibration: bool = False) -> ObservedFocal:
     """The focal length of ``camera``'s original images and the starting
     35 mm-equivalent focal of its ``groups`` sidecar.
 
@@ -347,6 +378,12 @@ def observe_focal(camera: Camera, geometries: Iterable[ImageGeometry],
     35 mm-equivalents) of the images differ by more than
     FOCAL_SPREAD_TOLERANCE_MM, or when an image carries no EXIF focal
     length: RealityScan would then get no single starting focal.
+
+    ``asserted_calibration`` is only for an explicit focal assertion whose
+    calibration decision has already accepted the measured prior. It lets
+    missing EXIF use that prior's focal and records ``asserted_calibration``
+    as the source, without replacing any observed EXIF or treating the
+    assertion as an override. A known zoom change is still refused.
     """
     if focal_override_mm is not None and (
             isinstance(focal_override_mm, bool)
@@ -379,6 +416,12 @@ def observe_focal(camera: Camera, geometries: Iterable[ImageGeometry],
         starting = focal_35mm_from_sensor(camera, float(focal_override_mm))
         source = 'override'
         focal_override_mm = float(focal_override_mm)
+    elif missing and geometries and asserted_calibration:
+        if camera.calibration_policy != 'measured':
+            raise FocalRefused(f'{camera.key}: no measured calibration focal '
+                               'is available to assert')
+        starting = camera.focal_length_35mm
+        source = 'asserted_calibration'
     elif missing or exif_35mm is None:
         raise FocalRefused(
             f'{camera.key}: {missing} of {len(geometries)} image(s) carry no '
@@ -417,6 +460,57 @@ def intrinsics_to_xmp_values(intrinsics, resolution) -> dict:
     }
 
 
+def eye_of(basename: str) -> str | None:
+    """Legacy VOYIS eye token, independent of Sony node assignments."""
+    name = os.path.basename(basename).lower()
+    if name.startswith('l_') or 'image_left_' in name or '_left_' in name:
+        return 'L'
+    if name.startswith('r_') or 'image_right_' in name or '_right_' in name:
+        return 'R'
+    return None
+
+
+def write_intrinsics_sidecars(image_dir: str, intrinsics, resolution,
+                              prior: str = 'approximate',
+                              distortion: str = 'division') -> dict:
+    """Historical explicit per-eye calibration utility.
+
+    This opt-in utility writes caller-supplied intrinsics into a staged
+    image directory. It is separate from the registry defaults and Sony
+    intake decisions; callers must use a copy, since sidecars auto-import.
+    """
+    values = intrinsics_to_xmp_values(intrinsics, resolution)
+    counts = {'L': 0, 'R': 0, 'skipped_no_eye': 0}
+    from xml.sax.saxutils import quoteattr
+
+    for root, _dirs, files in os.walk(image_dir):
+        for name in files:
+            if not name.lower().endswith(('.jpg', '.jpeg', '.png')):
+                continue
+            eye = eye_of(name)
+            if eye is None:
+                counts['skipped_no_eye'] += 1
+                continue
+            group = 0 if eye == 'L' else 1
+            text = (
+                '<x:xmpmeta xmlns:x="adobe:ns:meta/">\n'
+                '  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n'
+                '    <rdf:Description xcr:Version="4"\n'
+                f'       xcr:CalibrationPrior={quoteattr(prior)} xcr:CalibrationGroup="{group}"\n'
+                f'       xcr:DistortionGroup="{group}" xcr:DistortionModel={quoteattr(distortion)}\n'
+                '       xcr:DistortionCoeficients="0 0 0 0 0 0"\n'
+                f'       xcr:FocalLength35mm="{values["focal35"]:.10f}" xcr:Skew="0"\n'
+                f'       xcr:AspectRatio="1" xcr:PrincipalPointU="{values["ppu"]:.10f}"\n'
+                f'       xcr:PrincipalPointV="{values["ppv"]:.10f}"\n'
+                f'       xmlns:xcr="{XCR_NAMESPACE}">\n'
+                '    </rdf:Description>\n'
+                '  </rdf:RDF>\n'
+                '</x:xmpmeta>\n')
+            _write(os.path.join(root, sidecar_path(name)), text)
+            counts[eye] += 1
+    return counts
+
+
 def rs_distortion_coefficients(opencv) -> tuple[float, ...]:
     """OpenCV (k1, k2, p1, p2, k3) in RealityScan's six-slot order
     (k1, k2, k3, k4, t1, t2): RealityScan's t1 is OpenCV's p2 and its t2 is
@@ -453,6 +547,8 @@ def sidecar_xmp(camera: Camera, mode: str,
     """
     if mode not in SIDECAR_MODES:
         raise ValueError(f'mode {mode!r} writes no sidecar')
+    if camera.calibration_policy == 'legacy' and mode == 'prior':
+        return camera_registry.calibration_xmp(camera)
     if mode == 'groups':
         return _sidecar_text(camera, mode,
                              _num(_check_focal(camera, focal_35mm)))
@@ -618,10 +714,12 @@ def move_foreign_sidecars(image_paths: Iterable[str],
     return moved
 
 
-def write_sidecars(image_paths: Iterable[str],
-                   modes: Mapping[str, str],
-                   focals: Mapping[str, float] | None = None
-                   ) -> list[tuple[str, str | None]]:
+def write_sidecars(image_paths: Iterable[str] | None = None,
+                   modes: Mapping[str, str] | None = None,
+                   focals: Mapping[str, float] | None = None,
+                   prior: str = 'approximate', distortion: str = 'division', *,
+                   image_dir: str | None = None, intrinsics=None, resolution=None
+                   ) -> list[tuple[str, str | None]] | dict:
     """Write the decided sidecar beside each image.
 
     ``modes`` maps camera key to its decided mode, ``focals`` camera key to
@@ -633,6 +731,29 @@ def write_sidecars(image_paths: Iterable[str],
     known camera). Two images that would share one sidecar name are refused
     before anything is written.
     """
+    # Retain historical positional, keyword and mixed utility calls with
+    # parameters (image_dir, intrinsics, resolution, prior, distortion).
+    # Modern callers pass an iterable of paths and a mode mapping.
+    legacy_keywords = any(value is not None
+                          for value in (image_dir, intrinsics, resolution))
+    if legacy_keywords or (isinstance(image_paths, (str, os.PathLike))
+                           and not isinstance(modes, Mapping)):
+        for name, positional, keyword in (
+                ('image_dir', image_paths, image_dir),
+                ('intrinsics', modes, intrinsics),
+                ('resolution', focals, resolution)):
+            if positional is not None and keyword is not None:
+                raise TypeError(f'write_sidecars() got multiple values for {name!r}')
+        directory = image_paths if image_dir is None else image_dir
+        matrix = modes if intrinsics is None else intrinsics
+        size = focals if resolution is None else resolution
+        if not isinstance(directory, (str, os.PathLike)) or matrix is None or size is None:
+            raise TypeError('legacy write_sidecars() needs image_dir, intrinsics '
+                            'and resolution')
+        return write_intrinsics_sidecars(directory, matrix, size,
+                                        prior, distortion)
+    if image_paths is None or modes is None:
+        raise TypeError('write_sidecars() needs image_paths and modes')
     _check_modes(modes)
     plan: list[tuple[str, str | None, str | None]] = []
     claimed: dict[str, str] = {}
@@ -717,6 +838,8 @@ def ensure_calibration_sidecars(image_root: str,
 
     Returns (created, images of no known camera).
     """
+    if modes is None:
+        modes = default_calibration_modes()
     if not modes:
         return 0, 0
     _check_modes(modes)
@@ -812,7 +935,7 @@ def sanitize_and_census(image_root: str,
     ordinal names (00000.xmp, written for imported components) are deleted
     without being counted as unknown.
     """
-    modes = modes or {}
+    modes = default_calibration_modes() if modes is None else modes
     _check_modes(modes)
     pose_count = restored = cleared = removed = 0
     removed_examples: list[str] = []

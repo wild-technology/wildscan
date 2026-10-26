@@ -4,11 +4,10 @@
   <entry key="s251l" value="0.05"/>
   <entry key="sfmMaxFeaturesPerImage" value="0xc350"/>
   <entry key="sfmForceComponentRematch" value="false"/>
-  <!-- The distortion model is global and all-or-nothing: a per-image
-       xcr:DistortionModel in an XMP sidecar does not override it
-       (verified on an earlier dataset). Brown3 matches the model of
-       the camera registry and the calibration sidecars. -->
-  <entry key="sfmDistortionModel" value="Brown3"/>
+  <!-- Historical WCA/Zeuss fallback. This setting is global: per-image
+       calibration sidecars do not override it. Sony/Wild Sync intake
+       selects AlignmentParamsSony.xml; RS_ALIGN_PARAMS always wins. -->
+  <entry key="sfmDistortionModel" value="Division"/>
   <entry key="sfmCameraPriorAccuracyRoll" value="10.0"/>
   <entry key="sfmMaxFeatureReprojectionError" value="1.29999995"/>
   <entry key="sfmMaxFeaturesPerMpx" value="0x36b0"/>

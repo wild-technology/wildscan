@@ -29,8 +29,8 @@ from .. import camera_registry
 from .. import image_exts
 
 
-# Datasets below this many images are placed in one zone by default.
-SINGLE_ZONE_BELOW_DEFAULT = 4000
+# Optional bypass: zero preserves the established spatial-batching policy.
+SINGLE_ZONE_BELOW_DEFAULT = 0
 
 # Below this many images a dataset still runs, with a warning: the pipeline
 # is not expected to work well on so few images.
@@ -59,6 +59,8 @@ class BatchDirectory(RSModule):
         self.utm_zone_suffix = None
         # flight-log rows without X/Y, by name (set by __read_flight_log_gdf)
         self._unpositioned_names = []
+        self._unknown_camera_example = None
+        self._unknown_camera_count = 0
         # Last-entered run-time answers (zone sizes etc.) persist as the
         # next run's defaults, like every other prompt in the pipeline
         self.settings = SettingsStore()
@@ -91,8 +93,21 @@ class BatchDirectory(RSModule):
                          'toward the target images per zone, so a dataset '
                          'between the target (3000 by default) and this '
                          'value stays one zone instead of becoming two small '
-                         'ones.'),
+                         'ones. Zero preserves legacy spatial batching.'),
             prompt_user=False
+        )
+
+        additional_params['batch_allow_positionless_scene'] = Parameter(
+            name='Allow Large Scene Without a Track',
+            cli_short=None,
+            cli_long='b_allow_positionless_scene',
+            type=bool,
+            default_value=False,
+            description=('Explicitly allow one scene larger than Maximum Zone '
+                         'Size when positions are missing or all static. '
+                         'Spatial splitting is unavailable and the larger '
+                         'scene may need substantially more GPU memory.'),
+            prompt_user=True
         )
 
         additional_params['batch_min_zone_size'] = Parameter(
@@ -169,7 +184,7 @@ class BatchDirectory(RSModule):
             default_value=None,
             description='Directory containing the images to batch',
             prompt_user=True,
-            disable_when_module_active=['Wild Sync Intake', 'Preprocess Images']
+            disable_when_module_active=['Extract Images', 'Wild Sync Intake', 'Preprocess Images']
         )
 
         additional_params['batch_flight_log_path'] = Parameter(
@@ -180,7 +195,7 @@ class BatchDirectory(RSModule):
             default_value=None,
             description='Path to the flight log file (required for geographic batching)',
             prompt_user=True,
-            disable_when_module_active='Wild Sync Intake'
+            disable_when_module_active=['Georeference Images', 'Wild Sync Intake']
         )
 
         additional_params['batch_use_z'] = Parameter(
@@ -197,6 +212,20 @@ class BatchDirectory(RSModule):
                          'per-stratum components in disjoint Z '
                          'bands over one '
                          'footprint.'),
+            prompt_user=False
+        )
+
+        additional_params['batch_xmp_priors'] = Parameter(
+            name='Write XMP Calibration Priors',
+            cli_short='b_x',
+            cli_long='b_xmp_priors',
+            type=bool,
+            default_value=False,
+            description=('Write per-camera XMP calibration priors into the zones. '
+                         'Off by default: a naming bug meant historical runs never '
+                         'actually loaded them, and the NA167 zone_13 A/B showed the '
+                         'current prior content REDUCING registration (96.3% -> 89.6%). '
+                         'Validate per-rig before enabling.'),
             prompt_user=False
         )
 
@@ -257,7 +286,7 @@ class BatchDirectory(RSModule):
                 'batch_max_zone_size', 'batch_initial_overlap_percent',
                 'batch_density_weight', 'batch_kde_bandwidth',
                 'batch_overlap_max_distance_m', 'batch_use_z',
-                'batch_zone_layout', 'batch_single_zone_below')
+                'batch_zone_layout', 'batch_single_zone_below', 'batch_xmp_priors')
         input_dir = self.__get_input_dir()
         return {
             'flight_log': os.path.basename(flight_log_path or ''),
@@ -337,6 +366,18 @@ class BatchDirectory(RSModule):
                 return True, None
 
         comparable = {k: v for k, v in previous.items() if k != 'status'}
+        # Older markers predate these options. Their absence means the
+        # historical policy (spatial batching, no requested batch priors),
+        # not different source imagery. Nondefault choices still invalidate
+        # reuse, and all existing input/trajectory checks remain exact.
+        def normalized(fingerprint):
+            result = dict(fingerprint)
+            params = dict(result.get('params', {}))
+            params.setdefault('batch_single_zone_below', '0')
+            params.setdefault('batch_xmp_priors', 'False')
+            result['params'] = params
+            return result
+        comparable, current = normalized(comparable), normalized(current)
         if comparable == current:
             return True, None
         changed = [k for k in current if comparable.get(k) != current.get(k)]
@@ -414,6 +455,8 @@ class BatchDirectory(RSModule):
         # log is required" instead of an argparse-era traceback escaping
         # to main.py.
         try:
+            if 'geo_input_image_dir' in self.params:
+                return find_flight_log(self.params['geo_input_image_dir'].get_value())
             return find_flight_log(os.path.join(output_dir, "raw_images"),
                                    output_dir)
         except ValueError as exc:
@@ -918,9 +961,9 @@ class BatchDirectory(RSModule):
         return matches[0] if matches else None
 
     def __copy_files(self, input_dir, batch_folder_dir, files, file_index=None):
-        """Copy files to camera-specific subfolders. No sidecar is written
-        here: calibration sidecars are the alignment stage's
-        (modules.calibration_sidecars, before each zone's add).
+        """Copy files to camera-specific subfolders, with optional legacy XMP
+        calibration priors (--b_xmp_priors). Sony calibration delivery is
+        separately decided by its intake manifest.
 
         Returns (copied, missing). Both used to be discarded: a missing
         file emitted one warning and `continue`d, and run() reported its
@@ -992,7 +1035,67 @@ class BatchDirectory(RSModule):
             else:
                 shutil.copy(file_path, output_path)
 
+            # Optionally generate XMP sidecar with camera calibration priors
+            # (self.params is None until the orchestrator injects it - treat
+            # that the same as the parameter being absent/off)
+            prior_param = (self.params or {}).get('batch_xmp_priors')
+            if prior_param is not None and prior_param.get_value():
+                self.__generate_xmp_sidecar(name, camera_dir, camera_subfolder)
+
         return copied, missing
+
+    def __generate_xmp_sidecar(self, image_filename: str, output_path: str, camera_type: str) -> None:
+        """
+        Generate XMP sidecar file for RealityScan camera calibration.
+
+        Args:
+            image_filename: Name of the image file
+            output_path: Full path where the image is located
+            camera_type: Camera type (zeuss, cammid, camupper, camlower, other)
+        """
+        # RealityScan's sidecar convention is <stem>.xmp (image.jpg ->
+        # image.xmp). The previous f"{image_filename}.xmp" produced
+        # image.jpg.xmp, which RealityScan silently ignores - every
+        # calibration prior written that way was never loaded.
+        xmp_path = os.path.join(output_path, f"{os.path.splitext(image_filename)[0]}.xmp")
+
+        # Camera-specific calibration values come from the shared registry
+        # (one entry per PHYSICAL camera; groups separate the EXIF-identical
+        # WCA units, focals/models are confirmed 2026-07-23).
+        camera = camera_registry.identify(image_filename)
+        if camera is None:
+            # Unknown camera type - no calibration priors to write. Warn
+            # once; per-image warnings would flood the log on a dataset
+            # with an unrecognized naming scheme.
+            self._unknown_camera_count += 1
+            if self._unknown_camera_example is None:
+                self._unknown_camera_example = image_filename
+                self.logger.warning(
+                    f"Unknown camera type '{camera_type}' (e.g. {image_filename}) - "
+                    "skipping XMP calibration sidecars for these images. "
+                    "Further warnings suppressed; total reported in summary.")
+            return
+
+        if camera.calibration_policy != 'legacy':
+            self.logger.warning(
+                'Skipping --b_xmp_priors for Sony image %s: its calibration '
+                'must come from the Wild Sync intake decision, including '
+                'focal-length and image-size checks.', image_filename)
+            return
+
+        if os.path.exists(xmp_path):
+            with open(xmp_path, encoding='utf-8') as existing:
+                if existing.read() != camera_registry.calibration_xmp(camera):
+                    raise ValueError(f'Existing sidecar differs from requested calibration: {xmp_path}. Preserve it and use a fresh batch directory.')
+            return
+
+        # Write XMP file (content shared with the post-align sidecar
+        # sanitizer via camera_registry.calibration_xmp)
+        try:
+            with open(xmp_path, 'w', encoding='utf-8') as f:
+                f.write(camera_registry.calibration_xmp(camera))
+        except Exception as e:
+            self.logger.error(f"Failed to write XMP file {xmp_path}: {e}")
 
     def __create_batch_folders(self, output_dir, zones, input_dir, flight_log_path=None):
         """
@@ -1019,6 +1122,8 @@ class BatchDirectory(RSModule):
         if layout not in ('copy', 'pool'):
             raise ValueError(f"batch_zone_layout must be 'copy' or 'pool', "
                              f"got {layout!r}")
+        if layout == 'pool' and (self.params or {}).get('batch_xmp_priors') is not None and self.params['batch_xmp_priors'].get_value():
+            raise ValueError('batch_xmp_priors is incompatible with pool layout; use copy layout for per-zone calibration sidecars')
         if layout == 'copy' and flight_log_df is not None and any(
                 ntpath.isabs(str(n)) for n in flight_log_df.index):
             # A full-path master log zoned into COPY mode would write zone
@@ -1200,6 +1305,46 @@ class BatchDirectory(RSModule):
         self.settings.set('batch', key, value)
         return value
 
+    def _positionless_scene_error(self, gdf, total_images: int) -> str | None:
+        """Require an operator choice before an oversized unsplittable scene.
+
+        A line still has spatial extent and can be zoned. The guard is for
+        missing positions or one distinct spatial point, using Z only when
+        that is part of the configured batching coordinates.
+        """
+        maximum_param = self.params.get('batch_max_zone_size')
+        configured = maximum_param.get_value() if maximum_param is not None else 4000
+        maximum = int(self._stored_default(
+            'max_zone_size', configured,
+            cli_value=self._explicit_param('batch_max_zone_size')))
+        allow = (self.params or {}).get('batch_allow_positionless_scene')
+        if total_images <= maximum or (allow is not None and allow.get_value()):
+            return None
+        # Small scenes need no spatial inspection. For larger input frames,
+        # accept plain numeric X/Y columns as well as GeoDataFrame geometry;
+        # a frame without either is genuinely positionless, never a bypass.
+        try:
+            coords = self._spatial_coords(gdf)
+        except (AttributeError, KeyError):
+            columns = ['x', 'y']
+            use_z = self.params.get('batch_use_z')
+            if use_z is not None and use_z.get_value() and 'z' in gdf.columns:
+                columns.append('z')
+            coords = (gdf[columns].apply(pd.to_numeric, errors='coerce').to_numpy(np.float64)
+                      if all(column in gdf.columns for column in columns)
+                      else np.empty((0, 2)))
+        coords = coords[np.isfinite(coords).all(axis=1)]
+        if len(np.unique(coords, axis=0)) >= 2:
+            return None
+        return (f'{total_images} images have no usable spatial extent '
+                f'(positions are missing or static), exceeding the configured '
+                f'maximum zone size of {maximum}. They cannot be spatially '
+                'split. To deliberately process them as one larger scene, '
+                'set --b_allow_positionless_scene true or enable '
+                'Allow Large Scene Without a Track in Batch settings; '
+                'otherwise supply usable positions or a smaller image set. '
+                'No batch outputs were changed.')
+
     def run(self):
         # Parameters are validated by the orchestrator before run()
         output_dir = os.path.join(self.params['output_dir'].get_value(), 'batched_images_by_zone')
@@ -1217,6 +1362,11 @@ class BatchDirectory(RSModule):
                               os.path.basename(flight_log_path))
             return {'Success': False}
 
+        guard_error = self._positionless_scene_error(gdf, total_images)
+        if guard_error:
+            self.logger.error('%s', guard_error)
+            return {'Success': False, 'Error': guard_error}
+
         self.logger.info('Total number of georeferenced points: %d of %d '
                          'images', len(gdf), total_images)
         if gdf.empty:
@@ -1229,7 +1379,7 @@ class BatchDirectory(RSModule):
         if total_images < MIN_EXPECTED_IMAGES:
             self.logger.warning(
                 '%d images is below the %d the pipeline is expected to work '
-                'well with; batching continues with one zone.', total_images,
+                'well with; batching continues with the configured policy.', total_images,
                 MIN_EXPECTED_IMAGES)
         single_zone_below = int(
             self.params['batch_single_zone_below'].get_value()
@@ -1396,13 +1546,16 @@ class BatchDirectory(RSModule):
                 'Target Zone Size': target_size,
                 'Average Zone Size': int(avg_zone_size),
                 'Final Overlap': f"{overlap_percent}%",
-                'Total Unique Images': len(gdf),
+                'Total Unique Images': total_images,
                 'Total Images in Batches': total_in_batches,
                 'Images Copied': copied,
                 'Images Missing': missing,
                 'Output Directory': output_dir,
                 'UTM Zone': (self.utm_zone_suffix or '').lstrip('_') or 'N/A'
             }
+            if self._unknown_camera_count:
+                output['Images Without Calibration XMP'] = (
+                    f"{self._unknown_camera_count} (e.g. {self._unknown_camera_example})")
             return output
         except ValueError as e:
             self.logger.error(e)
@@ -1434,6 +1587,14 @@ class BatchDirectory(RSModule):
         flight_log_path = self.__get_flight_log_path()
         if not flight_log_path or not os.path.isfile(flight_log_path):
             return False, 'A valid flight log is required for geographic batching.'
+
+        gdf = self.__read_flight_log_gdf(flight_log_path)
+        if gdf is None:
+            return False, 'Could not read flight log for geographic batching.'
+        total_images = len(gdf) + len(set(self._unpositioned_names))
+        guard_error = self._positionless_scene_error(gdf, total_images)
+        if guard_error:
+            return False, guard_error
 
         # Note: Image counting and min/max prompting now happens in run() method
         # after loading flight log data, not during validation

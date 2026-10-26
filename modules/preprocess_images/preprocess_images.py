@@ -15,13 +15,13 @@ Originals are never modified: processed copies are written to
 same filenames (flight-log matching relies on the names). The current
 pipeline aligns and textures the processed copies; originals are retained.
 
-A JPEG copy keeps the original's EXIF block (focal length, camera make and
-model, capture time), so RealityScan can read the focal length from the
-copy when no calibration sidecar is written. The pixels are encoded by
-OpenCV exactly as before; the original APP1 EXIF segment is then inserted
-into the encoded file unchanged (:func:`with_exif`), except that the
-Orientation tag is set to 1 because OpenCV has already applied it to the
-pixels (:func:`upright_exif`).
+Generic preprocessing retains its historical output without EXIF. A complete
+Wild Sync intake manifest in the actual input directory, or an explicit
+``--p_preserve_exif true``, keeps the original JPEG EXIF block so RealityScan
+can read the focal length. Pixels are encoded by OpenCV exactly as before;
+the APP1 EXIF segment is inserted unchanged (:func:`with_exif`), except that
+Orientation is set to 1 because OpenCV already applied it to the pixels
+(:func:`upright_exif`). Nearby manifests and camera filenames do not enable it.
 """
 
 from __future__ import annotations
@@ -42,6 +42,7 @@ from module_base.rs_module import RSModule
 
 from ..harvest_guard import assert_harvestable
 from ..image_exts import ALL_IMAGE_EXTS
+from ..wildsync_intake.intake import load_manifest
 
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png')
 JPEG_EXTENSIONS = ('.jpg', '.jpeg')
@@ -181,20 +182,26 @@ def build_transform(params: dict):
     return transform
 
 
-def _process_one(job: tuple[str, str, float, int, bool]) -> str | None:
-    """Worker: read src, apply the transform, write dst - a JPEG with the
-    source's EXIF (:func:`with_exif`). Returns the source path on failure so
-    the parent can log it (module methods are not picklable, so this is a
-    top-level function rebuilding the transform). A source whose EXIF
-    cannot be carried over is a failure, never a copy without it."""
-    src, dst, clahe_clip, clahe_tile, white_balance = job
+def _process_one(job: tuple[str, str, float, int, bool]
+                 | tuple[str, str, float, int, bool, bool]) -> str | None:
+    """Transform a copy; a sixth job field opts into preserving JPEG EXIF.
+
+    Historical five-field jobs retain the original OpenCV output. Returns
+    the source path on failure so the parent can log it. When preservation
+    is requested, unreadable EXIF fails the image rather than dropping it.
+    """
+    if len(job) == 5:
+        src, dst, clahe_clip, clahe_tile, white_balance = job
+        preserve_exif = False
+    else:
+        src, dst, clahe_clip, clahe_tile, white_balance, preserve_exif = job
     transform = build_transform({'clahe_clip': clahe_clip,
                                  'clahe_tile': clahe_tile,
                                  'white_balance': white_balance})
     temp_path = None
     try:
         exif = None
-        if os.path.splitext(dst)[1].lower() in JPEG_EXTENSIONS:
+        if preserve_exif and os.path.splitext(dst)[1].lower() in JPEG_EXTENSIONS:
             exif = source_exif(src)
             if exif is not None:
                 exif = upright_exif(exif)
@@ -241,7 +248,7 @@ class PreprocessImages(RSModule):
             default_value=None,
             description='Directory containing the images to preprocess',
             prompt_user=True,
-            disable_when_module_active='Wild Sync Intake'
+            disable_when_module_active=['Wild Sync Intake', 'Extract Images']
         )
 
         additional_params['pre_clahe_clip'] = Parameter(
@@ -274,6 +281,19 @@ class PreprocessImages(RSModule):
             prompt_user=False
         )
 
+        additional_params['pre_preserve_exif'] = Parameter(
+            name='Preserve JPEG EXIF',
+            cli_short='p_pe',
+            cli_long='p_preserve_exif',
+            type=bool,
+            default_value=False,
+            description=('Keep source JPEG focal length and camera metadata. '
+                         'Off for historical WCA/Zeuss output unless explicitly '
+                         'enabled; automatic for a complete Wild Sync intake '
+                         'manifest in the actual preprocessing input folder'),
+            prompt_user=False
+        )
+
         additional_params['pre_workers'] = Parameter(
             name='Preprocess Workers',
             cli_short='p_w',
@@ -294,8 +314,18 @@ class PreprocessImages(RSModule):
     def get_output_dir(self) -> str:
         return os.path.join(self.params['output_dir'].get_value(), 'preprocessed_images')
 
+    def _preserve_exif(self, input_dir: str) -> bool:
+        # Read only the input's own manifest. A manifest beside an unrelated
+        # source folder, or elsewhere in the destination workspace, says
+        # nothing about these images. Invalid intake state always fails,
+        # including when preservation was explicitly requested.
+        manifest = load_manifest(input_dir)
+        requested = self.params.get('pre_preserve_exif')
+        return manifest is not None or bool(requested and requested.get_value())
+
     def __collect_jobs(self, input_dir: str, output_dir: str,
-                       clip: float, tile: int, wb: bool, records: dict):
+                       clip: float, tile: int, wb: bool, records: dict,
+                       preserve_exif: bool = False):
         """One (src, dst, ...) job per image, mirroring the input's folder
         structure. Only outputs with matching source and content provenance
         are reused."""
@@ -323,7 +353,8 @@ class PreprocessImages(RSModule):
                     skipped += 1
                     continue
                 os.makedirs(dest_root, exist_ok=True)
-                jobs.append((src, dst, clip, tile, wb))
+                job = (src, dst, clip, tile, wb)
+                jobs.append((*job, True) if preserve_exif else job)
         return jobs, skipped, signatures
 
     def run(self):
@@ -332,6 +363,10 @@ class PreprocessImages(RSModule):
         clip = float(self.params['pre_clahe_clip'].get_value())
         tile = int(self.params['pre_clahe_tile'].get_value())
         wb = bool(self.params['pre_white_balance'].get_value())
+        try:
+            preserve_exif = self._preserve_exif(input_dir)
+        except ValueError as exc:
+            return {'Success': False, 'Failure': str(exc)}
         # ProcessPoolExecutor on Windows caps max_workers at 61
         workers = min(int(self.params['pre_workers'].get_value()) or os.cpu_count() or 1, 61)
 
@@ -358,8 +393,9 @@ class PreprocessImages(RSModule):
         manifest_path = os.path.join(os.path.dirname(output_dir), MANIFEST_NAME)
         settings = {'input_dir': source_root, 'clahe_clip': clip,
                     'clahe_tile': tile, 'white_balance': wb,
-                    'jpeg_quality': JPEG_QUALITY, 'opencv': cv2.__version__,
-                    'exif': EXIF_POLICY}
+                    'jpeg_quality': JPEG_QUALITY, 'opencv': cv2.__version__}
+        if preserve_exif:
+            settings['exif'] = EXIF_POLICY
         manifest = {'schema': 1, 'status': 'in_progress', 'settings': settings, 'images': {}}
         try:
             with open(manifest_path, encoding='utf-8') as stream:
@@ -373,7 +409,8 @@ class PreprocessImages(RSModule):
             os.makedirs(output_dir, exist_ok=True)
             _save_manifest(manifest_path, manifest)
             jobs, skipped, signatures = self.__collect_jobs(
-                input_dir, output_dir, clip, tile, wb, manifest['images'])
+                input_dir, output_dir, clip, tile, wb, manifest['images'],
+                preserve_exif)
             # Source removals must not leave old images in the tree handed
             # to batching. Preserve those copies and require a fresh output.
             extras = [os.path.relpath(os.path.join(root, name), output_dir)
@@ -464,6 +501,11 @@ class PreprocessImages(RSModule):
                                '-p_i/--p_input (no console to prompt on)')
             if not os.path.isdir(input_dir):
                 return False, f'Preprocess input directory does not exist: {input_dir}'
+
+        try:
+            self._preserve_exif(input_dir)
+        except ValueError as exc:
+            return False, str(exc)
 
         clip = float(self.params['pre_clahe_clip'].get_value())
         if clip < 0:

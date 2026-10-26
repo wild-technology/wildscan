@@ -96,18 +96,20 @@ def test_a_consistent_utm_merge_still_builds(tmp_path):
     assert len(open(union, encoding='utf-8').read().splitlines()) == 3
 
 
-def test_a_merge_of_untagged_logs_is_refused(tmp_path):
-    """Logs that agree but carry no zone tag give the union log no
-    coordinate system to be imported in."""
+def test_a_merge_of_untagged_logs_keeps_the_legacy_local_frame(tmp_path):
+    """Consistent untagged logs retain the established local:1 workflow."""
     merge_zones = _merge_zones()
     images = tmp_path / 'batched'
     _zone_log(images / 'zone_1', 'flight_log_UTM.txt', ['a.jpg'])
     _zone_log(images / 'zone_2', 'flight_log_UTM.txt', ['b.jpg'])
     out = tmp_path / 'merged'
     out.mkdir()
-    with pytest.raises(ValueError, match='carries a UTM zone tag'):
-        merge_zones.build_union_flight_log(str(images), str(out), QUIET)
-    assert not list(out.iterdir()), 'nothing may be written for a refused merge'
+    union, params = merge_zones.build_union_flight_log(str(images), str(out), QUIET)
+    assert os.path.basename(union) == 'flight_log_local_UTM.txt'
+    assert 'local:1 - Euclidean' in open(params, encoding='utf-8').read()
+    assert len(open(union, encoding='utf-8').read().splitlines()) == 3
+    assert sorted(path.name for path in out.iterdir()) == [
+        'FlightLogParams_local.xml', 'flight_log_local_UTM.txt']
 
 
 def test_a_zero_row_union_log_is_refused(tmp_path):

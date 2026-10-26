@@ -440,9 +440,9 @@ def test_relative_alignment_paths_survive_the_native_script_cwd(tmp_path, monkey
                                 str(nav),
                                 str(caller / 'logs' / 'FlightLogParams_53N.xml')]
         assert all(Path(value).is_absolute() for value in command[1:5])
-        # One image: the minimum component size of 50 drops to the floor
-        # of 2 (half the scene, rounded up, is 1).
-        assert command[5:] == ['ordinary_zone_name', '2']
+        # Generic datasets retain the historical threshold; Sony intake
+        # alone applies the small-scene export rule.
+        assert command[5:] == ['ordinary_zone_name', '50']
         assert kwargs['env']['RS_ALIGN_PARAMS'] == str(alignment_params)
         assert kwargs['env']['RS_ALIGN_POOL_DIR'] == str(images)
         return SimpleNamespace(returncode=1)
@@ -459,11 +459,10 @@ def test_relative_alignment_paths_survive_the_native_script_cwd(tmp_path, monkey
         encoding='utf-8')
 
 
-def test_an_untagged_flight_log_fails_the_zone_before_anything_moves(
+def test_an_untagged_log_with_a_utm_template_fails_before_anything_moves(
         tmp_path, monkeypatch):
-    """Every trajectory is imported in the UTM zone its own filename names.
-    A log without that tag is refused before the previous run's outputs are
-    moved aside or RealityScan is located."""
+    """An untagged/local-frame log cannot use the UTM template: refuse the
+    mismatch before moving outputs or locating RealityScan."""
     images = tmp_path / 'images'
     images.mkdir()
     (images / 'a.jpg').write_bytes(b'j')
@@ -476,7 +475,7 @@ def test_an_untagged_flight_log_fails_the_zone_before_anything_moves(
     monkeypatch.delenv('RS_ALIGN_POOL_DIR', raising=False)
     monkeypatch.setattr(module.cli, 'find_executable',
                         lambda: pytest.fail('untagged log reached native preparation'))
-    with pytest.raises(ValueError, match='no UTM zone tag'):
+    with pytest.raises(ValueError, match='implies a local_euclidean frame.*declares utm'):
         module._RealityScanAlignment__align_zone(
             str(images), str(out), 'zone_1', str(nav),
             os.path.join(cli_mod.METADATA_DIR, 'FlightLogParams.xml'))

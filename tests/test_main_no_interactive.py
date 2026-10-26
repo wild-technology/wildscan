@@ -118,3 +118,39 @@ def test_closed_stdin_with_a_stored_value_uses_it(monkeypatch, store):
     driver.parse_arguments(['main.py'], params, QUIET)
     assert params['needed'].get_value() == 'stored/a'
     assert params['other'].get_value() == 'stored/b'
+
+
+def test_no_interactive_does_not_pause_between_successful_modules(
+        monkeypatch, store, tmp_path):
+    monkeypatch.setenv('RS_NO_INTERACTIVE', '1')
+    _no_input(monkeypatch)
+    calls = []
+
+    class SuccessfulModule:
+        def __init__(self, name):
+            self.name = name
+
+        def get_name(self):
+            return self.name
+
+        def get_parameters(self):
+            return {}
+
+        def set_params(self, params):
+            self.params = params
+
+        def validate_parameters(self):
+            return True, None
+
+        def run(self):
+            calls.append(self.name)
+            return {'Success': True}
+
+        def finish(self):
+            pass
+
+    modules = {name: SuccessfulModule(name) for name in ('first', 'second')}
+    monkeypatch.setattr(driver, 'initialize_modules', lambda *_args, **_kw: modules)
+    driver.main(['main.py', '--output_dir', str(tmp_path),
+                 '--continue_automatically', 'false'])
+    assert calls == ['first', 'second']

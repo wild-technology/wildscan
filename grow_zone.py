@@ -60,7 +60,10 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 from module_base.settings_store import SettingsStore, realityscan_env
 from modules import calibration_sidecars
-from modules.flight_logs import require_utm_zone, write_flight_log_params
+from modules.flight_logs import (ensure_frame_match, require_utm_zone,
+                                 write_flight_log_params)
+from modules.realityscan_interface.realityscan_interface import (
+    alignment_params_template, backup_pre_existing_sidecars, flight_log_params_template)
 from modules.realityscan_interface.realityscan_cli import (
     METADATA_DIR, RealityScanCLI, set_project_save_env)
 from modules.wildsync_intake.intake import workspace_calibration
@@ -369,9 +372,8 @@ def main() -> int:
                              'via -update without a re-align)')
     parser.add_argument('--flight_log_params', default=None,
                         help='FlightLogParams XML template for --flight_log '
-                             '(default: Metadata/FlightLogParams.xml); its '
-                             'coordinate system is rewritten for the UTM '
-                             "zone in the flight log's filename tag")
+                             '(default: UTM or local template selected from the '
+                             "flight log's filename, with frame validation)")
     parser.add_argument('--lock_anchor', action='store_true',
                         help='lock the grown component poses (inpPose=3) during its '
                              'align - EXPERIMENTAL, unverified, off by default')
@@ -411,9 +413,8 @@ def main() -> int:
         logger.info('calibration sidecars kept through every census: %s',
                     calibration[0])
     else:
-        logger.info('no Wild Sync intake manifest above %s: pose sidecars '
-                    'are deleted at each census, no calibration sidecar is '
-                    'written', images_root)
+        logger.info('no Wild Sync intake manifest above %s: preserving legacy '
+                    'camera calibration during sidecar hygiene', images_root)
 
     zone = os.path.splitext(os.path.basename(scene))[0]
     os.makedirs(output_dir, exist_ok=True)
@@ -446,18 +447,24 @@ def main() -> int:
         if not os.path.isfile(args.flight_log):
             logger.error('--flight_log not found: %s', args.flight_log)
             return 1
+        template = flight_log_params_template(
+            METADATA_DIR, args.flight_log, args.flight_log_params)
         try:
-            log_zone, log_band = require_utm_zone(args.flight_log)
-        except ValueError as exc:
+            frame = ensure_frame_match(args.flight_log, template)
+            if frame == 'utm':
+                log_zone, log_band = require_utm_zone(args.flight_log)
+                params = write_flight_log_params(
+                    template,
+                    os.path.join(logs_dir, f'FlightLogParams_{log_zone}{log_band}.xml'),
+                    log_zone, log_band)
+            else:
+                params = write_flight_log_params(
+                    template, os.path.join(logs_dir, 'FlightLogParams_local.xml'),
+                    frame='local_euclidean')
+        except (ValueError, OSError) as exc:
             logger.error('%s', exc)
             return 1
         os.environ['RS_GROW_FLIGHT_LOG'] = os.path.abspath(args.flight_log)
-        template = args.flight_log_params or os.path.join(
-            METADATA_DIR, 'FlightLogParams.xml')
-        params = write_flight_log_params(
-            template,
-            os.path.join(logs_dir, f'FlightLogParams_{log_zone}{log_band}.xml'),
-            log_zone, log_band)
         os.environ['RS_GROW_FLIGHT_LOG_PARAMS'] = os.path.abspath(params)
         logger.info('per-step flight-log reload: %s', args.flight_log)
     if args.lock_anchor:
@@ -500,7 +507,16 @@ def main() -> int:
     untrusted: set[str] = set()          # census-approximate manifests
     last_export: dict[str, str] = {}     # component -> latest .rsalign path
 
+    try:
+        preserved = backup_pre_existing_sidecars(images_root, output_dir)
+    except (OSError, ValueError) as exc:
+        logger.error('Could not preserve existing XMP sidecars: %s. Native processing was not started.', exc)
+        return 1
+    if preserved:
+        logger.info('Pre-existing XMP sidecars copied and verified in %s', preserved)
+
     cli = RealityScanCLI(logger, settings)
+    cli.alignment_params_path = alignment_params_template(calibration is not None)
     report = {
         'zone': zone,
         'scene': scene,

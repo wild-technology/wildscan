@@ -165,7 +165,7 @@ def test_intake_actions_and_read_only_status_are_available(
             await pilot.pause()
             assert isinstance(app.screen, ui.StatusScreen)
             assert app.screen.query_one('#st-pipeline').row_count == len(
-                session_mod.ALL_STAGES) == 8
+                ui.session_stages(app.session)) == 8
             assert 'No final components' in str(app.screen.query_one('#st-note').content)
             app.screen.action_back()
             await pilot.pause()

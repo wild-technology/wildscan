@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "wildscan"
 dynamic = ["version"]
-description = "RealityScan 2.2 pipeline for a two-camera Sony ILX-LR1 rig captured with Wild Sync: images to positioned 3D models"
+description = "RealityScan 2.2 photogrammetry pipeline for WCA, Zeuss and Sony ILX-LR1 imagery and navigation"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 authors = [{ name = "Wild Technologies", email = "jonathan@wildtechnology.org" }]
 keywords = [
-    "photogrammetry", "stereo-camera", "ilx-lr1", "realityscan",
+    "photogrammetry", "rov", "stereo-camera", "ilx-lr1", "realityscan",
     "wild-sync", "3d-reconstruction", "ocean-exploration",
 ]
 classifiers = [
@@ -40,9 +40,9 @@ dependencies = [
     "inquirer>=3.4",         # main.py - interactive module chain prompts
     "matplotlib>=3.11",      # modules/image_batcher - batch plots
     "numpy>=2.5",
-    "opencv-python>=5.0",    # preprocess_images (CLAHE, WB)
+    "opencv-python>=5.0",    # extract_images / preprocess_images (CLAHE, WB)
     "pandas>=3.0",
-    "Pillow>=12.3",          # calibration_sidecars - image size and EXIF focal length
+    "Pillow>=12.3",          # legacy georeferencing, image utilities and Sony EXIF/calibration
     "pyproj>=3.7",           # cesium_placement - EGM2008 geoid, CRS transforms
     "requests>=2.33.0",      # publish_cesium.py - ion REST
     "rich>=15.0",            # wildscan TUI
@@ -52,6 +52,7 @@ dependencies = [
     "shapely>=2.1",
     "textual>=8.2",          # wildscan TUI
     "tqdm>=4.69",
+    "utm>=0.8",              # legacy image/navigation georeferencing
 ]
 
 [project.optional-dependencies]
@@ -81,6 +82,8 @@ packages = [
     "wildscan",
     "module_base",
     "modules",
+    "modules.extract_images",
+    "modules.georeference",
     "modules.image_batcher",
     "modules.preprocess_images",
     "modules.realityscan_interface",

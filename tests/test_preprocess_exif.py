@@ -1,4 +1,4 @@
-"""Preprocessed JPEGs keep the original's EXIF, with pixels unchanged.
+"""Opted-in JPEG copies keep EXIF; historical generic output is unchanged.
 
 RealityScan reads the focal length from the images it aligns when no
 calibration sidecar is written (calibration ``off``), and those are the
@@ -99,7 +99,7 @@ def test_the_copy_keeps_the_exif_and_the_pixels(tmp_path):
     src = _source(tmp_path / 'Cam1_20260820_192542.42.card.JPG')
     dst = tmp_path / 'out.JPG'
     before = _before_exif_was_kept(src, tmp_path / 'before.JPG')
-    assert _process_one((str(src), str(dst), 2.0, 8, False)) is None
+    assert _process_one((str(src), str(dst), 2.0, 8, False, True)) is None
     after = dst.read_bytes()
 
     # The encoded image is byte for byte the one written before; only the
@@ -122,7 +122,7 @@ def test_the_copy_of_a_jpeg_without_exif_is_unchanged(tmp_path):
     src = _source(tmp_path / 'plain.jpg', exif=False)
     assert source_exif(str(src)) is None
     dst = tmp_path / 'out.jpg'
-    assert _process_one((str(src), str(dst), 2.0, 8, False)) is None
+    assert _process_one((str(src), str(dst), 2.0, 8, False, True)) is None
     assert dst.read_bytes() == _before_exif_was_kept(src, tmp_path / 'b.jpg')
 
 
@@ -131,7 +131,7 @@ def test_a_png_keeps_no_exif_and_its_pixels(tmp_path):
     cv2.imwrite(str(src), np.random.default_rng(3).integers(
         0, 255, (32, 32, 3), dtype=np.uint8))
     dst = tmp_path / 'out.png'
-    assert _process_one((str(src), str(dst), 2.0, 8, False)) is None
+    assert _process_one((str(src), str(dst), 2.0, 8, False, True)) is None
     expected = build_transform({'clahe_clip': 2.0, 'clahe_tile': 8})(
         cv2.imread(str(src)))
     assert np.array_equal(cv2.imread(str(dst)), expected)
@@ -144,7 +144,7 @@ def test_a_rotated_original_is_written_upright(tmp_path, orientation):
     src = _source(tmp_path / 'rotated.jpg', orientation=orientation)
     dst = tmp_path / 'out.jpg'
     before = _before_exif_was_kept(src, tmp_path / 'before.jpg')
-    assert _process_one((str(src), str(dst), 2.0, 8, False)) is None
+    assert _process_one((str(src), str(dst), 2.0, 8, False, True)) is None
     assert _without_exif_segment(dst.read_bytes()) == before
     upright = cv2.imread(str(dst))
     # OpenCV rotated the pixels: a quarter turn swaps width and height.
@@ -194,7 +194,7 @@ def test_an_exif_block_that_cannot_be_carried_over_fails_the_image(
     dst = tmp_path / 'out.jpg'
     monkeypatch.setattr(pp, 'source_exif',
                         lambda path: b'Exif\x00\x00XX\x00\x00')
-    assert _process_one((str(src), str(dst), 2.0, 8, False)) == str(src)
+    assert _process_one((str(src), str(dst), 2.0, 8, False, True)) == str(src)
     assert not dst.exists()
     assert sorted(p.name for p in tmp_path.iterdir()) == ['broken.jpg']
 
@@ -232,6 +232,7 @@ def test_outputs_written_before_exif_was_kept_are_not_reused(tmp_path,
     module.params = module.get_parameters()
     module.params['pre_input_image_dir'].set_value(str(source))
     module.params['pre_workers'].set_value(1)
+    module.params['pre_preserve_exif'].set_value(True)
     module.params['output_dir'] = Parameter('Out', 'o', 'output_dir', str,
                                            str(tmp_path / 'workspace'))
     assert module.run()['Processed'] == 1
@@ -277,3 +278,174 @@ def test_source_exif_accepts_the_mpo_format_sony_cards_write(tmp_path, monkeypat
     payload = mod.source_exif(str(src))
     assert payload is not None and payload.startswith(b'Exif')
 
+
+
+def _module_for(source: Path, workspace: Path, monkeypatch, *, preserve=False):
+    monkeypatch.setattr(pp, 'ProcessPoolExecutor', _SerialPool)
+    module = PreprocessImages(logging.getLogger('preprocess-policy-test'))
+    module.params = module.get_parameters()
+    module.params['pre_input_image_dir'].set_value(str(source))
+    module.params['pre_workers'].set_value(1)
+    module.params['pre_preserve_exif'].set_value(preserve)
+    module.params['output_dir'] = Parameter('Out', 'o', 'output_dir', str, str(workspace))
+    return module
+
+
+@pytest.mark.parametrize('orientation', [None, 6])
+def test_historical_five_field_worker_drops_exif_and_matches_original_encoding(
+        tmp_path, monkeypatch, orientation):
+    src = _source(tmp_path / 'Z004_20260820T192542Z.jpg', orientation=orientation)
+    dst = tmp_path / 'output.jpg'
+    expected = _before_exif_was_kept(src, tmp_path / 'baseline.jpg')
+
+    def unexpected_exif_read(*_args):
+        pytest.fail('Historical generic preprocessing must not read EXIF with Pillow')
+
+    monkeypatch.setattr(pp, 'source_exif', unexpected_exif_read)
+    assert _process_one((str(src), str(dst), 2.0, 8, False)) is None
+    assert dst.read_bytes() == expected
+    with Image.open(dst) as image:
+        assert not image.getexif()
+
+
+def test_generic_module_keeps_original_manifest_and_reuses_legacy_output(
+        tmp_path, monkeypatch):
+    import os
+
+    source = tmp_path / 'source'
+    source.mkdir()
+    src = _source(source / 'C002C_20260820T192542Z.jpg')
+    workspace = tmp_path / 'workspace'
+    output = workspace / 'preprocessed_images'
+    output.mkdir(parents=True)
+    dst = output / src.name
+    baseline = _before_exif_was_kept(src, dst)
+    original_mtime = dst.stat().st_mtime_ns
+    settings = {
+        'input_dir': os.path.normcase(os.path.realpath(source)),
+        'clahe_clip': 2.0, 'clahe_tile': 8, 'white_balance': False,
+        'jpeg_quality': JPEG_QUALITY, 'opencv': cv2.__version__,
+    }
+    marker = workspace / pp.MANIFEST_NAME
+    marker.write_text(json.dumps({
+        'schema': 1, 'status': 'complete', 'settings': settings,
+        'images': {src.name: {'source': pp._file_signature(str(src)),
+                              'output': pp._file_signature(str(dst))}},
+    }), encoding='utf-8')
+    module = _module_for(source, workspace, monkeypatch)
+
+    def unexpected_rebuild(*_args):
+        pytest.fail('Matching legacy preprocessing must be reused')
+
+    monkeypatch.setattr(pp, '_process_one', unexpected_rebuild)
+    result = module.run()
+    assert result['Success'] and result['Skipped (already done)'] == 1
+    assert result['Processed'] == 0
+    assert dst.read_bytes() == baseline
+    assert dst.stat().st_mtime_ns == original_mtime
+    assert json.loads(marker.read_text(encoding='utf-8'))['settings'] == settings
+
+
+def test_generic_module_defaults_to_original_encoding_even_for_sony_filenames(
+        tmp_path, monkeypatch):
+    source = tmp_path / 'source'
+    source.mkdir()
+    src = _source(source / 'Cam1_20260820_192542.42.card.JPG')
+    module = _module_for(source, tmp_path / 'workspace', monkeypatch)
+    assert module.params['pre_preserve_exif'].get_value() is False
+    result = module.run()
+    assert result['Success']
+    dst = Path(result['Output Directory']) / src.name
+    assert dst.read_bytes() == _before_exif_was_kept(src, tmp_path / 'baseline.jpg')
+    settings = json.loads((tmp_path / 'workspace' / pp.MANIFEST_NAME).read_text())['settings']
+    assert 'exif' not in settings
+
+
+def test_explicit_preprocess_flag_enables_exif_without_an_intake(tmp_path, monkeypatch):
+    from main import build_arg_parser
+
+    source = tmp_path / 'source'
+    source.mkdir()
+    src = _source(source / 'Z004_20260820T192542Z.jpg')
+    module = _module_for(source, tmp_path / 'workspace', monkeypatch, preserve=True)
+    flag = module.get_parameters()['pre_preserve_exif']
+    assert flag.cli_long == 'p_preserve_exif' and flag.type is bool
+    assert flag.default_value is False
+    parsed = build_arg_parser(module.get_parameters()).parse_args([
+        '--p_preserve_exif', 'true'])
+    assert parsed.p_preserve_exif is True
+    result = module.run()
+    assert result['Success']
+    assert _tags(Path(result['Output Directory']) / src.name) == _tags(src)
+
+
+def test_real_sony_intake_enables_exif_for_its_own_raw_images(tmp_path, monkeypatch):
+    from tests.test_wildsync_intake import build_run
+    from modules.wildsync_intake.intake import run_intake
+
+    run = build_run(tmp_path / 'runs')
+    workspace = tmp_path / 'workspace'
+    run_intake([str(run)], str(workspace))
+    source = workspace / 'raw_images'
+    src = next(source.rglob('*.JPG'))
+    source_before = src.read_bytes()
+    module = _module_for(source, workspace, monkeypatch)
+    assert module.params['pre_preserve_exif'].get_value() is False
+    result = module.run()
+    assert result['Success'] and result['Processed'] == 6
+    dst = Path(result['Output Directory']) / src.relative_to(source)
+    assert _tags(dst) == _tags(src)
+    assert source_before == src.read_bytes()
+    settings = json.loads((workspace / pp.MANIFEST_NAME).read_text())['settings']
+    assert settings['exif'] == pp.EXIF_POLICY
+
+
+def test_nearby_sony_manifest_does_not_enable_generic_input_exif(tmp_path, monkeypatch):
+    from tests.test_wildsync_intake import build_run
+    from modules.wildsync_intake.intake import run_intake
+
+    run = build_run(tmp_path / 'runs')
+    workspace = tmp_path / 'workspace'
+    run_intake([str(run)], str(workspace))
+    unrelated = workspace / 'unrelated_images'
+    unrelated.mkdir()
+    src = _source(unrelated / 'Cam1_20260820_192542.42.card.JPG')
+    module = _module_for(unrelated, workspace, monkeypatch)
+    result = module.run()
+    assert result['Success']
+    dst = Path(result['Output Directory']) / src.name
+    assert dst.read_bytes() == _before_exif_was_kept(src, tmp_path / 'baseline.jpg')
+    settings = json.loads((workspace / pp.MANIFEST_NAME).read_text())['settings']
+    assert 'exif' not in settings
+
+
+@pytest.mark.parametrize('payload', [
+    '{invalid-json',
+    json.dumps({'schema': 2, 'status': 'in_progress'}),
+    json.dumps({'schema': 1, 'status': 'complete'}),
+])
+@pytest.mark.parametrize('explicit_preserve', [False, True])
+def test_invalid_owned_intake_manifest_fails_before_changing_output(
+        tmp_path, monkeypatch, payload, explicit_preserve):
+    from modules.wildsync_intake.intake import MANIFEST_NAME
+
+    source = tmp_path / 'source'
+    source.mkdir()
+    _source(source / 'Cam1_a.card.JPG')
+    (source / MANIFEST_NAME).write_text(payload, encoding='utf-8')
+    workspace = tmp_path / 'workspace'
+    output = workspace / 'preprocessed_images'
+    output.mkdir(parents=True)
+    previous = output / 'prior.jpg'
+    previous.write_bytes(b'preserved previous output')
+    marker = workspace / pp.MANIFEST_NAME
+    marker.write_bytes(b'preserved previous manifest')
+    before = {path.relative_to(workspace): path.read_bytes()
+              for path in workspace.rglob('*') if path.is_file()}
+    module = _module_for(source, workspace, monkeypatch, preserve=explicit_preserve)
+    valid, message = module.validate_parameters()
+    assert not valid and 'manifest' in message
+    result = module.run()
+    assert not result['Success'] and 'manifest' in result['Failure']
+    assert {path.relative_to(workspace): path.read_bytes()
+            for path in workspace.rglob('*') if path.is_file()} == before
