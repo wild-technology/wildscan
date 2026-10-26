@@ -1,13 +1,13 @@
 {
   "format": "wildscan-installed-licenses-1",
-  "inventory_identity": "3efa5609c577312e8bef46e588f41fe9a1276e3b4659311c6d04ed5ed1e52342",
+  "inventory_identity": "b32887440059d1ef892d6ae842467291f050f9f4c11ac7a36270d6ef51133a80",
   "provenance": {
     "repository": "https://github.com/wild-technology/wildscan",
-    "source_revision": "72d5046178ee91015e46767a897bc423c0f98811",
-    "source_content_sha256": "6eddcfcd3acd058983f51ca73bf6c65f66d189c621da0f9c34fdea6c6dea618d",
+    "source_revision": "60b5fe08a82f48e73d3b8a42532d62e2c3330ae4",
+    "source_content_sha256": "45e24c86aae7b7c53e31983fa294fb8ed4d225cdc0aa424ddd849e54820cb0ae",
     "source_content_scope": "Tracked code, native workflows, configuration and LICENSE; excludes tests, docs, generated SBOM and licence bundle.",
     "source_worktree_modified": false,
-    "generator_sha256": "0866b8fafe05564eb4d9c179a2d649dd9d154c25e3e5bed87d06f444c91eb42e",
+    "generator_sha256": "cad6b168b6b6dc95efd16509edb488195885b5550334e6ea9a1bf80ff361c0e9",
     "format": "wildscan-installed-inventory-1",
     "python": "3.13.16",
     "implementation": "cpython",
@@ -571,38 +571,6 @@
       "bytes": 1344
     },
     {
-      "package": "packaging",
-      "version": "26.3",
-      "source": "packaging/licenses/__init__.py",
-      "path": "packaging-26.3/590d12eee73ddbec-__init__.py",
-      "sha256": "590d12eee73ddbec53b4e9ee5bfc64d9cb3aacb4940e8ebcba260757ce56740b",
-      "bytes": 7859
-    },
-    {
-      "package": "packaging",
-      "version": "26.3",
-      "source": "packaging/licenses/__pycache__/__init__.cpython-313.pyc",
-      "path": "packaging-26.3/e9a7d9d02a5733db-__init__.cpython-313.pyc",
-      "sha256": "e9a7d9d02a5733dbad29961c13f1de7a6b0c1e9554e0d1c65158cb426974b17e",
-      "bytes": 5885
-    },
-    {
-      "package": "packaging",
-      "version": "26.3",
-      "source": "packaging/licenses/__pycache__/_spdx.cpython-313.pyc",
-      "path": "packaging-26.3/559e4f0bf0487261-_spdx.cpython-313.pyc",
-      "sha256": "559e4f0bf04872613e60e39f8e5aa700ea7451fa3f6bb07019ec813302e318ec",
-      "bytes": 49908
-    },
-    {
-      "package": "packaging",
-      "version": "26.3",
-      "source": "packaging/licenses/_spdx.py",
-      "path": "packaging-26.3/596ec35e2ca0ebcb-_spdx.py",
-      "sha256": "596ec35e2ca0ebcba9fd8343ff0a51625af548786257815f24b41f7e08613314",
-      "bytes": 51122
-    },
-    {
       "package": "pandas",
       "version": "3.1.0",
       "source": "pandas-3.1.0.dist-info/licenses/LICENSE",
@@ -1009,38 +977,6 @@
       "path": "pip-26.2.2/b70e7e9b742f1cc6-LICENSE.BSD",
       "sha256": "b70e7e9b742f1cc6f948b34c16aa39ffece94196364bc88ff0d2180f0028fac5",
       "bytes": 1344
-    },
-    {
-      "package": "pip",
-      "version": "26.2.2",
-      "source": "pip/_vendor/packaging/licenses/__init__.py",
-      "path": "pip-26.2.2/fc9c745d1883ff9f-__init__.py",
-      "sha256": "fc9c745d1883ff9f296a5b169f22eb2ee879f59a4608f20f5cb29d668f4e26f4",
-      "bytes": 7293
-    },
-    {
-      "package": "pip",
-      "version": "26.2.2",
-      "source": "pip/_vendor/packaging/licenses/__pycache__/__init__.cpython-313.pyc",
-      "path": "pip-26.2.2/79e5f5e9b77236ed-__init__.cpython-313.pyc",
-      "sha256": "79e5f5e9b77236ed474bf0bb4cf2ac4a4217453b11e07b4e73010450403aa406",
-      "bytes": 5538
-    },
-    {
-      "package": "pip",
-      "version": "26.2.2",
-      "source": "pip/_vendor/packaging/licenses/__pycache__/_spdx.cpython-313.pyc",
-      "path": "pip-26.2.2/9f2dd30a22451630-_spdx.cpython-313.pyc",
-      "sha256": "9f2dd30a22451630d8f999aecab4e63d7ced64e8a9e3bbe7d957ca828aefc3a6",
-      "bytes": 49920
-    },
-    {
-      "package": "pip",
-      "version": "26.2.2",
-      "source": "pip/_vendor/packaging/licenses/_spdx.py",
-      "path": "pip-26.2.2/596ec35e2ca0ebcb-_spdx.py",
-      "sha256": "596ec35e2ca0ebcba9fd8343ff0a51625af548786257815f24b41f7e08613314",
-      "bytes": 51122
     },
     {
       "package": "pip",
