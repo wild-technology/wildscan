@@ -30,7 +30,8 @@ from modules.georeference.georeference_images import MOUNTS as _MOUNTS
 from modules.georeference.georeference_images import (
     PRIOR_ACCURACY_DEFAULTS as _ACCURACY_DEFAULTS,
     ASSUMED_MOUNT_DEFAULTS as _ASSUMED_MOUNT,
-    assumed_pitch_prior as _assumed_pitch_prior)
+    assumed_pitch_prior as _assumed_pitch_prior,
+    require_vehicle_nav_family)
 from modules import camera_registry as _camera_registry
 from modules.align_fingerprint import sha256_file
 
@@ -124,6 +125,7 @@ def get_camera_pitch_accuracy(filename: str, assume_pitch: bool = True,
 def _mount(filename: str) -> dict | None:
     """Shared mount lookup; None when the family or its geometry is unknown."""
     fam = _camera_registry.family(filename)
+    require_vehicle_nav_family(fam)
     return _MOUNTS.get(fam) if fam else None
 
 

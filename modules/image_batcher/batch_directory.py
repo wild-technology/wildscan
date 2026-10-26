@@ -29,6 +29,27 @@ from .. import camera_registry
 from .. import image_exts
 
 
+# Optional bypass: zero preserves the established spatial-batching policy.
+SINGLE_ZONE_BELOW_DEFAULT = 0
+
+# Below this many images a dataset still runs, with a warning: the pipeline
+# is not expected to work well on so few images.
+MIN_EXPECTED_IMAGES = 100
+
+
+def _has_area(points: np.ndarray) -> bool:
+    """True when 2-D points span a nonzero area, i.e. a convex hull exists.
+
+    Coincident or collinear points have none, and Qhull rejects them.
+    """
+    if len(points) < 3:
+        return False
+    # Relative tolerance: UTM magnitudes leave rounding noise of about
+    # 1e-10 m after centring, which an exact rank test reads as area.
+    spread = np.linalg.svd(points - points.mean(axis=0), compute_uv=False)
+    return bool(spread[0] > 0 and spread[1] > spread[0] * 1e-9)
+
+
 class BatchDirectory(RSModule):
     ACCEPTED_EXTENSIONS = [".png", ".jpg", ".jpeg"]
 
@@ -36,11 +57,13 @@ class BatchDirectory(RSModule):
         super().__init__("Batch Directory", logger)
         self.logger.info(f"Matplotlib {matplotlib.__version__}, Seaborn {sns.__version__}")
         self.utm_zone_suffix = None
+        # flight-log rows without X/Y, by name (set by __read_flight_log_gdf)
+        self._unpositioned_names = []
+        self._unknown_camera_example = None
+        self._unknown_camera_count = 0
         # Last-entered run-time answers (zone sizes etc.) persist as the
         # next run's defaults, like every other prompt in the pipeline
         self.settings = SettingsStore()
-        self._unknown_camera_example: str | None = None
-        self._unknown_camera_count = 0
         # First flight-log filename that matched nothing on disk - named in
         # the copy-accounting error so the operator sees the actual string.
         self._missing_example: str | None = None
@@ -55,6 +78,35 @@ class BatchDirectory(RSModule):
             type=int,
             default_value=3000,
             description='Target number of images per zone (zones will be split/merged to approach this)',
+            prompt_user=True
+        )
+
+        additional_params['batch_single_zone_below'] = Parameter(
+            name='Single Zone Below (images)',
+            cli_short='b_sz',
+            cli_long='b_single_zone_below',
+            type=int,
+            default_value=SINGLE_ZONE_BELOW_DEFAULT,
+            description=('A dataset with fewer images than this is placed in '
+                         'one zone: no clustering, no splitting and no '
+                         'overlap copies. At or above it, zones are sized '
+                         'toward the target images per zone, so a dataset '
+                         'between the target (3000 by default) and this '
+                         'value stays one zone instead of becoming two small '
+                         'ones. Zero preserves legacy spatial batching.'),
+            prompt_user=False
+        )
+
+        additional_params['batch_allow_positionless_scene'] = Parameter(
+            name='Allow Large Scene Without a Track',
+            cli_short=None,
+            cli_long='b_allow_positionless_scene',
+            type=bool,
+            default_value=False,
+            description=('Explicitly allow one scene larger than Maximum Zone '
+                         'Size when positions are missing or all static. '
+                         'Spatial splitting is unavailable and the larger '
+                         'scene may need substantially more GPU memory.'),
             prompt_user=True
         )
 
@@ -96,11 +148,11 @@ class BatchDirectory(RSModule):
             default_value=0.0,
             description='Donated overlap images further than this from the '
                         'receiving zone are dropped. 0 keeps the legacy '
-                        'uncapped behaviour. The right band width is an OPEN '
-                        'question (overlap probe, 2026-07-28) - what is not '
-                        'open is that uncapped donation nullified H2023\'s '
-                        'zoning entirely (zone_1 ended with 98.7%% of the '
-                        'dive).',
+                        'uncapped behaviour. Uncapped '
+                        'donation can let one zone '
+                        'absorb nearly the whole '
+                        'dataset, nullifying the '
+                        'zoning.',
             prompt_user=False
         )
 
@@ -132,7 +184,7 @@ class BatchDirectory(RSModule):
             default_value=None,
             description='Directory containing the images to batch',
             prompt_user=True,
-            disable_when_module_active=['Extract Images', 'Preprocess Images']
+            disable_when_module_active=['Extract Images', 'Wild Sync Intake', 'Preprocess Images']
         )
 
         additional_params['batch_flight_log_path'] = Parameter(
@@ -143,7 +195,7 @@ class BatchDirectory(RSModule):
             default_value=None,
             description='Path to the flight log file (required for geographic batching)',
             prompt_user=True,
-            disable_when_module_active='Georeference Images'
+            disable_when_module_active=['Georeference Images', 'Wild Sync Intake']
         )
 
         additional_params['batch_use_z'] = Parameter(
@@ -157,9 +209,9 @@ class BatchDirectory(RSModule):
                          'structure (shipwreck masts/hull): XY-only zones are '
                          'vertical columns mixing depth strata whose imagery '
                          'shares no visual field, fragmenting every zone into '
-                         'per-stratum components (ON2026 diagnosis '
-                         '2026-07-30: zone_2 = 7 components in disjoint Z '
-                         'bands over one 6x4 m footprint).'),
+                         'per-stratum components in disjoint Z '
+                         'bands over one '
+                         'footprint.'),
             prompt_user=False
         )
 
@@ -193,8 +245,8 @@ class BatchDirectory(RSModule):
                          'zone flight log whose filename column carries those '
                          'same full paths, so every zone references the ONE '
                          'on-disk file and overlap images are genuinely shared '
-                         'cameras (project decision 2026-08-08, '
-                         'docs/FLIGHTLOG_ARCHITECTURE.md). pool requires the '
+                         'cameras. pool '
+                         'requires the '
                          'align stage to add images from the .imagelist.'),
             prompt_user=False
         )
@@ -227,15 +279,14 @@ class BatchDirectory(RSModule):
                     h.update(chunk)
             digest = h.hexdigest()
         # EVERY parameter that changes zone membership belongs here. The
-        # overlap distance ceiling was added 2026-07-28 and initially left
-        # out - which would have let a re-run with a new ceiling silently
-        # reuse zones built without one, the exact fail-open the guard was
-        # written to close (final review, must-fix #1).
+        # overlap distance ceiling included: leaving it out would let a re-run
+        # with a new ceiling silently reuse zones built without one, the exact
+        # fail-open the guard exists to close.
         keys = ('batch_target_images_per_zone', 'batch_min_zone_size',
                 'batch_max_zone_size', 'batch_initial_overlap_percent',
                 'batch_density_weight', 'batch_kde_bandwidth',
                 'batch_overlap_max_distance_m', 'batch_use_z',
-                'batch_zone_layout')
+                'batch_zone_layout', 'batch_single_zone_below', 'batch_xmp_priors')
         input_dir = self.__get_input_dir()
         return {
             'flight_log': os.path.basename(flight_log_path or ''),
@@ -272,10 +323,9 @@ class BatchDirectory(RSModule):
         The unattended resume path reuses an existing batched folder, which is
         only sound while the flight log and batching parameters are unchanged -
         `__copy_files` skips files already present, so it cannot remove a zone
-        member that the new zoning no longer wants. When the lever-arm fix
-        changed every Port position, reuse left the previous zoning in place
-        and the folders ended up holding 12,679 images against a reported
-        9,834 (2026-07-26). Nothing detected it. Now the premise is checked.
+        member that the new zoning no longer wants. When positions change,
+        reuse would leave the previous zoning in place and the folders would
+        hold more images than reported, undetected. So the premise is checked.
 
         Returns (ok, message).
         """
@@ -316,6 +366,18 @@ class BatchDirectory(RSModule):
                 return True, None
 
         comparable = {k: v for k, v in previous.items() if k != 'status'}
+        # Older markers predate these options. Their absence means the
+        # historical policy (spatial batching, no requested batch priors),
+        # not different source imagery. Nondefault choices still invalidate
+        # reuse, and all existing input/trajectory checks remain exact.
+        def normalized(fingerprint):
+            result = dict(fingerprint)
+            params = dict(result.get('params', {}))
+            params.setdefault('batch_single_zone_below', '0')
+            params.setdefault('batch_xmp_priors', 'False')
+            result['params'] = params
+            return result
+        comparable, current = normalized(comparable), normalized(current)
         if comparable == current:
             return True, None
         changed = [k for k in current if comparable.get(k) != current.get(k)]
@@ -359,12 +421,9 @@ class BatchDirectory(RSModule):
         plt.show() BLOCKS on an interactive backend until the window is
         dismissed, and the second plot cannot even appear until the first is
         closed (observed). The previous guard inferred a human from
-        sys.stdin.isatty() - but isatty() lies under hidden consoles (this
-        repo's own Windows-traps list), and the batcher kept stalling for
-        hours after the gate landed: 2 h 53 min between the two figure saves
-        on a run with the gate 'active', against 1.35 s of actual zone
-        computation (measured 2026-07-28). Presence of a human is not
-        inferable here, so it must be declared. Both figures are always
+        sys.stdin.isatty() - but isatty() lies under hidden consoles, so an
+        unattended batcher could stall for hours on a figure window.
+        Presence of a human is not inferable here, so it must be declared. Both figures are always
         written as PNGs beside the zones; showing them is pure convenience.
         """
         if os.environ.get('RS_SHOW_PLOTS', '').strip() != '1':
@@ -387,19 +446,17 @@ class BatchDirectory(RSModule):
     def __get_flight_log_path(self):
         if 'batch_flight_log_path' in self.params:
             return self.params['batch_flight_log_path'].get_value()
-        # Georeference writes the flight log next to the images it
-        # processed: its explicit input dir, or raw_images when it ran
-        # after Extract Images (whose output the search must cover too).
+        # Wild Sync Intake writes the flight log into raw_images, next to
+        # the images it took in.
         output_dir = self.params['output_dir'].get_value()
         # find_flight_log REFUSES a directory whose logs disagree on UTM
         # zone (or mix tagged and untagged names). Surface that message
         # and return None so validate_parameters reports "a valid flight
         # log is required" instead of an argparse-era traceback escaping
-        # to main.py (audit 2026-08-07).
+        # to main.py.
         try:
             if 'geo_input_image_dir' in self.params:
-                return find_flight_log(
-                    self.params['geo_input_image_dir'].get_value())
+                return find_flight_log(self.params['geo_input_image_dir'].get_value())
             return find_flight_log(os.path.join(output_dir, "raw_images"),
                                    output_dir)
         except ValueError as exc:
@@ -407,6 +464,11 @@ class BatchDirectory(RSModule):
             return None
 
     def __read_flight_log_gdf(self, flight_log_path):
+        """Positioned rows as a GeoDataFrame; rows without X/Y are kept
+        by name in ``self._unpositioned_names`` (the intake writes no
+        position for a static-fix run, so a whole log can be like that).
+        None when the log cannot be used at all."""
+        self._unpositioned_names = []
         if flight_log_path is None:
             return None
 
@@ -430,7 +492,7 @@ class BatchDirectory(RSModule):
             # through here and blew up much later as a raw
             # `KeyError: 'filename'` inside __create_geographic_zones -
             # OUTSIDE run()'s try/except, i.e. an unhandled traceback out
-            # of main.py (audit 2026-08-07).
+            # of main.py.
             if 'filename' not in df.columns:
                 self.logger.error(
                     "Flight log has no 'filename' (or 'Name') column - found "
@@ -445,7 +507,11 @@ class BatchDirectory(RSModule):
                 self.logger.error("Flight log missing X (East) and Y (North) columns")
                 return None
 
-            df = df.dropna(subset=['x', 'y'])
+            positioned = df.dropna(subset=['x', 'y'])
+            self._unpositioned_names = [
+                str(name) for name in
+                df.loc[~df.index.isin(positioned.index), 'filename']]
+            df = positioned
             if not np.isfinite(df[['x', 'y']].to_numpy(dtype=np.float64)).all():
                 self.logger.error('Flight log contains nonfinite X/Y coordinates')
                 return None
@@ -519,7 +585,8 @@ class BatchDirectory(RSModule):
 
         labels = self.__density_aware_kmeans(coords, density, 2, density_weight)
 
-        return [zone_gdf[labels == 0].copy(), zone_gdf[labels == 1].copy()]
+        halves = [zone_gdf[labels == 0].copy(), zone_gdf[labels == 1].copy()]
+        return [half for half in halves if len(half)]
 
     def __find_nearest_zone(self, zone_gdf, other_zones):
         """Find the nearest zone based on centroid distance (3D when
@@ -558,7 +625,10 @@ class BatchDirectory(RSModule):
         labels = self.__density_aware_kmeans(coords, density, initial_k, density_weight)
         gdf['cluster'] = labels
 
+        # k-means returns empty clusters when k exceeds the number of
+        # distinct positions; an empty cluster is never a zone.
         zones = [gdf[gdf['cluster'] == i].copy() for i in range(initial_k)]
+        zones = [zone for zone in zones if len(zone)]
 
         # Iterative split/merge refinement
         max_iterations = 10
@@ -647,6 +717,22 @@ class BatchDirectory(RSModule):
             self.logger.info("Z-aware batching: clustering and overlap "
                              "donation run in 3D (batch_use_z)")
 
+        distinct = np.unique(coords, axis=0)
+        if len(distinct) == 1:
+            self.logger.warning(
+                'All %d images share one position (%s); there is nothing to '
+                'zone, so they form a single zone. A static navigation fix '
+                'looks like this.', len(gdf),
+                ', '.join(f'{v:.3f}' for v in distinct[0]))
+            gdf['density'] = 1.0
+            gdf['cluster'] = 0
+            files = gdf['filename'].tolist()
+            return [list(files)], {0: files}, gdf
+        if not _has_area(distinct[:, :2]):
+            self.logger.info('Image positions are collinear (zero area): '
+                             'zones are computed as usual and drawn without '
+                             'outlines.')
+
         bw = float(kde_bw)
         if bw <= 0.0:
             bw = self.__scott_bandwidth(coords)
@@ -675,13 +761,10 @@ class BatchDirectory(RSModule):
                     final_zones.append(final_zone_files)
                     continue
 
-                # The donor pool is the ENTIRE rest of the dive, so the slice
-                # below must be capped against it: sized only by the RECEIVER,
-                # a large zone swallows most of everything else. Measured on
-                # H2023 (2026-07-28): zone_1's 20% overlap = 756 images = 93%
-                # of the whole remainder, leaving it with 4,540 of 4,598
-                # unique images (98.7% of the dive) spanning all three
-                # co-visibility blocks - the zoning was nullified. The cap is
+                # The donor pool is the ENTIRE rest of the dataset, so the
+                # slice below must be capped against it: sized only by the
+                # RECEIVER, a large zone swallows most of everything else and
+                # the zoning is nullified. The cap is
                 # symmetric: at most overlap_percent of the receiver AND at
                 # most overlap_percent of the donor pool.
                 overlap_size = int(len(zone_i) * (overlap_percent / 100.0))
@@ -747,7 +830,8 @@ class BatchDirectory(RSModule):
 
         fig1, ax1 = plt.subplots(figsize=(12, 10))
         try:
-            sns.kdeplot(x=x, y=y, ax=ax1, cmap="viridis", fill=True, levels=25, bw_adjust=1.0, thresh=None)
+            sns.kdeplot(x=x, y=y, ax=ax1, cmap="viridis", fill=True, levels=25, bw_adjust=1.0, thresh=None,
+                        warn_singular=False)
             sc = ax1.scatter(x, y, c=gdf['density'].to_numpy(), cmap='viridis', s=10)
             cbar = fig1.colorbar(sc, ax=ax1)
             cbar.set_label('Density')
@@ -799,7 +883,7 @@ class BatchDirectory(RSModule):
             zy = zone_gdf.geometry.y.to_numpy(dtype=np.float64, copy=False)
             ax2.scatter(zx, zy, color=color, label=f'Zone {i + 1}', s=25, alpha=0.8)
 
-            if len(zone_gdf) >= 3:
+            if _has_area(np.column_stack([zx, zy])):
                 try:
                     points = np.column_stack([zx, zy])
                     hull = ConvexHull(points)
@@ -840,9 +924,8 @@ class BatchDirectory(RSModule):
         previous per-file os.walk (O(images x tree size)).
 
         Keys are LOWERCASED: Windows filesystems are case-insensitive, so a
-        log naming `C231C0001.JPG` against `C231C0001.jpg` on disk used to
-        match nothing and produce zone folders holding zero images
-        (audit 2026-08-07)."""
+        log naming `IMG_0001.JPG` against `IMG_0001.jpg` on disk used to
+        match nothing and produce zone folders holding zero images."""
         by_name: dict[str, list[str]] = {}
         by_stem: dict[str, str] = {}
         by_path: dict[str, str] = {}
@@ -878,14 +961,15 @@ class BatchDirectory(RSModule):
         return matches[0] if matches else None
 
     def __copy_files(self, input_dir, batch_folder_dir, files, file_index=None):
-        """Copy files to camera-specific subfolders and generate XMP sidecars.
+        """Copy files to camera-specific subfolders, with optional legacy XMP
+        calibration priors (--b_xmp_priors). Sony calibration delivery is
+        separately decided by its intake manifest.
 
         Returns (copied, missing). Both used to be discarded: a missing
         file emitted one warning and `continue`d, and run() reported its
         image count from the flight-log rows assigned to zones, never from
-        what actually landed on disk - so a whole-dive filename mismatch
-        copied nothing and still returned Success with a plausible number
-        (audit 2026-08-07).
+        what actually landed on disk - so a dataset-wide filename mismatch
+        copied nothing and still returned Success with a plausible number.
         """
         if file_index is None:
             file_index = self.__index_files(input_dir)
@@ -898,7 +982,7 @@ class BatchDirectory(RSModule):
         # bare lowercase basename - so resolution is by BASENAME. Two
         # different paths collapsing to one basename would then silently
         # copy the same indexed file under both rows' identities; refuse
-        # loudly instead (colmap_studio FINDINGS C-20260827-06).
+        # loudly instead.
         claimed: dict[str, str] = {}
         for file in files:
             raw = str(file)
@@ -908,7 +992,7 @@ class BatchDirectory(RSModule):
                 raise ValueError(
                     f"flight-log basename collision: '{prior}' and '{raw}' "
                     f"both map to '{key}' - basename lookup cannot tell "
-                    "them apart (C-20260827-06)")
+                    "them apart")
 
         for file in files:
             # Basename-normalized row name: the lookup key, the copied
@@ -992,6 +1076,19 @@ class BatchDirectory(RSModule):
                     "Further warnings suppressed; total reported in summary.")
             return
 
+        if camera.calibration_policy != 'legacy':
+            self.logger.warning(
+                'Skipping --b_xmp_priors for Sony image %s: its calibration '
+                'must come from the Wild Sync intake decision, including '
+                'focal-length and image-size checks.', image_filename)
+            return
+
+        if os.path.exists(xmp_path):
+            with open(xmp_path, encoding='utf-8') as existing:
+                if existing.read() != camera_registry.calibration_xmp(camera):
+                    raise ValueError(f'Existing sidecar differs from requested calibration: {xmp_path}. Preserve it and use a fresh batch directory.')
+            return
+
         # Write XMP file (content shared with the post-align sidecar
         # sanitizer via camera_registry.calibration_xmp)
         try:
@@ -1025,16 +1122,9 @@ class BatchDirectory(RSModule):
         if layout not in ('copy', 'pool'):
             raise ValueError(f"batch_zone_layout must be 'copy' or 'pool', "
                              f"got {layout!r}")
-        if layout == 'pool':
-            prior_param = (self.params or {}).get('batch_xmp_priors')
-            if prior_param is not None and prior_param.get_value():
-                # No zone tree exists to hold sidecars, and the operator
-                # directive that created pool mode also retires them.
-                raise ValueError('batch_xmp_priors is incompatible with '
-                                 "batch_zone_layout='pool' (no zone image "
-                                 'tree; XMP sidecars are retired - '
-                                 'docs/FLIGHTLOG_ARCHITECTURE.md)')
-        elif flight_log_df is not None and any(
+        if layout == 'pool' and (self.params or {}).get('batch_xmp_priors') is not None and self.params['batch_xmp_priors'].get_value():
+            raise ValueError('batch_xmp_priors is incompatible with pool layout; use copy layout for per-zone calibration sidecars')
+        if layout == 'copy' and flight_log_df is not None and any(
                 ntpath.isabs(str(n)) for n in flight_log_df.index):
             # A full-path master log zoned into COPY mode would write zone
             # logs whose rows name the POOL files while the scenes add the
@@ -1051,7 +1141,7 @@ class BatchDirectory(RSModule):
         # A .tif/.heif dataset is recognised imagery elsewhere in the
         # pipeline (modules.image_exts.ALL_IMAGE_EXTS) but cannot be
         # batched here; say what is being left behind instead of filtering
-        # it away in silence (audit 2026-08-07).
+        # it away in silence.
         skipped = image_exts.skipped_by_extension(
             file_index[2], self.ACCEPTED_EXTENSIONS)
         if skipped:
@@ -1114,8 +1204,8 @@ class BatchDirectory(RSModule):
                     zone_flight_log_df[col] = ""
 
                 if layout == 'pool':
-                    # Rows carry the COMPLETE canonical path (project
-                    # decision 2026-08-08): every zone's rows name the
+                    # Rows carry the COMPLETE canonical path: every zone's
+                    # rows name the
                     # same on-disk file, so overlap images are shared
                     # cameras and merges can fuse.
                     zone_flight_log_df.index = [
@@ -1158,11 +1248,9 @@ class BatchDirectory(RSModule):
         An EXPLICIT caller value (a --b_min flag reaching the Parameter)
         must WIN over rs_settings.json; the stored value is only a
         convenience default for an unanswered prompt. Before this, the
-        'batch' section beat the command line: with the repo's stored
-        min_zone_size=300 (from NA173) and --b_min 2000, the batcher zoned
-        at 300 - and because both keys feed _input_fingerprint, the wrong
-        zoning was then recorded as legitimate provenance
-        (audit 2026-08-07). Mirrors SettingsStore.ask's precedence, which
+        'batch' section beat the command line: a stored min_zone_size
+        overrode --b_min, and because both keys feed _input_fingerprint, the
+        wrong zoning was then recorded as legitimate provenance. Mirrors SettingsStore.ask's precedence, which
         already gets this right, and the reason the merge driver pins its
         options rather than inheriting them.
         """
@@ -1217,6 +1305,46 @@ class BatchDirectory(RSModule):
         self.settings.set('batch', key, value)
         return value
 
+    def _positionless_scene_error(self, gdf, total_images: int) -> str | None:
+        """Require an operator choice before an oversized unsplittable scene.
+
+        A line still has spatial extent and can be zoned. The guard is for
+        missing positions or one distinct spatial point, using Z only when
+        that is part of the configured batching coordinates.
+        """
+        maximum_param = self.params.get('batch_max_zone_size')
+        configured = maximum_param.get_value() if maximum_param is not None else 4000
+        maximum = int(self._stored_default(
+            'max_zone_size', configured,
+            cli_value=self._explicit_param('batch_max_zone_size')))
+        allow = (self.params or {}).get('batch_allow_positionless_scene')
+        if total_images <= maximum or (allow is not None and allow.get_value()):
+            return None
+        # Small scenes need no spatial inspection. For larger input frames,
+        # accept plain numeric X/Y columns as well as GeoDataFrame geometry;
+        # a frame without either is genuinely positionless, never a bypass.
+        try:
+            coords = self._spatial_coords(gdf)
+        except (AttributeError, KeyError):
+            columns = ['x', 'y']
+            use_z = self.params.get('batch_use_z')
+            if use_z is not None and use_z.get_value() and 'z' in gdf.columns:
+                columns.append('z')
+            coords = (gdf[columns].apply(pd.to_numeric, errors='coerce').to_numpy(np.float64)
+                      if all(column in gdf.columns for column in columns)
+                      else np.empty((0, 2)))
+        coords = coords[np.isfinite(coords).all(axis=1)]
+        if len(np.unique(coords, axis=0)) >= 2:
+            return None
+        return (f'{total_images} images have no usable spatial extent '
+                f'(positions are missing or static), exceeding the configured '
+                f'maximum zone size of {maximum}. They cannot be spatially '
+                'split. To deliberately process them as one larger scene, '
+                'set --b_allow_positionless_scene true or enable '
+                'Allow Large Scene Without a Track in Batch settings; '
+                'otherwise supply usable positions or a smaller image set. '
+                'No batch outputs were changed.')
+
     def run(self):
         # Parameters are validated by the orchestrator before run()
         output_dir = os.path.join(self.params['output_dir'].get_value(), 'batched_images_by_zone')
@@ -1224,25 +1352,60 @@ class BatchDirectory(RSModule):
         flight_log_path = self.__get_flight_log_path()
 
         gdf = self.__read_flight_log_gdf(flight_log_path)
-        if gdf is None or gdf.empty:
+        if gdf is None:
             self.logger.error("Could not process flight log for geographic batching.")
             return {'Success': False}
+        unpositioned = list(dict.fromkeys(self._unpositioned_names))
+        total_images = len(gdf) + len(unpositioned)
+        if total_images == 0:
+            self.logger.error('Flight log %s names no images.',
+                              os.path.basename(flight_log_path))
+            return {'Success': False}
 
-        self.logger.info(f"Total number of georeferenced points: {len(gdf)}")
+        guard_error = self._positionless_scene_error(gdf, total_images)
+        if guard_error:
+            self.logger.error('%s', guard_error)
+            return {'Success': False, 'Error': guard_error}
 
-        # Prompt for min/max zone size based on total image count; the
-        # last-entered values are offered as defaults on the next run
-        self.logger.info(f"Recommended min zone size: {max(100, len(gdf) // 10)}")
-        self.logger.info(f"Recommended max zone size: {max(1000, len(gdf) // 2)}")
+        self.logger.info('Total number of georeferenced points: %d of %d '
+                         'images', len(gdf), total_images)
+        if gdf.empty:
+            self.logger.warning(
+                'None of the %d images has a position (a run without a GPS '
+                'track: the intake writes no position for a static fix). '
+                'There is nothing to zone, so one zone holds them all.',
+                total_images)
 
-        self.params['batch_min_zone_size'].set_value(self._prompt_int(
-            'min_zone_size', 'Minimum zone size',
-            self.params['batch_min_zone_size'].get_value(),
-            cli_value=self._explicit_param('batch_min_zone_size')))
-        self.params['batch_max_zone_size'].set_value(self._prompt_int(
-            'max_zone_size', 'Maximum zone size',
-            self.params['batch_max_zone_size'].get_value(),
-            cli_value=self._explicit_param('batch_max_zone_size')))
+        if total_images < MIN_EXPECTED_IMAGES:
+            self.logger.warning(
+                '%d images is below the %d the pipeline is expected to work '
+                'well with; batching continues with the configured policy.', total_images,
+                MIN_EXPECTED_IMAGES)
+        single_zone_below = int(
+            self.params['batch_single_zone_below'].get_value()
+            if 'batch_single_zone_below' in self.params
+            else SINGLE_ZONE_BELOW_DEFAULT)
+        single_zone = gdf.empty or total_images < single_zone_below
+        if unpositioned and not gdf.empty and not single_zone:
+            self.logger.warning(
+                '%d of %d images have no position and are left out of every '
+                'zone: zones are built from positions.', len(unpositioned),
+                total_images)
+
+        if not single_zone:
+            # Prompt for min/max zone size based on total image count; the
+            # last-entered values are offered as defaults on the next run
+            self.logger.info(f"Recommended min zone size: {max(100, len(gdf) // 10)}")
+            self.logger.info(f"Recommended max zone size: {max(1000, len(gdf) // 2)}")
+
+            self.params['batch_min_zone_size'].set_value(self._prompt_int(
+                'min_zone_size', 'Minimum zone size',
+                self.params['batch_min_zone_size'].get_value(),
+                cli_value=self._explicit_param('batch_min_zone_size')))
+            self.params['batch_max_zone_size'].set_value(self._prompt_int(
+                'max_zone_size', 'Maximum zone size',
+                self.params['batch_max_zone_size'].get_value(),
+                cli_value=self._explicit_param('batch_max_zone_size')))
 
         target_size = int(self.params['batch_target_images_per_zone'].get_value())
         min_size = int(self.params['batch_min_zone_size'].get_value())
@@ -1258,7 +1421,18 @@ class BatchDirectory(RSModule):
         if self.utm_zone_suffix:
             self.logger.info(f"UTM zone suffix detected: {self.utm_zone_suffix}")
 
-        while True:
+        if single_zone:
+            self.logger.info(
+                '%d images (%s): one zone holds them all - no clustering, no '
+                'splitting, no overlap copies.', total_images,
+                'no image has a position' if gdf.empty else
+                f'below {single_zone_below}, b_single_zone_below')
+            final_zones = [list(dict.fromkeys(
+                gdf['filename'].tolist() + unpositioned))]
+            total_in_batches = len(final_zones[0])
+            overlap_percent = 0.0
+
+        while not single_zone:
             final_zones, base_zones, gdf_processed = self.__create_geographic_zones(
                 gdf, target_size, min_size, max_size, overlap_percent, density_weight, kde_bw,
                 max_overlap_distance_m=max_overlap_distance_m
@@ -1334,11 +1508,11 @@ class BatchDirectory(RSModule):
 
             # FAIL CLOSED on what actually landed on disk. The summary used
             # to be built from the ZONE LISTS ('Total Images in Batches'),
-            # so a whole-dive filename mismatch - extension case, path-
+            # so a dataset-wide filename mismatch - extension case, path-
             # qualified names in the log - copied nothing, reported
             # Success with a plausible number, wrote the 'complete'
             # fingerprint (which then blessed the empty tree for reuse) and
-            # handed empty folders to alignment (audit 2026-08-07).
+            # handed empty folders to alignment.
             if copied == 0:
                 self.logger.error(
                     'ZERO images were copied into the zone folders: none of '
@@ -1372,12 +1546,12 @@ class BatchDirectory(RSModule):
                 'Target Zone Size': target_size,
                 'Average Zone Size': int(avg_zone_size),
                 'Final Overlap': f"{overlap_percent}%",
-                'Total Unique Images': len(gdf),
+                'Total Unique Images': total_images,
                 'Total Images in Batches': total_in_batches,
                 'Images Copied': copied,
                 'Images Missing': missing,
                 'Output Directory': output_dir,
-                'UTM Zone': self.utm_zone_suffix or 'N/A'
+                'UTM Zone': (self.utm_zone_suffix or '').lstrip('_') or 'N/A'
             }
             if self._unknown_camera_count:
                 output['Images Without Calibration XMP'] = (
@@ -1413,6 +1587,14 @@ class BatchDirectory(RSModule):
         flight_log_path = self.__get_flight_log_path()
         if not flight_log_path or not os.path.isfile(flight_log_path):
             return False, 'A valid flight log is required for geographic batching.'
+
+        gdf = self.__read_flight_log_gdf(flight_log_path)
+        if gdf is None:
+            return False, 'Could not read flight log for geographic batching.'
+        total_images = len(gdf) + len(set(self._unpositioned_names))
+        guard_error = self._positionless_scene_error(gdf, total_images)
+        if guard_error:
+            return False, guard_error
 
         # Note: Image counting and min/max prompting now happens in run() method
         # after loading flight log data, not during validation

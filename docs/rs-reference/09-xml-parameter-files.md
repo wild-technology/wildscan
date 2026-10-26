@@ -6,7 +6,7 @@ structured `.rsortho` / `.rsbox` / `.rsinfo` / `.rcconfig` files that are config
 name, and the `<format>` dictionaries in the install tree that define which import readers and
 export writers exist at all. It covers the general mechanism (who produces a profile, who consumes
 it, what happens when one is wrong, and which commands silently ignore one), a schema section per
-profile type, the 34 shipped profiles in this repository as worked examples, and an authoring
+profile type, the 36 profiles in this repository as worked examples, and an authoring
 guide. It does **not** re-enumerate the settings-key namespace itself — every `-set` key, its type,
 allowed values and default live in `03-settings-keys.md`, which is the authority for key semantics;
 this document is the authority for the *file* that carries them. Command syntax and per-command
@@ -70,7 +70,7 @@ modeling and export in `10-reconstruction-texturing-export.md`.
    - [3.5 How to read a dictionary to discover legal values](#35-how-to-read-a-dictionary-to-discover-legal-values)
    - [3.6 The dictionaries are not well-formed XML](#36-the-dictionaries-are-not-well-formed-xml)
    - [3.7 Editing an install-tree dictionary](#37-editing-an-install-tree-dictionary)
-4. [This repository's 34 profiles](#4-this-repositorys-34-profiles)
+4. [This repository's 36 profiles](#4-this-repositorys-36-profiles)
    - [4.1 Inventory with purpose and delta-from-default](#41-inventory-with-purpose-and-delta-from-default)
    - [4.2 Which profile to pick when](#42-which-profile-to-pick-when)
    - [4.3 Known defects in the profile set](#43-known-defects-in-the-profile-set)
@@ -100,7 +100,7 @@ requirement, no schema declaration, no XML prolog in any observed file.
 </Configuration>
 ```
 
-[VERIFIED-by-inspection: all 34 profiles in `RS_CLI/Metadata/` plus the three Epic-authored
+[VERIFIED-by-inspection: all 36 profiles in `RS_CLI/Metadata/` plus the three Epic-authored
 profiles in `C:\Program Files\Epic Games\RealityScan_2.2\Settings\SimplifiedExport\`, 2026-08-04]
 
 Facts about the shape:
@@ -108,13 +108,13 @@ Facts about the shape:
 | Property | Fact | Tag |
 |---|---|---|
 | Root element | `<Configuration>` always | [VERIFIED: 37 files] |
-| `id` attribute | present on tool/panel profiles; **absent** on every `ModelExportParams*.xml` | [VERIFIED: 34 repo files] |
-| Attribute order | `key` then `value`, always | [VERIFIED: 34 repo files] |
+| `id` attribute | present on tool/panel profiles; **absent** on every `ModelExportParams*.xml` | [VERIFIED: 36 repo files] |
+| Attribute order | `key` then `value`, always | [VERIFIED: 36 repo files] |
 | Entry order | arbitrary; GUI exports are unordered (not alphabetical, not GUI order) | [VERIFIED: e.g. `AlignmentParams.xml` interleaves `s237l`, `sfmFeatureDetectionQuality`, `s251l`) |
 | Partial files | legal — a profile need not contain every key of its panel; `Texturing_FixedTexelSize*.xml` carries 7 entries, `Texturing_MaxTextureCount*.xml` carries 8 | [VERIFIED: repo files] |
 | XML prolog | never present | [VERIFIED: 37 files] |
 | Comments | not produced by the GUI, but tolerated — `AlignmentParams.xml` carries three hand-added `<!-- … -->` blocks and has driven every production align since 2026-07-23 | [VERIFIED: repo file + production use] |
-| Well-formedness | all 34 repo profiles and all 3 Epic profiles parse cleanly with `System.Xml.XmlDocument` | [VERIFIED-by-probe: 2026-08-04] |
+| Well-formedness | all 36 repo profiles and all 3 Epic profiles parse cleanly with `System.Xml.XmlDocument` | [VERIFIED-by-probe: 2026-08-04] |
 
 Profiles are **not** the same thing as a project (`.rsproj`), a component (`.rsalign`), or the
 install-tree format dictionaries (§3). A profile carries the state of one GUI settings panel or one
@@ -217,17 +217,17 @@ settings the instance happens to be carrying.**
 [CONTRADICTED: pre-2.x lore and this repo's own earlier scripts passed `-align "%AlignmentParams%"`
 / observed: the argument has no effect; confirmed against `appbasics/allcommands`, whose row reads
 `align | | Align images using the current settings.` with both parameter columns empty, and against
-Epic's online docs, 2026-07-21] [VERIFIED: FINDINGS 2026-07-21]
+Epic's online docs, 2026-07-21] [VERIFIED: project testing 2026-07-21]
 
 The consequences are severe and were all hit here:
 
 - An instance carries whatever the last GUI or CLI session set, and swept `-set` values **persist
   across instance restarts**, so "aligning on instance defaults" is not even reproducible run to
-  run. [VERIFIED: MERGE_TEST_PLAN §3 contamination controls, 2026-07-23]
-- `AlignImagesFromFolder.bat` never applied `AlignmentParams.xml` at all while
-  `AlignZonesSequentially.bat` did — two workflows in one repo silently running different
+  run. [VERIFIED: project test records, 2026-07-23]
+- Two earlier workflows (since removed) differed on this — one never applied
+  `AlignmentParams.xml` at all while another did — so one repo silently ran two different
   alignment settings. Discovered by code reading, not by any error.
-  [VERIFIED: FINDINGS 2026-07-23]
+  [VERIFIED: project testing 2026-07-23]
 - The adopted policy is **"never align on instance defaults"**: every alignment workflow parses
   the `sfm*` / `lis*` entries out of `AlignmentParams.xml` and replays each one as a delegated
   `-set` before a plain `-align`. See §2.1 for the exact loop.
@@ -246,7 +246,7 @@ The general rule to apply when a command is not in the §1.3 table:
 
 | Command | Doc status | Reality | Tag |
 |---|---|---|---|
-| `-exportRegistration <file> [params.xml]` | optional | **without a params XML it blocks forever headless.** The command never returns; the workflow hangs with no error and no dump. Avoid entirely until a GUI-saved Export Registration profile exists. | [CONTRADICTED: Help lists `params.xml` optional / observed: indefinite headless block, 2026-07-21] [VERIFIED: FINDINGS 2026-07-21] |
+| `-exportRegistration <file> [params.xml]` | optional | **without a params XML it blocks forever headless.** The command never returns; the workflow hangs with no error and no dump. Avoid entirely until a GUI-saved Export Registration profile exists. | [CONTRADICTED: Help lists `params.xml` optional / observed: indefinite headless block, 2026-07-21] [VERIFIED: project testing 2026-07-21] |
 | `-exportMasks` | required in both forms | required — consistent | [OFFICIAL] |
 | `-exportOrthoProjection` | required in all three forms | required — consistent | [OFFICIAL] |
 | `-exportXMP [params.xml]` | optional | genuinely optional. This repo has **never** passed one: `XMPExportParams.xml` is shipped in `RS_CLI/Metadata/` but is referenced by zero scripts and zero Python modules, so every production `-exportXMP` and `-exportXMPForSelectedComponent` ran on instance defaults. | [VERIFIED-by-probe: repo-wide grep for `XMPExportParams`, 2026-08-04] |
@@ -255,7 +255,7 @@ The general shape of the hazard: a dialog that would prompt for interaction unde
 silent block or a silent auto-answer under `-headless` + `-silent`. Two recorded instances:
 `-exportRegistration` blocks; a selection-driven export auto-answers its "Export Selection" dialog
 and exports **nothing** in 0.057 s instead of 20.5 s.
-[VERIFIED: FINDINGS 2026-07-21 and 2026-07-23]
+[VERIFIED: project testing 2026-07-21 and 2026-07-23]
 
 ### 1.6 How to obtain a valid profile
 
@@ -264,7 +264,7 @@ dialog.** There is no CLI command that emits a `<Configuration>` profile for a t
 schema to author one from scratch, and no validator. This repo obtained every simplify, smoothing,
 texturing, unwrap, reprojection and model-export profile that way, and `-exportRegistration`
 remains unusable here precisely because nobody has yet sat at the GUI and saved its dialog.
-[VERIFIED-as-practice: FINDINGS 2026-07-21; hardening cells U7 / U14]
+[VERIFIED-as-practice: project testing 2026-07-21; hardening cells U7 / U14]
 
 There are, however, **four CLI-reachable producers** — worth knowing because they break the
 GUI dependency for specific families:
@@ -272,7 +272,7 @@ GUI dependency for specific families:
 | Producer | Emits | Consumed by | Tag |
 |---|---|---|---|
 | `-exportClassificationSettings <path.xml>` | the AI Classify panel's profile | `-importClassificationSettings`, `-dtmClassify`, `-transferClassification` | [OFFICIAL: appbasics/allcommands] — the only command that writes a tool profile |
-| `-exportModel …` with `MvsMeshExportInfoFile=true` | `<model>.rsInfo` beside the model; its `<ModelExport>` tag pasted into an empty `.xml` **is** a model-export profile | `-exportModel`, `-exportSelectedModel` | [OFFICIAL: tools/export] for the mechanism; [VERIFIED: `.rsInfo` files are produced headless — FINDINGS 2026-07-29 by-parts export probe] |
+| `-exportModel …` with `MvsMeshExportInfoFile=true` | `<model>.rsInfo` beside the model; its `<ModelExport>` tag pasted into an empty `.xml` **is** a model-export profile | `-exportModel`, `-exportSelectedModel` | [OFFICIAL: tools/export] for the mechanism; [VERIFIED: `.rsInfo` files are produced headless — project testing 2026-07-29 by-parts export probe] |
 | `-exportGlobalSettings <settings.rcconfig>` | every application-global setting | `-importGlobalSettings` | [OFFICIAL] — whole-app, not per-tool |
 | ortho export with `exportProjectionParametersFile=True` | `.rsortho` | `-calculateOrthoProjection` | [OFFICIAL: tools/xmlparamsfiles] — chicken-and-egg: setting that flag headless needs an ortho-export profile you do not have yet |
 
@@ -282,13 +282,13 @@ because it needs no GUI at all:
 ```bat
 :: 1. Export once with NO params file. Info-file writing is on by default.
 RealityScan.exe -delegateTo RS1 -selectModel "cluster_0_a2_c0_Simplified_Textured" ^
-                -exportSelectedModel "F:\na156_h2024\probe\seed.obj"
-:: 2. Read F:\na156_h2024\probe\seed.obj.rsInfo, copy the <ModelExport> element
+                -exportSelectedModel "F:\survey\probe\seed.obj"
+:: 2. Read F:\survey\probe\seed.obj.rsInfo, copy the <ModelExport> element
 ::    into an empty file, save as ModelExportParams_seed.xml.
 :: 3. Hand-tune that file and pass it from then on.
 set "MD=C:\tools\wildscan\modules\realityscan_interface\RS_CLI\Metadata"
 RealityScan.exe -delegateTo RS1 -exportModel "cluster_0_a2_c0_Simplified_Textured" ^
-                "F:\na156_h2024\deliverables\cluster_0\obj\cluster_0.obj" ^
+                "F:\survey\deliverables\cluster_0\obj\cluster_0.obj" ^
                 "%MD%\ModelExportParams_seed.xml"
 ```
 
@@ -335,16 +335,11 @@ interchangeable in shape; two with different GUIDs are not.
 
 **`-unwrap` and `-calculateTexture` share one profile type.** The texturing and unwrap dialogs are
 one settings panel, so a single `Texturing_*.xml` can be passed to either command, and this repo
-does exactly that: `GenerateModel.bat` passes `Texturing_MaxTextureCount4_16k.xml` to
-`-calculateTexture` and `Unwrapping_Simplified_4x16k.xml` — same GUID, same key family — to
+does exactly that: `GenerateModel.bat` passes `Texturing_MaxTextureCount4_8k.xml` to
+`-calculateTexture` and `Unwrapping_Simplified_4x8k.xml` — same GUID, same key family — to
 `-unwrap`. The only structural difference between the two file groups is that the unwrap files add
 `unwrapMinTexResolution` and `unwrapMethod` and the texturing files add
 `unwrapCheckerBoardCellSize`. [VERIFIED-by-inspection + production use, 2026-07-29]
-
-Each GUID also names a registry subkey,
-`HKCU\Software\EpicGames.RealityScan\RealityScan\Workspace\SP-{GUID}`, which is where the
-GUI persists the same panel state between sessions.
-[UNDOCUMENTED: registry enumeration, read-only — see `03-settings-keys.md` §1.9]
 
 ### 1.8 Value encodings inside a profile
 
@@ -393,12 +388,12 @@ The choice between the two mechanisms in practice:
 
 | Situation | Observed behavior | Tag |
 |---|---|---|
-| **Unknown key inside a profile** | **Silently ignored.** Five keys whose exact spelling is absent from the 2.2 binary's string pool sit in profiles that have driven hundreds of production operations with no error ever recorded: `ifKmode`, `ifUsePosAcc`, `ifUseOriAcc` (all in `FlightLogParams.xml`), `unwrapCheckerBoardCellSize` (in five `Texturing_*.xml`), and `mvsSmoothing_useIntelligentSmoothing` — which is in **Epic's own** `SimplifiedExport\smooth.xml`. | [VERIFIED-by-consequence: UTF-16LE string sweep of `RealityScan.exe` (2.2, 45,211,352 bytes) for each exact key spelling — none present; recorded in `06-georeferencing-flightlogs-and-scale.md` §2 (the `if*` keys) and `10-reconstruction-texturing-export.md` §6/§9 (the other two) — combined with this repo's zero-error production record] [UNDOCUMENTED: no Help coverage of unknown-key handling] [INFERRED: absence of the literal string implies the key is unreachable; a settings key could in principle be assembled at runtime, so this is strong evidence, not proof] |
+| **Unknown key inside a profile** | **Silently ignored.** Five keys whose exact spelling is absent from the 2.2 binary's strings sit in profiles that have driven hundreds of production operations with no error ever recorded: `ifKmode`, `ifUsePosAcc`, `ifUseOriAcc` (all in `FlightLogParams.xml`), `unwrapCheckerBoardCellSize` (in five `Texturing_*.xml`), and `mvsSmoothing_useIntelligentSmoothing` — which is in **Epic's own** `SimplifiedExport\smooth.xml`. | [VERIFIED-by-consequence: UTF-16LE string sweep of `RealityScan.exe` (2.2, 45,211,352 bytes) for each exact key spelling — none present; recorded in `06-georeferencing-flightlogs-and-scale.md` §2 (the `if*` keys) and `10-reconstruction-texturing-export.md` §6/§9 (the other two) — combined with this repo's zero-error production record] [UNDOCUMENTED: no Help coverage of unknown-key handling] [INFERRED: absence of the literal string implies the key is unreachable; a settings key could in principle be assembled at runtime, so this is strong evidence, not proof] |
 | **Missing file** | Not characterised — every repo workflow pre-checks with `if not exist "%AlignmentParams%" ( echo ERROR … & exit /b 1 )` before delegating. | [OPEN: pass a nonexistent path to `-simplify` on a loaded smoke scene and read the errors marker; costs seconds] |
 | **Wrong-type profile** (e.g. a simplify profile handed to `-calculateTexture`) | Not characterised. Both are `<Configuration>` files; the GUIDs differ but nothing is known about whether the GUID is checked. | [OPEN: pass `SimplifyNoise_Params.xml` to `-unwrap` on the smoke fixture and compare the resulting texture count against a default unwrap; ~2 min] |
 | **Malformed XML** | Not characterised. | [OPEN: truncate a copy of `SimplifyNoise_Params.xml` mid-element and pass it; costs seconds] |
-| **Broken `key=value` reaching `-set`** (the adjacent failure, and the one that actually bit) | `Parsing setting key=value 'sfmMergeGeoreferencedComponents' failed [err:7155]` and `'false' failed` — cmd had split the pair on the unquoted `=`. Worse, **the parse errors landed in the errors marker and spuriously aborted the carrying workflow**, and no flag cell before wave 1f had ever applied its flags. | [VERIFIED: NA167 #15 / B5, 2026-07-23] |
-| **Wrong *value* in a right key** | The dangerous case, because it succeeds. A wrong UTM zone in `FlightLogParams.xml` imports **silently** and misplaces the entire scene. | [VERIFIED: NA167 #6, 2026-07-22] |
+| **Broken `key=value` reaching `-set`** (the adjacent failure, and the one that actually bit) | `Parsing setting key=value 'sfmMergeGeoreferencedComponents' failed [err:7155]` and `'false' failed` — cmd had split the pair on the unquoted `=`. Worse, **the parse errors landed in the errors marker and spuriously aborted the carrying workflow**, and no flag cell before wave 1f had ever applied its flags. | [VERIFIED: bug B5, 2026-07-23] |
+| **Wrong *value* in a right key** | The dangerous case, because it succeeds. A wrong UTM zone in `FlightLogParams.xml` imports **silently** and misplaces the entire scene. | [VERIFIED: earlier multi-camera dataset, 2026-07-22] |
 
 **The operational rule that follows: a profile's effect must be verified from the operation's
 output, never from its exit code.** Silence is not success — the CLI has no mechanism that reports
@@ -410,11 +405,11 @@ A profile path is a plain path and crosses cleanly if quoted. The rules that mat
 general ones, restated because half of this repo's early failures were boundary failures:
 
 - **Always quote the path.** Checkout paths containing spaces silently disabled *all* error
-  detection once, when `appProcessExecCmd` went unquoted. [VERIFIED: status log overhaul item 4, 2026-07-21]
+  detection once, when `appProcessExecCmd` went unquoted. [VERIFIED: project testing 2026-07-21]
 - **Never pass delimited data as a .bat argument.** cmd splits unquoted `;` `,` `=` into separate
   arguments and Python's `subprocess` quotes only on whitespace. Lists cross as files
   (`.complist` / `.imagelist`); settings cross as `key:value` and the `.bat` converts the colon.
-  [VERIFIED: NA167 B5; ARCHITECTURE.md hard rule 8]
+  [VERIFIED: bug B5; ARCHITECTURE.md hard rule 8]
 - A profile file *is* the sanctioned way to move many `key=value` pairs across the boundary
   intact — that is the mechanism's main practical virtue in an automated pipeline.
 
@@ -461,7 +456,7 @@ section documents the *file*.
 | **Producing dialog** | ALIGNMENT ▸ Registration ▸ Settings |
 | **Root** | `<Configuration id="{E377B69D-FB4B-4833-9CBE-FF747B7AF6D9}">` |
 | **Consumed by** | **Nothing.** `-align` takes no parameter file (§1.4) |
-| **Repo file** | `RS_CLI/Metadata/AlignmentParams.xml` (39 entries) |
+| **Repo file** | `RS_CLI/Metadata/AlignmentParams.xml` (35 entries) |
 
 **This is the profile type that is not a profile argument.** `AlignmentParams.xml` is read by the
 *workflow*, not by RealityScan: `AlignZone.bat` parses it and replays each `sfm*` / `lis*` row as a
@@ -477,16 +472,16 @@ for /f usebackq^ tokens^=2^,4^ delims^=^" %%A in ("%AlignmentParams%") do (
 
 Splitting on `"` yields token 2 = the key and token 4 = the value from
 `<entry key="K" value="V"/>`. This depends on **key preceding value in every entry** — true in all
-34 repo profiles — and it silently skips any line without at least four quote-delimited tokens,
+36 repo profiles — and it silently skips any line without at least four quote-delimited tokens,
 which is why hand-added XML comments survive it. **A double quote inside a comment would inject
-garbage into a `-set`.** [VERIFIED-by-inspection: `AlignZone.bat` lines 85–88; repo attribute-order
-audit 2026-08-04]
+garbage into a `-set`.** [VERIFIED-by-inspection: `AlignZone.bat`; attribute order checked
+across the repo profiles]
 
-Production values in force since 2026-07-25, all 39 entries:
+Production values, all 35 entries:
 
 | Key | Value | Note |
 |---|---|---|
-| `sfmDistortionModel` | `Division` | **global and all-or-nothing** — the per-camera XMP `Camera:DistortionModel` hint written by `modules/camera_registry.py` does **not** switch models per camera; every solved camera came back `xcr:DistortionModel="division"` [VERIFIED: FINDINGS 2026-07-26]. The file's own comment records the intent (fisheye Port/Starboard division, rectilinear Cinema/Zeuss brown3) that the setting cannot express. Note `docs/settings-evaluation-2026-07` §4 and FINDINGS 2026-07-23 recommend `Brown3` as the global fallback for this rig class while the shipped file still says `Division` [CONTRADICTED-internal: repo recommendation vs shipped profile; the profile is what runs] |
+| `sfmDistortionModel` | `Brown3` | **global and all-or-nothing** — a per-camera XMP distortion-model hint does **not** switch models per camera; on an earlier four-camera dataset every solved camera came back with the global model [VERIFIED: project testing 2026-07-26]. The file's own comment records this. Earlier datasets (fisheye cameras behind a dome) ran `Division` |
 | `sfmEnableCameraPrior` | `true` | the GUI's "use camera priors for georeferencing" |
 | `sfmCameraPriorWeight` | `10.0` | never A/B'd |
 | `sfmCameraPriorWeightOrientation` | `10.0` | never A/B'd |
@@ -495,7 +490,7 @@ Production values in force since 2026-07-25, all 39 entries:
 | `sfmImagesOverlap` | `Medium` | Low was legacy |
 | `sfmImagesOverlapDraftMode` | `Medium` | |
 | `sfmForceComponentRematch` | `false` | merge-stage tool; wasted per zone |
-| `sfmMergeGeoreferencedComponents` | `false` | never manifested headless in any form [CONTRADICTED: NA167 D1/D2, 2026-07-24] |
+| `sfmMergeGeoreferencedComponents` | `false` | never manifested headless in any form [CONTRADICTED: probe D1/D2, 2026-07-24] |
 | `sfmMaxFeaturesPerImage` | `0xc350` | = 50000 |
 | `sfmMaxFeaturesPerMpx` | `0x36b0` | = 14000 |
 | `sfmPreselectorFeatures` | `0x4e20` | = 20000 |
@@ -530,7 +525,7 @@ Minimal working example (this is a complete, valid file):
 
 ```xml
 <Configuration id="{E377B69D-FB4B-4833-9CBE-FF747B7AF6D9}">
-  <entry key="sfmDistortionModel" value="Division"/>
+  <entry key="sfmDistortionModel" value="Brown3"/>
   <entry key="sfmEnableCameraPrior" value="true"/>
   <entry key="sfmDetectorSensitivity" value="Ultra"/>
   <entry key="sfmImagesOverlap" value="Medium"/>
@@ -551,7 +546,7 @@ touching the canonical copy — the pattern to copy for any experiment.
 | **Consumed by** | `-importFlightLog <log> <params.xml>`, `-importTrajectory <log> <params.xml>` |
 | **Repo file** | `RS_CLI/Metadata/FlightLogParams.xml` — **regenerated per run**, never used as-is |
 
-Complete file, as generated for NA173_H2103a (UTM 57S):
+Complete file, as generated for SURVEY_D (UTM 57S):
 
 ```xml
 <Configuration id="{93DBD041-AE1C-4631-89BC-D9430FCED843}">
@@ -576,20 +571,20 @@ Complete file, as generated for NA173_H2103a (UTM 57S):
 | `CoordinateSystemFlightLog` | PROJ string | the CRS the log's X/Y/Z are in | [VERIFIED] |
 | `CoordinateSystemFlightLogType` | display string, shape `epsg:<code> - <name>` | the same CRS, human-readable | [VERIFIED] |
 | `ifCSopt` | int `1` | coordinate-system option | [UNDOCUMENTED] |
-| `ifKGrp` | int `2` | **two competing readings, neither tested.** (a) calibration-group mode on import ("Automatically group camera calibration") — name-based; (b) one of the two carriers of *Euler angles order (YPR)* / *Camera mount*, the pair FINDINGS 2026-07-26 names as the only plausible carriers | [UNDOCUMENTED] [OPEN: question 9] |
+| `ifKGrp` | int `2` | **two competing readings, neither tested.** (a) calibration-group mode on import ("Automatically group camera calibration") — name-based; (b) one of the two carriers of *Euler angles order (YPR)* / *Camera mount*, the pair project testing 2026-07-26 names as the only plausible carriers | [UNDOCUMENTED] [OPEN: question 9] |
 | `ifuuInhEn` / `ifuuInh` | bool / int | accuracy inheritance enabled / value. Both strings **are** present in the 2.2 binary | [UNDOCUMENTED] |
 | `csvFLSep` | int `1` | value separator | [UNDOCUMENTED] |
 | `csvFLIgn` | bool | ignore first line | [UNDOCUMENTED] |
-| `ifKmode` | `0x0` | **the exact spelling is absent from the 2.2 binary string pool — almost certainly inert.** The binary has `ifKModel` (capital M) | [CONTRADICTED: repo profile carries `ifKmode` / UTF-16LE string sweep of `RealityScan.exe` finds only `ifKModel`; recorded in `06-georeferencing-flightlogs-and-scale.md` §2] |
-| `ifUsePosAcc` / `ifUseOriAcc` | `true` | **exact spellings absent from the 2.2 binary string pool — almost certainly inert.** The live accuracy-inheritance strings are `ifuuInhEn` / `ifuuInh` | [CONTRADICTED: same sweep, same section] |
+| `ifKmode` | `0x0` | **the exact spelling is absent from the 2.2 binary's strings — almost certainly inert.** The binary has `ifKModel` (capital M) | [CONTRADICTED: repo profile carries `ifKmode` / UTF-16LE string sweep of `RealityScan.exe` finds only `ifKModel`; recorded in `06-georeferencing-flightlogs-and-scale.md` §2] |
+| `ifUsePosAcc` / `ifUseOriAcc` | `true` | **exact spellings absent from the 2.2 binary's strings — almost certainly inert.** The live accuracy-inheritance strings are `ifuuInhEn` / `ifuuInh` | [CONTRADICTED: same sweep, same section] |
 
-**This contradiction is load-bearing and unresolved.** The repo's own findings log repeatedly
-attributes behaviour to `ifUseOriAcc=true` ("production `FlightLogParams.xml` selects the 13-column
+**This contradiction is load-bearing and unresolved.** The project's test records repeatedly
+attribute behaviour to `ifUseOriAcc=true` ("production `FlightLogParams.xml` selects the 13-column
 YPR format with `ifUseOriAcc=true`, so zone_1/2/3 imported orientation"), while the binary-string
 scan says the key does not exist in 2.2. Both can be true simultaneously — orientation may be
 imported because the *selected format* (`{B438A617…}`) maps `Yaw`/`Pitch`/`Roll` at indices 7/8/9,
 with the `ifUse*Acc` keys contributing nothing. That reading reconciles the two, but it has not
-been tested. [CONTRADICTED: FINDINGS 2026-07-26 attributes orientation import to `ifUseOriAcc=true`
+been tested. [CONTRADICTED: project testing 2026-07-26 attributes orientation import to `ifUseOriAcc=true`
 / the binary string sweep finds no such key] [OPEN: import the same log twice with `ifUseOriAcc`
 `true` and `false` under the same 13-column format and diff the resulting camera attitudes out of
 the pose XMPs; ~2 min on the smoke fixture.]
@@ -600,7 +595,7 @@ is included. Neither `ifKGrp` nor `ifKmode` is a confirmed carrier, and **neithe
 in any file under the RealityScan install**, so both settings are compiled into the binary. Every
 orientation-prior result in this repo was therefore measured through an unverified import path: the
 registration counts stand as measurements, the attribution to "orientation priors" does not.
-[UNDOCUMENTED / VERIFIED-as-flag: FINDINGS 2026-07-26]
+[UNDOCUMENTED / VERIFIED-as-flag: project testing 2026-07-26]
 
 **The zone must never be hand-edited.** `modules/flight_logs.write_flight_log_params` rewrites
 `CoordinateSystemFlightLog` and `CoordinateSystemFlightLogType` from the UTM zone parsed out of the
@@ -611,15 +606,15 @@ proj     = f'+proj=utm +zone={zone}{south} +datum=WGS84 +units=m +no_defs'
 crs_type = f'epsg:{epsg} - WGS 84 / UTM zone {zone}{hemisphere}'
 ```
 
-The template once said 4N from an earlier project while the cruise was 57S. **A wrong zone imports
-silently and misplaces everything.** [VERIFIED: NA167 #6 + FINDINGS 2026-07-21/22]
+The template once said 4N from an earlier project while the survey was 57S. **A wrong zone imports
+silently and misplaces everything.** [VERIFIED: earlier multi-camera dataset, 2026-07 + project testing 2026-07-21/22]
 
 The `{B438A617-2434-5A24-C1B7-58980F28345A}` format referenced above **did not exist in the stock
 2.2 `flightlogs.xml`** until it was hand-merged into `C:\Program Files\Epic Games\
 RealityScan_2.2\flightlogs.xml` on 2026-07-25. Until that date the profile named a format the app
 did not have, and **orientation and per-image accuracies were silently dropped on every import**.
 This is a modification of an Epic-shipped file and must be re-verified after any application
-update. [VERIFIED: PRIORS_DISTORTION_TEST_PLAN audit item 1, 2026-07-25] [OPEN: whether the merge
+update. [VERIFIED: project test records, 2026-07-25] [OPEN: whether the merge
 survives an app update — re-check after any RealityScan update.]
 
 **Why a custom format was needed at all.** The 14 formats now in `flightlogs.xml` are the 13 stock
@@ -677,14 +672,14 @@ profile is a superset of an XMP profile.
 defaults. [VERIFIED-by-probe: repo-wide grep, 2026-08-04] The `xmpCamera` mode matters more than it
 looks: exporting as *exact* or *locked* changes how the sidecars behave on any later `-add` of the
 same images, and pose-bearing sidecars are auto-imported as priors, silently.
-[VERIFIED: NA167 B7]
+[VERIFIED: bug B7]
 
 Hard constraints that no key in this profile can change:
 
 - RealityScan reads and writes `<stem>.xmp` **only** — "an image and an XMP file with the same name
   will act as one". `image.jpg.xmp` is ignored **silently** — a batcher bug wrote priors that way
   and **no run before 2026-07-22 ever loaded its calibration priors**.
-  [OFFICIAL: tools/xmpalign] [VERIFIED: NA167 #3 / B7]
+  [OFFICIAL: tools/xmpalign] [VERIFIED: bug B7]
 - One `_common.xmp` placed in the image folder applies its content to **every** image in that
   folder — the cheapest way to push a shared prior without writing per-image sidecars, and never
   used here. `-addImageWithCalibration` is the other exception: it takes image and XMP paths
@@ -693,9 +688,9 @@ Hard constraints that no key in this profile can change:
 - Naming is decided by the **command**, not by this profile and not by the scene: `-exportXMP`
   writes stem-named sidecars, `-exportXMPForSelectedComponent` writes ordinal sidecars
   (`00000.xmp`, `00001.xmp`, …) in every observed context. Ordinal sidecars are inert as priors,
-  since no image has an ordinal stem. [VERIFIED: FINDINGS 2026-07-23, B10 final form]
+  since no image has an ordinal stem. [VERIFIED: project testing 2026-07-23, B10 final form]
 - `-exportXMP` covers only "the last alignment" and silently skips components below
-  `-setMinComponentSize` (default 5). [OFFICIAL + VERIFIED: status log 2026-07-21]
+  `-setMinComponentSize` (default 5). [OFFICIAL + VERIFIED: project testing 2026-07-21]
 - Scenes whose images resolve through a **directory junction** (any NTFS reparse point) get no
   sidecars written at all, and the export **reports success** — `exportXMPForSelectedComponent`
   logged "Exporting Registration completed in 8.758 seconds" while a sweep of the whole volume
@@ -704,7 +699,7 @@ Hard constraints that no key in this profile can change:
   Fix verified 2026-07-28 — replacing five per-zone junctions with real directories (JPGs
   hardlinked, XMPs copied) took recursive enumeration through the path from **0 to 9,835**
   sidecars, with no re-align needed.
-  [VERIFIED: FINDINGS 2026-07-27 ESTABLISHED + 2026-07-28 ESTABLISHED] [UNDOCUMENTED]
+  [VERIFIED: project testing 2026-07-27 ESTABLISHED + 2026-07-28 ESTABLISHED] [UNDOCUMENTED]
 
 ### 2.4 Simplify params
 
@@ -740,7 +735,7 @@ Epic's shipped default, complete:
 | `mvsFltTargetTrisCountRel` | int percent | `10`, `50`, `70`, `80` | *Target triangles percentage* | [OFFICIAL + VERIFIED] |
 | `mvsFltMinEdgeLength` | float | `0.0` | *Minimal edge length* — "the affected edges will not be shorter than this threshold" | [OFFICIAL] |
 | `mvsFltBorderDecimationStyle` | enum int | `1` | *Border Decimation* — Simplify the border / Keep border intact ("not recommended for very extreme decimation") | [OFFICIAL] for the options, [OPEN] for which is `1` |
-| `simplPreserveParts` | enum int | `0` (Epic), `2` (repo) | *Part merging* — **Disable** (original parts preserved) / **Enable** (parts merged into the largest processable parts) / **Create a singleton** (forces one part; Epic recommends it only under a few million triangles) | Options [OFFICIAL: tools/simplify]. [CONTRADICTED: a 0-based reading of that option order makes `2` = "Create a singleton", yet the H2024 deliverable models — four consecutive `simplPreserveParts=2` passes — exported as **4 parts**, not one [VERIFIED: FINDINGS 2026-07-29]. Either the enum is not 0-based in this order, or `2` means something else. Unresolved; see question 13] |
+| `simplPreserveParts` | enum int | `0` (Epic), `2` (repo) | *Part merging* — **Disable** (original parts preserved) / **Enable** (parts merged into the largest processable parts) / **Create a singleton** (forces one part; Epic recommends it only under a few million triangles) | Options [OFFICIAL: tools/simplify]. [CONTRADICTED: a 0-based reading of that option order makes `2` = "Create a singleton", yet the dataset B deliverable models — four consecutive `simplPreserveParts=2` passes — exported as **4 parts**, not one [VERIFIED: project testing 2026-07-29]. Either the enum is not 0-based in this order, or `2` means something else. Unresolved; see question 13] |
 | `simplEqualizeDensity` | bool | `true` | *Density Equalization* — "ensures consistent vertex density throughout all simplified model parts in multi-part models"; when off, density varies per part and causes visible seams; when on, computation takes longer | Control [OFFICIAL: tools/simplify]; key name [UNDOCUMENTED] — present in every repo file, **absent from Epic's shipped `simplify.xml`** |
 | `mvsFltReprojectColor` | bool | `false` | *Color reprojection* — reproject the colour layer from the source model onto the simplified one | [OFFICIAL] |
 | `mvsFltReprojectNormal` | int | `0` | *Normal reprojection* — Enable / Disable / **Automatic** ("the normal layer is reprojected only when it is reasonable to create it") | Options [OFFICIAL: tools/simplify]; [OPEN: which is `0`] |
@@ -786,7 +781,7 @@ Epic's shipped default, complete — note the fifth key, which the binary does n
 | `smoothWeight` | float | `0.2` (repo), `0.5` (Epic) | *Smoothing weight* | [OFFICIAL + VERIFIED] |
 | `mvsFltSmoothingType` | enum int | `0` (repo), `1` (Epic) | *Smoothing type* — "defines the overall strength of the tool" | Control [OFFICIAL: tools/smoothing]; [OPEN: value↔name mapping, and the Help does not print the option list] |
 | `mvsFltSmoothingStyle` | enum int | `1`, `3` | *Smoothing style* — "only vertices on the surface" / "only vertices that create the borders" / "only vertices that create peaks" / "all vertices (surface and borders)" | Option order [OFFICIAL: tools/smoothing]. [CONTRADICTED: repo filenames assert `1`=surface (`SmoothingSurface_02_2`) and `3`=peaks (`SmoothingPeaks_05_5`), which contradicts a 0-based reading of that order (0=surface, 1=borders, 2=peaks, 3=all). A **1-based** enum reconciles them exactly — 1=surface, 2=borders, 3=peaks, 4=all — but nothing tests it, and the repo names were themselves guesses. See question 12] |
-| `mvsSmoothing_useIntelligentSmoothing` | bool | `0` | — | **Exact spelling absent from the 2.2 binary string pool — almost certainly inert, and it is Epic's own shipped file.** [CONTRADICTED: Epic's `SimplifiedExport\smooth.xml` carries it / UTF-16LE sweep of `RealityScan.exe` does not contain it; recorded in `10-reconstruction-texturing-export.md` §6] |
+| `mvsSmoothing_useIntelligentSmoothing` | bool | `0` | — | **Exact spelling absent from the 2.2 binary's strings — almost certainly inert, and it is Epic's own shipped file.** [CONTRADICTED: Epic's `SimplifiedExport\smooth.xml` carries it / UTF-16LE sweep of `RealityScan.exe` does not contain it; recorded in `10-reconstruction-texturing-export.md` §6] |
 
 Epic's own tip: smaller weight + more iterations to remove noise; higher weight + fewer iterations
 to smooth mesh; "we recommend you use the default values". Smoothing **creates a new model** and
@@ -832,7 +827,7 @@ are byte-identical (§4.3).
 | `unwrapFixedTexelSize` | float | *(not in any repo file)* | *Custom texel size*, active only when `unwrapStyle=FixedTexelSize` **and** `unwrapFixedTexelSizeType=5`. Help default `0.01` — i.e. a 1 cm texel when the project unit is the metre | [OFFICIAL: tutorials/setkeyvaluetable] |
 | `unwrapMinTexelSize` / `unwrapMaxTexelSize` | enum int, or float when type = 5 | *(not in any repo file)* | *Minimal / Maximal required texel size*, active when `unwrapStyle=AdaptiveTexelSize`. Same 0–5 ladder as `unwrapFixedTexelSizeType`; Help defaults `0` and `4`. As custom floats the defaults are `0.01` and `10` | [OFFICIAL: tutorials/setkeyvaluetable] |
 | `unwrapFillTextures` | hex bool | `0x0` (unwrap files), `0x1` (texturing files) | *Fill with charts* — "display the UV charts over the UV checker in the 2D view". A **preview-only** control | [INFERRED: name ↔ the only fill-related control on the panel; `tools/unwrap` documents the control, nothing documents the key] [OPEN: question 18] |
-| `unwrapCheckerBoardCellSize` | int | `64` | *Grid size* — "sets the size of the checkerboard grid pattern" for previewing seams in the 3D view. Preview-only | **Exact spelling absent from the 2.2 binary string pool — almost certainly inert.** The binary has `unwrapCheckerBoardCellCount`. [CONTRADICTED: repo profiles carry `…CellSize` / UTF-16LE sweep finds only `…CellCount`; recorded in `10-reconstruction-texturing-export.md` §9] |
+| `unwrapCheckerBoardCellSize` | int | `64` | *Grid size* — "sets the size of the checkerboard grid pattern" for previewing seams in the 3D view. Preview-only | **Exact spelling absent from the 2.2 binary's strings — almost certainly inert.** The binary has `unwrapCheckerBoardCellCount`. [CONTRADICTED: repo profiles carry `…CellSize` / UTF-16LE sweep finds only `…CellCount`; recorded in `10-reconstruction-texturing-export.md` §9] |
 | `unwrapButtonDisabled` | int | `0` | — | Not a setting: **exported UI state**, carried into the file by the GUI export and inert. [INFERRED] |
 
 **One documented control has no observed key**: *Defragment charts* ("create larger UV islands
@@ -896,7 +891,7 @@ Which to use — and a naming trap:
   `GenerateModel.bat` comment) means *auto texel*, not `AdaptiveTexelSize`.
 - **`FixedTexelSize` delivers a pre-declared visual precision** (e.g. 1 cm texels for a true
   ortho-photo map) and "there will be so many textures how many are needed".
-  [OFFICIAL: tools/texturing_part2] [VERIFIED-as-decision: status log 2026-07-29 texture budget]
+  [OFFICIAL: tools/texturing_part2] [VERIFIED-as-decision: project testing 2026-07-29 texture budget]
 
 A hazard specific to `-calculateTexture`: the *default* unwrap parameters in this panel are applied
 **only** when the model has no UV map and you texture directly. If the model is already unwrapped,
@@ -909,7 +904,7 @@ Behaviour that no key in this profile changes, and that dictates *when* you text
 triangles that any camera saw receive real blended colour. Texture *after* `-closeHoles` +
 `-cleanModel`; texturing a holey model and then reprojecting onto the closed one produces nodata
 patches, because reprojection samples the source **surface**.
-[VERIFIED-as-design-decision with mechanism: docs/settings-evaluation-2026-07 §7, 2026-07-23]
+[VERIFIED-as-design-decision with mechanism: project test records, 2026-07, 2026-07-23]
 
 ### 2.8 Texture-reprojection params
 
@@ -953,7 +948,7 @@ Three preconditions the profile cannot supply:
 - `-reprojectTexture` resolves both model operands **by name**. In a shared project holding several
   components' models, an unqualified name can map one component's texture onto another's mesh,
   silently — which is why `GenerateModel.bat` prefixes every model name with the component tag.
-  [VERIFIED: FINDINGS 2026-07-25]
+  [VERIFIED: project testing 2026-07-25]
 
 ### 2.9 Model export params
 
@@ -1016,7 +1011,7 @@ Core key reference:
 | `MvsMeshExportColors` | bool | `false`, `true`, `0` | write vertex colours — `true` only in the dense-PLY profile |
 | `MvsMeshExportTexturing` | tri-state | `-1`, `0`, `true` | write textures |
 | `MvsMeshExportTexOneFile` | int | `0` | *Export to a single texture file*. `0` = No, which is what makes `MvsMeshExportTileType` appear at all: "If set to No, three Tile type options show up" [OFFICIAL: tools/export]. Setting it to Yes stitches all square textures into one image and instead exposes *Texture maximal side* (512 … 65536) and *Use pow2 texture size* — **whose key names are unknown**, since no repo profile has ever set it [OPEN] |
-| `MvsMeshExportTileType` | int | `0`, `1`, `2` | *Tile type*: `_u1_v1`, `(u,v)`, UDIM — in that Help order. `0` = `_u1_v1`, `1` = `(u,v)`, `2` = UDIM [VERIFIED-by-correspondence: the three FBX profiles named `_U1V1` / `_UV` / `_UDIM` carry exactly `0` / `1` / `2`, and the Nira-parts OBJ profile (`0`) produced `u1_v1` textures on disk — FINDINGS 2026-07-29] |
+| `MvsMeshExportTileType` | int | `0`, `1`, `2` | *Tile type*: `_u1_v1`, `(u,v)`, UDIM — in that Help order. `0` = `_u1_v1`, `1` = `(u,v)`, `2` = UDIM [VERIFIED-by-correspondence: the three FBX profiles named `_U1V1` / `_UV` / `_UDIM` carry exactly `0` / `1` / `2`, and the Nira-parts OBJ profile (`0`) produced `u1_v1` textures on disk — project testing 2026-07-29] |
 | `MvsMeshExportByParts` | int | `0`, `1` | *Save mesh by parts* |
 | `MvsMeshExportMaterials` | bool | `true`, `false` | *Export materials*; FBX only per the Help |
 | `MvsMeshExportEmbeddTxrs` *(sic)* | bool | `true` (GLB), `false` | *Embedded textures* — single-file delivery |
@@ -1079,7 +1074,7 @@ Complete minimal example — a by-parts OBJ, the shape Nira expects:
 
 Verified output shape for that profile: **OBJ 4 parts + per-part MTL + `u1_v1` textures +
 `.rsInfo`**, and the FBX-parts profile gave 4 parts + textures; ~35–38 s each on a 133-camera
-component. [VERIFIED: FINDINGS 2026-07-29 export probe]
+component. [VERIFIED: project testing 2026-07-29 export probe]
 
 **Do not disable the info file.** Without a `.rsInfo`, a re-imported model may be shifted, rotated
 and scaled relative to the original model and cameras, and cannot be textured against the same
@@ -1185,10 +1180,9 @@ following the image-layer naming convention. Per-image, the mask layer's availab
 alignment, meshing and texturing is set independently in the Selected input panel.
 [OFFICIAL: tools/mask]
 
-**No mask has ever been driven through this CLI.** `timestamp_rename.py` (formerly
-the misnamed `masking.py`) is a standalone data-prep script and does not invoke RealityScan; there is no empirical masking result
-of any kind here, and a staff caution against over-masking is recorded only second-hand.
-[OPEN: nothing in FINDINGS records a masked run]
+**No mask has ever been driven through this CLI.** There is no empirical masking result of any
+kind here, and a staff caution against over-masking is recorded only second-hand.
+[OPEN: no test record shows a masked run]
 
 ### 2.13 Depth / normal / mask maps export params
 
@@ -1251,7 +1245,7 @@ once, in each of its two variants, and read the files.]
 | **Format entry** | `calibration.xml` — **18** `<format>` entries [VERIFIED-by-inspection: element count, 2026-08-04] |
 
 **`-exportRegistration` without a params XML blocks forever headless.** Do not call it until a
-GUI-saved profile exists. [VERIFIED: FINDINGS 2026-07-21] This is the single largest gap in this
+GUI-saved profile exists. [VERIFIED: project testing 2026-07-21] This is the single largest gap in this
 repo's CLI coverage: the georeferencing-verification hardening cell (U7) has been open since
 2026-07-23 partly because its most promising oracle is behind this dialog.
 
@@ -1355,8 +1349,8 @@ columns. The six shipped export formats are space/comma/tab × X-first/Y-first.
 driven from this pipeline. The one adjacent fact of record is staff-confirmed **absence of
 stereo-rig support** in RealityScan through Aug 2025, which implies that rig-derived scale must
 come from GCPs, distance constraints, or locked XMP — none of which is exercised here.
-[OPEN: no GCP has ever been imported through this CLI] [VERIFIED-second-hand: COLMAP fact base
-F-20260723-27]
+[OPEN: no GCP has ever been imported through this CLI] [VERIFIED-second-hand: vendor staff
+statement, recorded 2026-07-23]
 
 ### 2.18 Distance-definition import params
 
@@ -1427,7 +1421,7 @@ information from the source images despite processing running on the 8-bit conve
 Never used here. The `.geometry` / `.texture` / `.mask` **Image Layers** mechanism this touches is
 the agreed eventual answer to the repo's CLAHE dilemma (align on originals, texture from enhanced)
 but has never been exercised through the CLI.
-[OPEN: status log 2026-07-26]
+[OPEN: project testing 2026-07-26]
 
 ### 2.21 Model import params and `.rsinfo`
 
@@ -1484,7 +1478,7 @@ record:
 
 **Decoding `transformToModel`.** The 16 values have **no single obvious
 reading**, and guessing wrong relocates a mesh by hundreds of kilometres
-silently. For `NA168_H2080_20Jan.obj` the correct reading is row-major, applied
+silently. For `SITE_E_20Jan.obj` the correct reading is row-major, applied
 as `M @ v`, with the output components then permuted `(1,2,0)` to give
 `(E, N, Z)` — which for that file reduces to a pure per-axis translation:
 
@@ -1502,8 +1496,8 @@ not assumed.**
 How it was settled: all 178,269 vertices were transformed under every
 combination of {row-major, column-major} × {`M @ v`, `v @ M`} × all six output
 permutations, and scored by the fraction landing inside the envelope of the
-dive's own flight log. **Exactly one reading scored 1.0000; every rival scored
-0.3333.** [VERIFIED: FINDINGS 2026-08-31]
+survey's own flight log. **Exactly one reading scored 1.0000; every rival scored
+0.3333.** [VERIFIED: project testing 2026-08-31]
 
 Two rules for any code that consumes this:
 
@@ -1526,8 +1520,7 @@ config "defines the scene transformation settings saved from the import dialog" 
 adjust the coordinate system or apply custom transformations during import". COLMAP takes the path
 to any of the three text files. [OFFICIAL: appbasics/allcommands]
 
-Not used here, and [archive/colmap/](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/colmap/) is retired — do not resurrect it into the active pipeline.
-[ARCHITECTURE.md]
+Not used by this pipeline.
 
 ### 2.23 Classification params and the `.cfd` format file
 
@@ -1661,12 +1654,11 @@ Two of these have direct, recorded relevance here:
 - **`epsg.xml` and `local.xml` are the databases `-setProjectCoordinateSystem authority:id` and
   `-setOutputCoordinateSystem authority:id` resolve against.** `epsg:32653` is a row in
   `epsg.xml`; `Local:1` is a row in `local.xml`. [OFFICIAL: appbasics/allcommands]
-- **`sensorsdb.xml` is unusable for this rig.** Its entries are keyed to model strings that cannot
-  match the WCA cameras' EXIF, and it cannot distinguish two cameras with identical EXIF anyway —
-  which is exactly this rig's situation (both cameras report Make `Z CAM`, Model `E2-F6`, with no
-  focal length and no lens tag). Per-image XMP `Camera:CalibrationGroup` sidecars are the only
-  mechanism that separates them. [VERIFIED-by-inspection: docs/settings-evaluation-2026-07 §1,
-  2026-07-23]
+- **`sensorsdb.xml` cannot separate cameras with identical EXIF** — it matches on the camera
+  model string. That was the earlier four-camera rig's situation (all cameras reported Make
+  `Z CAM`, Model `E2-F6`, with no focal length and no lens tag); per-image XMP calibration-group
+  sidecars were the only mechanism that separated them. [VERIFIED-by-inspection: project test
+  records, 2026-07-23]
 - **`transformdb.xml` is what `MvsExportTransformationPreset` names must match.** It holds 24
   `<transform>` rows — {Blender, 3ds Max, Maya, Maya + Arnold, Unity, Unreal} × four format groups
   (`!obj,!fbx,!abc` = generic, then `obj`, `fbx`, `abc`) — each optionally carrying `normalFlip`,
@@ -1940,7 +1932,7 @@ DOM round-trip.** A conformant parser will either refuse the file or, if you str
 it load, silently rewrite it on save and change what the application sees. The repository's own
 2026-07-25 merge of the 13-column format into `flightlogs.xml` was a text insertion for this reason.
 
-By contrast, **all 34 `<Configuration>` profiles in `RS_CLI/Metadata/` and all three Epic-authored
+By contrast, **all 36 `<Configuration>` profiles in `RS_CLI/Metadata/` and all three Epic-authored
 profiles parse cleanly** — DOM editing of a profile is safe. [VERIFIED-by-probe, 2026-08-04]
 
 ### 3.7 Editing an install-tree dictionary
@@ -1949,15 +1941,16 @@ Editing one of these files is editing an Epic-shipped file inside `C:\Program Fi
 administrator rights, it is invisible to version control, and **it is lost or reverted by an
 application update**. This repository has done it exactly once — adding the 13-column flight-log
 format on 2026-07-25 — and that change is a standing re-verification item after any RealityScan
-update. [VERIFIED: PRIORS_DISTORTION_TEST_PLAN, 2026-07-25] [OPEN: whether the hand-merged format
+update. [VERIFIED: project test records, 2026-07-25] [OPEN: whether the hand-merged format
 survives an app update.]
 
 Rules:
 
 1. **Back up the original file first**, outside `Program Files`, and record its byte size and hash
    in the run's environment snapshot.
-2. **Keep a copy in the repository.** This repo keeps `flightlogs.xml` and `sensorsdb.xml` at its
-   root for exactly this reason. Diff repo copy vs installed copy at session start.
+2. **Keep a copy in the repository.** This repo keeps the one format it adds in `flightlogs.xml`
+   at its root for exactly this reason. Compare that entry with the installed copy at session
+   start.
 3. **Never renumber or reuse an existing `id` GUID.** A profile that names it will bind to the
    wrong parser. Generate a fresh GUID for a new format.
 4. **Copy an adjacent `<format>` block wholesale and edit it.** Reusing an existing `reader` is
@@ -1969,73 +1962,79 @@ Rules:
 
 ---
 
-## 4. This repository's 34 profiles
+## 4. This repository's 36 profiles
 
-All at `C:\tools\wildscan\modules\realityscan_interface\RS_CLI\Metadata\`.
+All in `modules\realityscan_interface\RS_CLI\Metadata\` of the checkout.
 `SetVariables.bat` declares path variables for many of them; the *consuming* script is what matters
 and is listed below.
 
 ### 4.1 Inventory with purpose and delta-from-default
 
+The file list matches the directory; the "Consumed by" column was read from the workflow scripts
+and Python drivers in this checkout.
+
 | File | Type | Consumed by | What it sets / changes | Status |
 |---|---|---|---|---|
-| `AlignmentParams.xml` | alignment | `AlignZone.bat`, `GrowZone.bat`, `AlignImagesFromFolder.bat`, 3 probe scripts (parsed → `-set`, never passed as an argument) | the full 39-entry production alignment config, §2.1 | **Production** |
-| `FlightLogParams.xml` | trajectory import | `-importFlightLog` at 6 `.bat` call sites — `AlignZone.bat`:77, `GrowZone.bat`:182, `AlignImagesFromFolder.bat`:137, `AlignImageList.bat`:47, `SequentialAlignGrow.bat`:64, `MergeZoneComponents.bat`:154; path supplied by `modules/flight_logs.py`, `merge_zones.py`, `realityscan_interface.py` | 13-column format GUID + per-cruise UTM CRS | **Production, generated** |
+| `AlignmentParams.xml` | alignment | `AlignZone.bat`, `GrowZone.bat` (parsed → `-set`, never passed as an argument); fingerprinted by `modules/align_fingerprint.py` | the production alignment config, §2.1; `sfmDistortionModel=Brown3` | **Production** |
+| `FlightLogParams.xml` | trajectory import | template for `modules/flight_logs.write_flight_log_params`, which writes a per-zone copy for `-importFlightLog` in `AlignZone.bat`, `GrowZone.bat` and `MergeZoneComponents.bat`; path supplied by `realityscan_interface.py`, `merge_zones.py`, `grow_zone.py` | 13-column format GUID + UTM CRS rewritten from the log's zone tag | **Production, generated** |
 | `XMPExportParams.xml` | XMP export | **nothing** | would enable merge / GPS / flags / calib-groups / rig, `xmpCamera=3` | **Unreferenced** |
-| `SimplifyNoise_Params.xml` | simplify | `GenerateModel.bat` step [6/8] | relative 70 %, `simplPreserveParts=2`, `simplEqualizeDensity=true` | **Production** — but a documented placeholder derived from the 50 % template |
-| `SimplifySmooth_80per_Params.xml` | simplify | `GenerateModel.bat` step [7/8], run 4× | relative 80 %, otherwise identical | **Production** — same placeholder caveat |
+| `SimplifyNoise_Params.xml` | simplify | `GenerateModel.bat` | relative 70 %, `simplPreserveParts=2`, `simplEqualizeDensity=true` | **Production** — but a documented placeholder derived from the 50 % template |
+| `SimplifySmooth_80per_Params.xml` | simplify | `GenerateModel.bat`; `ModelToFinal.bat` | relative 80 %, otherwise identical | **Production** — same placeholder caveat |
 | `Simplify50Per_Params.xml` | simplify | declared in `SetVariables.bat` only | relative 50 % | Unused |
-| `SimplifyAutomationParams.xml` | simplify | `AlignImagesFromFolder.bat` (**deprecated** workflow) | relative 70 % — same values as `SimplifyNoise`, different entry order | Legacy |
+| `SimplifyAutomationParams.xml` | simplify | **nothing** (named only in a `ModelToFinal.bat` comment) | relative 70 % — same values as `SimplifyNoise`, different entry order | Unreferenced |
 | `Simplify500k_Params.xml` | simplify | declared in `SetVariables.bat` only | **absolute** 500,000 triangles (`mvsFltSimplificationType=0`) | Unused |
 | `Simplify25per_Params.xml` | simplify | **nothing** | **byte-identical to `Simplify500k_Params.xml`** — absolute 500 k, not 25 % | **Misnamed, unreferenced** |
 | `Smoothing_02_2_Params.xml` | smoothing | declared in `SetVariables.bat` only | weight 0.2, 2 iterations, style 1, type 0 | Unused |
 | `SmoothingSurface_02_2_Params.xml` | smoothing | **nothing** | **byte-identical to `Smoothing_02_2_Params.xml`** | Unused duplicate |
 | `SmoothingPeaks_05_5_Params.xml` | smoothing | **nothing** | weight 0.5, 5 iterations, style 3 — i.e. Epic's shipped default minus `mvsSmoothing_useIntelligentSmoothing`, with `mvsFltSmoothingType` 1→0 | Unused |
-| `Texturing_MaxTextureCount4_16k.xml` | texturing | `GenerateModel.bat` step [6/8] | **4 × 16K adaptive** — the production texture budget | **Production** |
-| `Texturing_MaxTextureCount1_16k.xml` | texturing | `SetVariables.bat` only | 1 × 16K | Unused |
-| `Texturing_MaxTextureCount1_8k.xml` | texturing | `SetVariables.bat` only | 1 × 8K | Unused |
-| `Texturing_MaxTextureCount4_8k.xml` | texturing | `SetVariables.bat` only | 4 × 8K | Unused |
-| `Texturing_HighPolyTexture.xml` | texturing | `AlignImagesFromFolder.bat` (deprecated) | 2 × 16K | Legacy |
-| `Texturing_SimplifiedTexture.xml` | texturing | `AlignImagesFromFolder.bat` (deprecated) | **byte-identical to `Texturing_HighPolyTexture.xml`** | Legacy duplicate |
-| `Texturing_FixedTexelSize100perQuality.xml` | texturing | `SetVariables.bat` only | `FixedTexelSize`, type 0 (optimal texel), gutter 10, max 8K, large-tri thr 400 | Unused |
-| `Texturing_FixedTexelSize50perQuality.xml` | texturing | `SetVariables.bat` only | same but type 1 (2× optimal = 50 % quality) | Unused |
-| `Unwrapping_Simplified_4x16k.xml` | unwrap | `GenerateModel.bat` step [8/8] | 4 × 16K, min 512, `Geometric`, gutter 2, large-tri thr 10 | **Production** |
-| `Unwrapping_Simplified.xml` | unwrap | `AlignImagesFromFolder.bat` (**deprecated** workflow) only — `GenerateModel.bat` references the 4×16k file exclusively | same but 1 × 16K | Legacy; superseded by the 4× variant |
-| `ReprojectionParams.xml` | reprojection | `GenerateModel.bat` step [8/8] | **enables colour reprojection** (`allowColor=true`, `enableColor=-1`, `sourceColorLayer=Color8_0`), `normal=2` | **Production** |
+| `Texturing_MaxTextureCount4_8k.xml` | texturing | `GenerateModel.bat`; `ModelToFinal.bat` preset `4x8k`; declared in `SetVariables.bat` | **4 × 8K**, `MaxTexturesCount` style | **Production** |
+| `Texturing_MaxTextureCount4_16k.xml` | texturing | **nothing** | 4 × 16K adaptive | Unreferenced |
+| `Texturing_MaxTextureCount1_16k.xml` | texturing | `ModelToFinal.bat` preset `16k`; declared in `SetVariables.bat` | 1 × 16K | Optional preset |
+| `Texturing_MaxTextureCount1_8k.xml` | texturing | `ModelToFinal.bat` preset `8k`; declared in `SetVariables.bat` | 1 × 8K | Optional preset |
+| `Texturing_HighPolyTexture.xml` | texturing | `ModelToFinal.bat` preset `highpoly` | 2 × 16K | Optional preset |
+| `Texturing_SimplifiedTexture.xml` | texturing | **nothing** | **byte-identical to `Texturing_HighPolyTexture.xml`** | Unreferenced duplicate |
+| `Texturing_FixedTexelSize100perQuality.xml` | texturing | `ModelToFinal.bat` preset `fixed100`; declared in `SetVariables.bat` | `FixedTexelSize`, type 0 (optimal texel), gutter 10, max 8K, large-tri thr 400 | Optional preset |
+| `Texturing_FixedTexelSize50perQuality.xml` | texturing | `ModelToFinal.bat` preset `fixed50`; declared in `SetVariables.bat` | same but type 1 (2× optimal = 50 % quality) | Optional preset |
+| `Unwrapping_Simplified_4x8k.xml` | unwrap | `GenerateModel.bat`; `ModelToFinal.bat` preset `4x8k` | 4 × 8K, min 512, `Geometric`, gutter 2, large-tri thr 10 | **Production** |
+| `Unwrapping_Simplified_4x16k.xml` | unwrap | **nothing** | 4 × 16K, min 512, `Geometric`, gutter 2, large-tri thr 10 | Unreferenced |
+| `Unwrapping_Simplified.xml` | unwrap | `ModelToFinal.bat` (presets other than `4x8k`) | 1 × 16K | Optional preset |
+| `ReprojectionParams.xml` | reprojection | `GenerateModel.bat`; `ModelToFinal.bat`; declared in `SetVariables.bat` | **enables colour reprojection** (`allowColor=true`, `enableColor=-1`, `sourceColorLayer=Color8_0`), `normal=2` | **Production** |
 | `ModelExportParamsOBJ_NiraParts.xml` | model export | `ExportDeliverables.bat` | OBJ, **by parts**, png, scale 1.0, number format 6, CRS type 3 — Nira's documented layout | **Production** |
 | `ModelExportParamsFBX_Parts.xml` | model export | `ExportDeliverables.bat` | FBX, **by parts**, materials on, png, scale 1.0 | **Production** |
 | `ModelExportParamsPLY_DensePoints.xml` | model export | `ExportDeliverables.bat` | PLY, **vertex colours on, textures off**, scale 1.0 | **Production** |
-| `ModelExportParams.xml` | model export | `SetVariables.bat` + declared in `ExportDeliverables.bat` | generic v13, scale 100, jpg | Unused as an argument |
-| `ModelExportParamsObj.xml` | model export | **nothing** (`SetVariables.bat` refers to `ModelExportParamsOBJ.xml`, which resolves only because NTFS is case-insensitive — and the variable is never consumed) | OBJ, scale 100, `Unreal` preset, jpg, a `_Normal_0` layer | Unreferenced |
-| `ModelExportParamsGLB.xml` | model export | `SetVariables.bat` only | GLB, scale 10, rotation X `-90.0`, **embedded jpeg** | Unused |
-| `ModelExportParamsFBX_U1V1.xml` | model export | `SetVariables.bat` only | FBX, tile `_u1_v1`, no materials, 32bppBGRA | Unused |
-| `ModelExportParamsFBX_U1V1_material.xml` | model export | `SetVariables.bat` only | same + materials + normal layer | Unused |
-| `ModelExportParamsFBX_UV.xml` | model export | `SetVariables.bat` only | FBX, tile `(u,v)` | Unused |
-| `ModelExportParamsFBX_UDIM.xml` | model export | `SetVariables.bat` only | FBX, UDIM tiles, no materials | Unused |
-| `ModelExportParamsFBX_UDIM_material.xml` | model export | `SetVariables.bat` only | FBX, UDIM tiles + materials + normal layer | Unused |
+| `ModelExportParams.xml` | model export | declared in `SetVariables.bat` only | generic v13, scale 100, jpg | Unused as an argument |
+| `ModelExportParamsObj.xml` | model export | `ModelToFinal.bat` format `obj` (`SetVariables.bat` also refers to `ModelExportParamsOBJ.xml`, which resolves only because NTFS is case-insensitive) | OBJ, scale 100, `Unreal` preset, jpg, a `_Normal_0` layer | Optional format |
+| `ModelExportParamsObj_Metric.xml` | model export | `ModelToFinal.bat` format `objmetric` | OBJ at scale 1.0, georeferenced, jpg, normal layer, not by parts | Optional format |
+| `ModelExportParamsGLB.xml` | model export | `ModelToFinal.bat` format `glb`; declared in `SetVariables.bat` | GLB, scale 10, rotation X `-90.0`, **embedded jpeg** | Optional format |
+| `ModelExportParamsFBX_U1V1_material.xml` | model export | `ModelToFinal.bat` format `fbx`; declared in `SetVariables.bat` | FBX, tile `_u1_v1`, materials + normal layer | Optional format |
+| `ModelExportParamsFBX_U1V1.xml` | model export | declared in `SetVariables.bat` only | FBX, tile `_u1_v1`, no materials, 32bppBGRA | Unused |
+| `ModelExportParamsFBX_UV.xml` | model export | declared in `SetVariables.bat` only | FBX, tile `(u,v)` | Unused |
+| `ModelExportParamsFBX_UDIM.xml` | model export | declared in `SetVariables.bat` only | FBX, UDIM tiles, no materials | Unused |
+| `ModelExportParamsFBX_UDIM_material.xml` | model export | declared in `SetVariables.bat` only | FBX, UDIM tiles + materials + normal layer | Unused |
 
-[VERIFIED-by-probe: repo-wide reference scan excluding `Metadata/` itself, plus per-file reads and
-MD5 comparison, 2026-08-04]
+[VERIFIED-by-probe for the profile contents: per-file reads and MD5 comparison, 2026-08-04;
+VERIFIED-by-inspection for the file list and the "Consumed by" column against the current
+checkout]
 
-Summary: of 34 profiles, **10 are in the production path** (`AlignmentParams`, `FlightLogParams`,
-`SimplifyNoise`, `SimplifySmooth_80per`, `Texturing_MaxTextureCount4_16k`,
-`Unwrapping_Simplified_4x16k`, `ReprojectionParams`, and the three `ExportDeliverables` model-export
-profiles), **4 belong to the deprecated `AlignImagesFromFolder.bat`** (`SimplifyAutomationParams`,
-`Texturing_HighPolyTexture`, `Texturing_SimplifiedTexture`, `Unwrapping_Simplified`), and the
-remaining **20 are declared-but-unconsumed or entirely unreferenced**.
+Summary: of 36 profiles, **10 are in the production path** (`AlignmentParams`, `FlightLogParams`,
+`SimplifyNoise`, `SimplifySmooth_80per`, `Texturing_MaxTextureCount4_8k`,
+`Unwrapping_Simplified_4x8k`, `ReprojectionParams`, and the three `ExportDeliverables` model-export
+profiles), **10 are optional presets or formats of `ModelToFinal.bat`** (five texturing presets,
+`Unwrapping_Simplified`, and four export formats), and the remaining **16 are
+declared-but-unconsumed or entirely unreferenced**.
 
 ### 4.2 Which profile to pick when
 
 | Goal | Profile | Why |
 |---|---|---|
 | Align a zone reproducibly | `AlignmentParams.xml` — replayed as `-set` | never align on instance defaults; settings persist across restarts |
-| Georeference a scene | `FlightLogParams.xml` **regenerated for this cruise** | a hand-carried zone from another project imports silently and misplaces everything |
+| Georeference a scene | `FlightLogParams.xml` **regenerated for this survey** | a hand-carried zone from another project imports silently and misplaces everything |
 | Knock noise off a high model before texturing | `SimplifyNoise_Params.xml` (70 % rel) | the recipe's step [6/8]; keeps enough density for texture projection |
 | Reduce to a deliverable-sized mesh | `SimplifySmooth_80per_Params.xml` ×4 with `-cleanModel` between | four gentle passes beat one aggressive one; each pass is followed by a clean because simplification can reintroduce non-manifold edges |
 | Hit an exact triangle budget | `Simplify500k_Params.xml` (absolute 500 k) | absolute is Epic's recommended type |
-| Texture a high-poly model | `Texturing_MaxTextureCount4_16k.xml` | `MaxTexturesCount` **is** the adaptive mode: 4 × 16K caps cost, small components use less |
+| Texture a high-poly model | `Texturing_MaxTextureCount4_8k.xml` (production) or `…4_16k.xml` | `MaxTexturesCount` **is** the adaptive mode: 4 × 8K (or 16K) caps cost, small components use less |
 | Deliver a declared texel precision (e.g. 1 cm for an ortho) | `Texturing_FixedTexelSize*.xml` | count follows from the precision, not the other way round |
-| Unwrap a simplified model before reprojection | `Unwrapping_Simplified_4x16k.xml` | must match the texture budget of the source, or reprojection quality is wasted; `-reprojectTexture` **requires** the result model to be unwrapped |
+| Unwrap a simplified model before reprojection | `Unwrapping_Simplified_4x8k.xml` (production) or `…4x16k.xml` | must match the texture budget of the source, or reprojection quality is wasted; `-reprojectTexture` **requires** the result model to be unwrapped |
 | Carry a high-poly texture onto a simplified mesh | `ReprojectionParams.xml` | Epic's default has `allowColor=false` and would silently reproject **no colour** |
 | Deliver to Nira | `ModelExportParamsOBJ_NiraParts.xml` | by parts + png + no vertex colours + decimal-6 is Nira's documented expectation; **Nira does not accept PLY point clouds** |
 | Deliver an editable FBX | `ModelExportParamsFBX_Parts.xml` | parts preserved, materials written |
@@ -2057,16 +2056,15 @@ trusting a filename.
    (MD5 `ba7b5ba9b6e9d7f9c7b4b0e3ca0eb0d9`). The "Surface" name asserts a `mvsFltSmoothingStyle`
    semantic that has never been verified. [VERIFIED-by-probe]
 3. **`Texturing_SimplifiedTexture.xml` is byte-identical to `Texturing_HighPolyTexture.xml`**
-   (MD5 `d97f57c353d62570a3fe6ba51c834112`) — both 2 × 16K. The deprecated workflow that uses them
-   therefore textures the simplified model at high-poly settings. [VERIFIED-by-probe]
+   (MD5 `d97f57c353d62570a3fe6ba51c834112`) — both 2 × 16K. Only `Texturing_HighPolyTexture.xml` is
+   used (`ModelToFinal.bat` preset `highpoly`). [VERIFIED-by-probe]
 4. **`SimplifyNoise_Params.xml` (70 % rel) and `SimplifySmooth_80per_Params.xml` (80 % rel) are
    placeholders** derived from the 50 % template, not GUI exports of custom presets. They are
    nonetheless in the production model recipe. If custom presets exist they should be exported over
-   these files. [OPEN: standing self-audit item 5, unresolved]
+   these files. [OPEN: unresolved]
 5. **`XMPExportParams.xml` is referenced by nothing** — zero `.bat`, zero `.py`, zero test scripts —
    so every `-exportXMP` and `-exportXMPForSelectedComponent` in this repo's history ran on instance
    defaults. [VERIFIED-by-probe: repo-wide reference scan excluding `Metadata/` itself, 2026-08-04]
-   This corrects the survey layer, which pairs the file with `-exportXMP` as though it were wired up.
 6. **`SetVariables.bat` sets `ModelExportParamsOBJ=%Metadata%\ModelExportParamsOBJ.xml`** while the
    file on disk is `ModelExportParamsObj.xml`. It resolves only because NTFS is case-insensitive,
    and the variable is never consumed anyway. On a case-sensitive volume this would break.
@@ -2074,13 +2072,10 @@ trusting a filename.
 7. **The `s2NNl` keys in `AlignmentParams.xml` are never applied** — the replay loop filters to
    `sfm*` and `lis*` prefixes. Whatever they control is running at instance default.
    [VERIFIED-by-inspection]
-8. **Line endings split the set cleanly into GUI-exported (CRLF) and hand-authored (LF).** LF files:
-   `AlignmentParams.xml`, `ModelExportParamsFBX_Parts.xml`, `ModelExportParamsOBJ_NiraParts.xml`,
-   `ModelExportParamsPLY_DensePoints.xml`, `SimplifyNoise_Params.xml`,
-   `SimplifySmooth_80per_Params.xml`, `Texturing_MaxTextureCount4_16k.xml`,
-   `Unwrapping_Simplified_4x16k.xml` — exactly the eight files whose provenance is documented as
-   hand-derived. **All eight are in the production path and all work**, so LF is harmless in a
-   profile (unlike in a `.bat`, where LF intermittently breaks cmd's label search).
+8. **Line endings do not matter in a profile.** Before the repository normalised text files
+   (`* text=auto`), the GUI-exported profiles were CRLF and eight hand-derived ones were LF, and
+   both kinds ran in production; LF is harmless in a profile (unlike in a `.bat`, where LF
+   intermittently breaks cmd's label search, which is why `.gitattributes` pins `*.bat` to CRLF).
    [VERIFIED-by-probe: line-ending census + production use, 2026-08-04]
 
 ---
@@ -2104,7 +2099,7 @@ Hand-editing a profile is legitimate and this repository does it. The procedure 
    XML prolog, do not change attribute order (`key` must precede `value` for `AlignZone.bat`'s
    parser).
 5. **Comments are tolerated but must never contain a double quote.** `AlignmentParams.xml` carries
-   three comment blocks safely; a `"` inside one would inject garbage into a `-set` through the
+   two comment blocks safely; a `"` inside one would inject garbage into a `-set` through the
    `delims="` token split.
 6. **Keep the `Configuration id` GUID from the source file.** A profile for the wrong panel has
    uncharacterised behaviour (§1.10).
@@ -2117,7 +2112,7 @@ Hand-editing a profile is legitimate and this repository does it. The procedure 
 
 | Field | File | Why | Correct procedure |
 |---|---|---|---|
-| `CoordinateSystemFlightLog`, `CoordinateSystemFlightLogType` | `FlightLogParams.xml` | **The UTM zone must be derived per cruise.** The template once said 4N while the cruise was 57S. A wrong zone imports silently and misplaces the entire scene — no error, no warning, plausible-looking output. | Generate with `modules.flight_logs.write_flight_log_params(template, out, zone, band)`, which parses the zone from the flight log's own filename tag |
+| `CoordinateSystemFlightLog`, `CoordinateSystemFlightLogType` | `FlightLogParams.xml` | **The UTM zone must be derived per survey.** The template once said 4N while the survey was 57S. A wrong zone imports silently and misplaces the entire scene — no error, no warning, plausible-looking output. | Generate with `modules.flight_logs.write_flight_log_params(template, out, zone, band)`, which parses the zone from the flight log's own filename tag |
 | `gpsLogFileFormat` | `FlightLogParams.xml` | Must name a `<format id>` that **exists in the installed `flightlogs.xml`**. For four months it named one that did not, and orientation plus per-image accuracies were silently dropped on every import. | Grep the installed `flightlogs.xml` for the GUID before changing it; re-verify after every app update |
 | `MvsMeshExportInfoFile` | any `ModelExportParams*.xml` | Turning it off loses the `.rsInfo`, which is both the re-import placement record and the bootstrap route for new export profiles | leave `true` |
 | `sfmFeatureDetectionQuality` value string | `AlignmentParams.xml` | `RealityScan.FeatureDetector.RSa1` is a live API identifier that happens to contain the product name; renaming it to match repo naming conventions breaks the setting | never rename; same rule as `reader="RealityScan.Import.CSVFlightLog"` |
@@ -2155,11 +2150,11 @@ the verification loop without any external oracle.
 
 | Property | Requirement | Evidence |
 |---|---|---|
-| Encoding | ASCII / UTF-8 without BOM. All 34 repo profiles are BOM-free. | [VERIFIED-by-probe, 2026-08-04] |
-| BOM | **Avoid.** No profile has one, and the adjacent lesson is severe: PowerShell 5.1's `Set-Content -Encoding utf8` writes a BOM, and a BOM on line 1 of a `.complist` silently invalidated the first entry (`\ufeffF:\...\zone_1_c6.rsalign` matched no manifest and aborted the driver). Whether a profile tolerates one is untested. | [VERIFIED: FINDINGS 2026-07-27] [OPEN for profiles] |
-| Writing from PowerShell | `[System.IO.File]::WriteAllLines($p, $lines, (New-Object System.Text.UTF8Encoding($false)))` | [VERIFIED: FINDINGS 2026-07-27] |
+| Encoding | ASCII / UTF-8 without BOM. All 36 repo profiles are BOM-free. | [VERIFIED-by-probe, 2026-08-04] |
+| BOM | **Avoid.** No profile has one, and the adjacent lesson is severe: PowerShell 5.1's `Set-Content -Encoding utf8` writes a BOM, and a BOM on line 1 of a `.complist` silently invalidated the first entry (`\ufeffF:\...\zone_1_c6.rsalign` matched no manifest and aborted the driver). Whether a profile tolerates one is untested. | [VERIFIED: project testing 2026-07-27] [OPEN for profiles] |
+| Writing from PowerShell | `[System.IO.File]::WriteAllLines($p, $lines, (New-Object System.Text.UTF8Encoding($false)))` | [VERIFIED: project testing 2026-07-27] |
 | Writing from Python | `open(path, 'w', encoding='utf-8', newline='')` — no BOM, and `newline=''` preserves whatever the template had. This is what `write_flight_log_params` does. | [VERIFIED-by-inspection: `modules/flight_logs.py`] |
-| Line endings | **Either works.** Eight production profiles are LF and have driven every H2024 model. Do not confuse this with `.bat` files, which **must** be CRLF — LF intermittently breaks cmd's batch-label search. | [VERIFIED-by-probe + production use, 2026-08-04] |
+| Line endings | **Either works.** Eight production profiles were LF and drove every dataset B model. Do not confuse this with `.bat` files, which **must** be CRLF — LF intermittently breaks cmd's batch-label search. | [VERIFIED-by-probe + production use, 2026-08-04] |
 | Non-ASCII | Avoid entirely. The cp1252 console crashes on non-ASCII output, and `PYTHONIOENCODING=utf-8` is required when parsing UTF-8 sources. No profile here contains a non-ASCII byte. | [VERIFIED: standing Windows-automation constraint] |
 | Console output while parsing | Set `PYTHONIOENCODING=utf-8` in any tool that reads these files and prints from them | same |
 
@@ -2175,7 +2170,7 @@ Before a long run that depends on a profile:
 - [ ] The `Configuration id` matches the consuming command's panel (§1.7), or the file is a
       `ModelExportParams*` with no id.
 - [ ] The command actually accepts a profile (§1.3) — and is not `-align` (§1.4).
-- [ ] For a flight-log profile: the CRS was **generated for this cruise**, and the
+- [ ] For a flight-log profile: the CRS was **generated for this survey**, and the
       `gpsLogFileFormat` GUID exists in the **installed** `flightlogs.xml`.
 - [ ] For a model-export profile: `MvsMeshExportInfoFile=true`, and the output extension matches
       the format the profile was exported for.
@@ -2205,7 +2200,7 @@ placeholder.
 | 7 | Does `-exportGlobalSettings` diffing actually work as a "did my setting take" oracle? | export, `-set` one known key, export again, diff | seconds |
 | 8 | What are the `s235l` `s236l` `s237l` `s251l` `s252l` `s253l` `s254l` keys in `AlignmentParams.xml`? | GUI: export the alignment panel, change one control, export again, diff — repeat per control | ~1 min each, needs the GUI |
 | 9 | What are the config keys for *Euler angles order (YPR)* and *Camera mount*, and what are their values? | GUI: save trajectory-import params at defaults, then after changing only *Euler angles order*, then only *Camera mount*; three-way diff | ~5 min, needs the GUI |
-| 10 | Are `ifUsePosAcc` / `ifUseOriAcc` / `ifKmode` genuinely inert, given the findings log attributes orientation import to them? | import the same 13-column log twice with `ifUseOriAcc` `true` vs `false`; diff camera attitudes from the pose XMPs | ~2 min on the smoke fixture |
+| 10 | Are `ifUsePosAcc` / `ifUseOriAcc` / `ifKmode` genuinely inert, given the test records attribute orientation import to them? | import the same 13-column log twice with `ifUseOriAcc` `true` vs `false`; diff camera attitudes from the pose XMPs | ~2 min on the smoke fixture |
 | 11 | Is `reprojectionTool_colorSampling=0` "Nearest" or "Trilinear"? If nearest, every reprojected deliverable carries avoidable aliasing. | flip to `1`, reproject an existing high/simplified pair, compare visually | minutes |
 | 12 | `mvsFltSmoothingStyle`: repo filenames say `1`=surface, `3`=peaks; a 0-based reading of the Help's option order (surface, borders, peaks, all) says `0`=surface, `2`=peaks. A **1-based** enum reconciles both. Which? | smooth a fixture at each of 0–4 and inspect which vertices moved | minutes each, needs a viewer |
 | 13 | `simplPreserveParts`: `0` (Epic) vs `2` (repo) — which value is Disable / Enable / Create a singleton? A 0-based reading makes `2`=singleton, but four `2` passes produced a **4-part** export, so the mapping is wrong somewhere. | simplify a multi-part fixture at 0, 1, 2 (and 3) and count parts on export | minutes each |
@@ -2223,10 +2218,10 @@ placeholder.
 | 23 | What is the root element of a standalone `.rsbox`, and is its `<Header>` required? | `-exportReconstructionRegion` on the smoke fixture, then read the file | seconds |
 | 24 | What are the key names in a `-exportLod` / `-export3dTiles` profile? | GUI: save the Export LoD dialog once, both variants | ~2 min, needs the GUI |
 | 25 | Does `-exportRegistration` still block forever when given a valid params XML? (The blocking is only established for the no-params case, and it gates hardening cell U7.) | GUI-save an Export Registration profile once, then delegate with a watchdog on the smoke fixture | ~5 min, needs the GUI once |
-| 26 | Does the hand-merged `{B438A617…}` flight-log format survive a RealityScan update? | after any update, diff the installed `flightlogs.xml` against the repo copy | seconds, but must be remembered |
+| 26 | Does the hand-merged `{B438A617…}` flight-log format survive a RealityScan update? | after any update, compare the installed `{B438A617…}` entry with the repo's `flightlogs.xml` | seconds, but must be remembered |
 | 27 | Is `<XAccuracy index="4"/>` + `<YAccuracy index="4"/>` in shipped `measurementsimport.xml` intentional or a typo for index 5? The format's own `desc` says "…, X, Y, **Accuracy**" (singular, five columns), which argues intentional. | import a 5-column CPM file with a distinctive accuracy value and read both accuracies back | minutes |
 | 28 | Can a flight log carry per-image `FocalLength` / `PrincipalU/V` / `RadialDistortion1-4` priors as an alternative to XMP sidecars? | add those `<Variable>` elements to a custom format, import, and read the solved intrinsics out of the pose XMPs | ~10 min incl. the format edit |
 | 29 | Are all `.rcconfig`-transportable settings also profile keys, i.e. can a global-settings dump seed a per-tool profile? | export globals, grep for `unwrap*` / `mvsFlt*` keys | seconds |
 | 30 | Does a profile tolerate a UTF-8 BOM? (Known to break `.complist`.) | prepend a BOM to a copy of `SimplifyNoise_Params.xml` and pass it | seconds |
-| 31 | Is `-importFlightLog` an alias of the documented `-importTrajectory`, or a separate implementation? Six production call sites use the **undocumented** name and nothing has ever used the documented one. | run both on the smoke fixture with the same params XML and diff the resulting prior poses | ~2 min |
+| 31 | Is `-importFlightLog` an alias of the documented `-importTrajectory`, or a separate implementation? Every production call site uses the **undocumented** name and nothing has ever used the documented one. | run both on the smoke fixture with the same params XML and diff the resulting prior poses | ~2 min |
 | 32 | Does the whole `-exportRegistration` family (`-exportUndistortedImages`, `-exportSTMap`) share the block-without-params behaviour, or is `-exportRegistration` alone? | delegate `-exportSTMap` with no arguments on the smoke fixture under a watchdog | ~2 min |

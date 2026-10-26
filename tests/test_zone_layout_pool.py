@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Zone layout 'pool' (project decision 2026-08-08, FLIGHTLOG_ARCHITECTURE).
+"""Zone layout 'pool'.
 
 The copy layout materializes overlap donation as per-zone physical
 copies, so the same survey image is a DIFFERENT camera in every zone it
@@ -111,17 +111,6 @@ def test_pool_counts_and_drops_missing_rows(tmp_path):
     # The absent image's row must NOT survive into the zone log - a row
     # naming a missing image fails the RS import (err:18002).
     assert len(rows) == 2 and rows[1].split(';')[0].endswith('A.jpg')
-
-
-def test_pool_refuses_xmp_priors(tmp_path):
-    src = _source(tmp_path, ['A.jpg'])
-    out = tmp_path / 'batched'
-    out.mkdir()
-    module = _module('pool')
-    module.params['batch_xmp_priors'].set_value(True)
-    with pytest.raises(ValueError, match='batch_xmp_priors'):
-        module._BatchDirectory__create_batch_folders(
-            str(out), [['A.jpg']], str(src), None)
 
 
 def test_copy_mode_refuses_fullpath_master(tmp_path):

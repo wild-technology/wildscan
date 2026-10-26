@@ -15,6 +15,8 @@ decisions and observations.
 | [Architecture](../ARCHITECTURE.md) | Code structure, shared execution layer, settings, and operating practices |
 | [RealityScan CLI reference](rs-reference/README.md) | Commands, settings, parameter files, observed failure modes, and empirical evidence |
 | [Product scope and delivery history](PRODUCT_READINESS.md) | Current validation boundaries and the historical ON2026 delivery backlog |
+| [Optional Sony Wild Sync intake](ILX-LR1.md) | Import Sony recordings without changing the WCA and Zeuss workflow |
+| [Third-party notices](../THIRD_PARTY_NOTICES.md) | Dependency licences and SPDX SBOM |
 
 The processing target is native Windows 11 with RealityScan 2.2. A successful
 offline test run establishes the tested software behavior; it does not

@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Unit tests for the metric-scale deliverable gate.
 
-Regression cover for 2026-07-26: H2024 zone_3 solved 1,192 cameras at scale
+Regression cover: a zone solved 1,192 cameras at scale
 0.236 (a quarter of true size), registration looked healthy at 82-93% per zone,
 every zone reported Success=True, and the component would have been modelled
 and shipped. `modules/scale_oracle.py` could have caught it but had no caller -
 it lived in tests/ and gated nothing.
 
-Numbers below are the real measured values from that night plus the sound
-PD-6 H2023 values, so the tests fail if the band logic drifts away from the
+Numbers below are real measured values from collapsed and sound solves, so the tests fail if the band logic drifts away from the
 cases it was built for.
 
 Run:  py -3.13 -m pytest tests/test_scale_gate.py
@@ -30,7 +29,7 @@ from modules import scale_oracle  # noqa: E402
 
 LOG = logging.getLogger('test')
 
-# measured 2026-07-26
+# measured values
 HULL_SOUND = {'median': 0.982, 'iqr_low': 0.951, 'iqr_high': 1.029, 'cameras': 3738}
 BOW_WIDE = {'median': 1.075, 'iqr_low': 0.961, 'iqr_high': 1.404, 'cameras': 656}
 ZONE3_BROKEN = {'median': 0.236, 'iqr_low': 0.217, 'iqr_high': 0.253, 'cameras': 1192}
@@ -47,7 +46,7 @@ def test_sound_component_passes():
 
 @pytest.mark.parametrize('stats', [ZONE3_BROKEN, OLD_HULL_BROKEN])
 def test_collapsed_scale_fails(stats):
-    """Both real collapses - H2024 zone_3 0.236 and H2023 hull 0.175."""
+    """Both real collapses - scale 0.236 and scale 0.175."""
     status, why = scale_oracle.verdict(stats)
     assert status == 'fail'
     assert 'outside' in why

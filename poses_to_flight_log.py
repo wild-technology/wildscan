@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Rewrite camera locations back to UTM from RealityScan's computed poses.
 
-The USBL/DVL flight logs are position *estimates*; after alignment the
+The flight-log positions are navigation *estimates*; after alignment the
 bundle-adjusted poses are better relative geometry. RealityScan's XMP
 sidecars (exportXMPForSelectedComponent in the workflow scripts) store
 those poses, but in a grid-anchored LOCAL Euclidean frame, not UTM
-(verified on zone_9: xcr:Position is local, the anchor is the grid
-origin, and the lat/long XMP attributes are garbage).
+(verified on an aligned zone: xcr:Position is local, the anchor is the
+grid origin, and the lat/long XMP attributes are garbage).
 
 This tool estimates the rigid local->UTM transform by least squares
 (Umeyama, scale locked to 1) between the XMP camera positions and the
@@ -20,11 +20,11 @@ matching flight-log priors, then writes a refined flight log in the same
 - unregistered images keep their original rows (drop with
   --registered-only);
 - per-image residuals (refined minus prior, in meters) go to a QC CSV -
-  the residual magnitude is an estimate of the USBL/DVL navigation error.
+  the residual magnitude is an estimate of the navigation error.
 
 Scale stays locked at 1: the alignment already pins scale via the camera
 priors, and fitting scale against noise-dominated nav data collapses it
-toward zero (observed 0.5 on zone_9). --allow-scale exists for
+toward zero (observed 0.5 on one zone). --allow-scale exists for
 diagnostics only.
 
 Usage:
@@ -81,8 +81,8 @@ def read_xmp_positions(images_dir: str) -> dict[str, np.ndarray]:
 
 def row_xyz(row: list[str]) -> list[float] | None:
     """X/Y/Alt of a flight-log row as floats, or None when the row has no
-    usable position (the georeference module legitimately writes empty
-    fields for images matched in time but missing GPS)."""
+    usable position (a flight log legitimately carries empty position
+    fields for an image with no position fix)."""
     try:
         position = [float(row[1]), float(row[2]), float(row[3])]
         return position if np.isfinite(position).all() else None
@@ -197,7 +197,7 @@ def main() -> None:
           + f': residual vs prior [m] mean {norms.mean():.2f}, '
             f'median {np.median(norms):.2f}, p95 {np.percentile(norms, 95):.2f}, '
             f'max {norms.max():.2f}')
-    print('(residual magnitude ~ USBL/DVL navigation error estimate)')
+    print('(residual magnitude ~ navigation error estimate)')
 
     refined_by_stem = dict(zip(common, refined_all))
     acc = f'{args.position_accuracy:.6f}'

@@ -11,7 +11,7 @@ from module_base.parameter import Parameter
 
 class RSModule(abc.ABC):
     """
-    Base class for all ROV-processing modules.
+    Base class for all pipeline modules.
     """
 
     params: dict[str, Parameter] = None
@@ -68,8 +68,7 @@ class RSModule(abc.ABC):
         chain, but nothing supplies it without a console to prompt on. Six
         parameters across four modules are shaped this way, and each one
         used to surface as ``TypeError: _path_isdir: path should be
-        string... not NoneType`` from whichever line dereferenced it first
-        (observed twice on the H2024 run - preprocess and the batcher).
+        string... not NoneType`` from whichever line dereferenced it first.
         Reporting the missing flag by name here fixes all of them at once,
         and subclasses that override this should call super() first.
         """

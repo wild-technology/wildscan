@@ -30,8 +30,6 @@ corrections it produced are marked in place:
 
 - merge fusion is **content**-driven, not identity-driven — the earlier "fuses only through
   shared camera identity" reading is refuted (§12.2, §13.4);
-- the registry `appConfig` blob is **readable**, not opaque, and stores key names the
-  executable does not contain, which weakens every read-back oracle (§1.6, §1.8, §12.1);
 - the merge ladder has two ladders and different rung labels from the earlier draft (§10.4);
 - **eight** `RealityScan.FeatureDetector.*` ids exist, not two (§13.2);
 - no `RealityCapture`-prefixed *settings* key exists, but three `RealityCapture*`
@@ -124,9 +122,8 @@ Three consequences, all observed together:
    "no flag cell before wave 1f ever applied its flags", and wave 1e's merge-cell results
    were declared void and re-run.
 
-[VERIFIED: NA167 B5; FINDINGS 2026-07-23; the NA167 log item 15;
-docs/validation/merge_test_plan.md §5 item 7 — the two log lines above are quoted from
-the NA167 log item 15]
+[VERIFIED: bug B5; project testing 2026-07-23 — the two log lines above are quoted from
+that test's `RealityScan.log`]
 
 Two mandatory mitigations, both in force in this repo:
 
@@ -161,7 +158,7 @@ error detection on any checkout whose path contained a space:
 -set "appProcessExecCmd=wscript.exe //B \"%ErrorPath%\ErrorWriterLaunch.vbs\" $(processResult) $(processId) $(processDuration:d) %RS_INSTANCE%"
 ```
 
-[VERIFIED: status log overhaul item 4, 2026-07-21; `startRealityScan.bat` line 61]
+[VERIFIED: project testing 2026-07-21; `startRealityScan.bat`]
 [OFFICIAL: appbasics/appsettings — "If the file path contains spaces, it must be in
 double quotation marks"]
 
@@ -252,27 +249,9 @@ set "RS_CACHE_ARGS=-set "appCacheLocation=Custom" -set "appCacheCustomLocation=%
 | Question | Answer | Source |
 |---|---|---|
 | Does a `-set` value survive `-newScene`? | Yes. The namespace is application-global, not per-scene. | [INFERRED from global storage + persistence across restarts; no cell isolated it] |
-| Does a `-set` value survive an instance restart? | **Yes.** `docs/validation/merge_test_plan.md` §3 lists "swept `-set` keys are pinned in every cell (values persist across instance restarts)" as a standing contamination control, i.e. the persistence was treated as established and designed around. Corroborated independently below: the settings live in a **registry** blob, not in process memory. | [VERIFIED-as-control-in-force: docs/validation/merge_test_plan.md §3, 2026-07-23 — no cell isolated persistence as its measured variable] + [VERIFIED: registry read, below] |
-| Where is the state stored? | `HKCU\Software\EpicGames.RealityScan\RealityScan\Workspace`, values `appConfig` (REG_BINARY, 33,325 bytes on this machine) and `appSharedConfig` (REG_BINARY, 158 bytes). **`appConfig` is a UTF-16LE key/value serialisation and the key names ARE readable** — decoding it yields `appCacheLocation`, `appQuitOnError`, `appProcessAction`, `appProcessActionTime`, `appProcessExecCmd`, `appCacheCustomLocation`, `appCacheImageMetadata`, `appQuitOnReset`, `s235l`/`s236l`/`s237l`/`s250`…, `ifCSopt`, `ifuuInh`, `ifuuInhEn`, `ifKmode`, `mvsFlt*`, `reprojectionTool_*`, `gpsLogFileFormat`, `csvFLSep`, and ~460 more tokens. `appSharedConfig` holds only `appVersion` / `appSubVersion` / `appMinorVersion` / `appBuildVersion`. | [UNDOCUMENTED: read-only registry read + UTF-16LE decode of the blob, this build] — **corrects an earlier claim in this document that the blobs were opaque** |
+| Does a `-set` value survive an instance restart? | **Yes.** The project's test records list "swept `-set` keys are pinned in every cell (values persist across instance restarts)" as a standing contamination control, i.e. the persistence was treated as established and designed around. | [VERIFIED-as-control-in-force: project test records, 2026-07-23 — no cell isolated persistence as its measured variable] |
 | How do I wipe it? | `-reset cfg` (settings), `-reset ui`, `-reset cfgui`, `-reset all` (clean-install equivalent). **Works only from a batch file and never with delegation.** | [OFFICIAL: appbasics/allcommands, tutorials/commandline_4] |
 | Do two concurrent instances share settings? | Unknown. Never exercised — multi-instance parallelism has never been run here. | [OPEN] |
-
-**The config blob stores keys the executable does not contain.** `ifKmode` is present in
-this machine's `appConfig` blob, yet the string `ifKmode` does **not** occur anywhere in
-`RealityScan.exe` 2.2.0.119430 — checked as UTF-16LE at both byte alignments and as ASCII
-over the whole 45,211,352-byte image. The settings layer therefore **persists key names
-the engine never looks up**. Two consequences, both load-bearing:
-
-1. Reading a key back out of the config (or, by extension, out of
-   `-exportGlobalSettings`) proves the value was **stored**, not that it was **honoured**.
-   The export/diff probe in §1.8 is therefore a weaker oracle than it looks: it can
-   distinguish "the pair parsed" from "the pair was rejected", but not "the engine reads
-   this key" from "the engine ignores this key".
-2. It is the exact mechanism by which a dead key looks alive — see §12.1.
-
-[VERIFIED: registry read + exhaustive binary scan] [INFERRED: that the
-storage path is params-XML import or the GUI dialog writing through to the config; not
-isolated]
 
 **Operational consequence of persistence (the trap).** `startRealityScan.bat` reuses an
 already-running instance instead of relaunching it:
@@ -288,7 +267,7 @@ IF /I "%ERRORLEVEL%"=="0" (
 On the reuse path **the boot `-set` line never executes**. The boot-time pins
 (`appAutoSaveMode`, `appQuitOnError`, `appProcessActionTime`, `appProcessAction`,
 `appProcessExecCmd`, cache keys) are inherited from whatever that instance was launched
-with. They normally match, because those values also persist in the registry — but an
+with. They normally match, because those values also persist across restarts — but an
 interactive GUI session or another driver that changed them between runs would not be
 corrected. [VERIFIED-by-code-reading: `startRealityScan.bat` lines 16–22]
 [INFERRED: the failure mode; never observed]
@@ -297,11 +276,11 @@ corrected. [VERIFIED-by-code-reading: `startRealityScan.bat` lines 16–22]
 
 | Key(s) | Must be set | Why | Source |
 |---|---|---|---|
-| `appIncSubdirs` | **before every** `-addFolder` | Without it this build adds 0 layer images from a tree whose images live in subfolders | [VERIFIED: FINDINGS 2026-07-23] |
-| all `sfm*` / `lis*` | **before** `-align` | `-align` accepts no parameter file; an XML passed to it is silently ignored | [VERIFIED: FINDINGS 2026-07-21; `AlignZone.bat` lines 81–84] |
+| `appIncSubdirs` | **before every** `-addFolder` | Without it this build adds 0 layer images from a tree whose images live in subfolders | [VERIFIED: project testing 2026-07-23] |
+| all `sfm*` / `lis*` | **before** `-align` | `-align` accepts no parameter file; an XML passed to it is silently ignored | [VERIFIED: project testing 2026-07-21; `AlignZone.bat` lines 81–84] |
 | `PrecomputeDepthmaps=true` | before `-calculatePreviewModel` / `-calculateNormalModel` / `-calculateHighModel`; **reset to `false` afterwards** | With it set, those commands compute depth maps into the cache and build no model | [OFFICIAL: tutorials/commandline_2] |
 | `appCacheLocation`, `appCacheCustomLocation` | at instance boot (or via `appQuitOnReset` restart cycle) | Restart-class settings | [OFFICIAL: tutorials/commandline_5] + [VERIFIED: `startRealityScan.bat`] |
-| `appProcessAction`, `appProcessActionTime`, `appProcessExecCmd` | at instance boot, before any operation whose completion must be reported | They are the authoritative per-operation result channel | [VERIFIED: `startRealityScan.bat`; hook liveness re-tested FINDINGS 2026-07-25] |
+| `appProcessAction`, `appProcessActionTime`, `appProcessExecCmd` | at instance boot, before any operation whose completion must be reported | They are the authoritative per-operation result channel | [VERIFIED: `startRealityScan.bat`; hook liveness re-tested project testing 2026-07-25] |
 | `appQuitOnError` | at instance boot | Changes exit-code semantics for the whole session | [OFFICIAL: tutorials/commandline_5] |
 | `appAutoSaveCliHandling` | before `-load` | It defines what `-load` does when an `.autosave` exists | [OFFICIAL: tutorials/setkeyvaluetable] |
 | `appGroupCalibrationByExif`, `appIgnoreExifGPS` | before the `-addFolder` / `-add` that imports the images | They are import-time settings | [INFERRED from the Help's "Import settings" grouping] |
@@ -323,13 +302,12 @@ The only known read-back mechanisms:
 |---|---|---|
 | Export all global settings | `-exportGlobalSettings settings.rcconfig` | Cheapest CLI oracle for "did my `-set` take?" — export, `-set`, export again, diff. **Not yet exercised in this repo.** [OPEN] |
 | Import all global settings | `-importGlobalSettings settings.rcconfig` | Round-trips the same file |
-| **Read the registry blob directly** | none — `HKCU\Software\EpicGames.RealityScan\RealityScan\Workspace` value `appConfig`, decoded UTF-16LE | Needs no running instance and no command. Verified readable (§1.6). Same caveat as the export: shows storage, not consumption |
 | Per-panel export from the GUI | Settings panel → export to `.xml` | Produces the `<Configuration id="{GUID}">` files described in `09-xml-parameter-files.md`; this is how `AlignmentParams.xml` was produced |
 
-**Every read-back path answers a weaker question than you want.** Because the config layer
-stores unrecognised key names verbatim (§1.6), a key that appears in the export or the blob
-after a `-set` has proved only that the pair parsed and was written. Establishing that the
-*engine* reads a key still requires a behavioural A/B on real data.
+**Every read-back path answers a weaker question than you want.** A key that appears in an
+export after a `-set` has proved only that the pair parsed and was stored, not that the
+engine reads it. Establishing that the *engine* reads a key still requires a behavioural A/B
+on real data. [INFERRED]
 
 Extension conflict: `.rcconfig` in `appbasics/allcommands` and `appbasics/appsettings`
 (the GUI's Global Settings panel says "export … to .rcconfig file"), `.rsconfig` in
@@ -344,7 +322,7 @@ produces.
 CLI confirms that a key name was recognised or that a value was honoured. This is the
 single most important epistemic limit in this document: for keys tagged [UNDOCUMENTED],
 "the repo sets it and the run succeeded" is evidence the string parses, **not** evidence
-the setting was applied. [VERIFIED: err:7155 semantics, NA167 B5] [OPEN: neither read-back
+the setting was applied. [VERIFIED: err:7155 semantics, bug B5] [OPEN: neither read-back
 path closes this — see the caveat above; only a behavioural A/B does]
 
 ### 1.9 Parameter XML files use the same namespace
@@ -367,10 +345,8 @@ Commands that take a `params.xml` consume a `<Configuration id="{GUID}">` file o
 
 (`RS_CLI/Metadata/Texturing_MaxTextureCount1_8k.xml`, verbatim.)
 
-The `{GUID}` identifies the owning settings panel and matches an
-`HKCU\Software\EpicGames.RealityScan\RealityScan\Workspace\SP-{GUID}` registry subkey.
-24 `SP-{GUID}` subkeys exist on this machine, and all seven GUIDs used by this repo's
-params XMLs are among them:
+The `{GUID}` identifies the owning settings panel. The seven GUIDs used by this repo's
+params XMLs:
 
 | GUID | Panel / params file |
 |---|---|
@@ -381,11 +357,6 @@ params XMLs are among them:
 | `{8F3517E3-5632-40FE-BD10-9967EA8F299F}` | Texture reprojection — `ReprojectionParams.xml`, Epic's `reprojectTexture.xml` |
 | `{93DBD041-AE1C-4631-89BC-D9430FCED843}` | Import Trajectory — `FlightLogParams.xml` |
 | `{EC40D990-B2AF-42A4-9637-1208A0FD1322}` | XMP export — `XMPExportParams.xml` |
-
-**The `SP-{GUID}` subkeys are not a read-back path.** Each holds a single `state` DWORD
-(UI state; `16777216` for the alignment panel here) and no key/value data. The values
-themselves live in the flat `appConfig` blob (§1.6).
-[UNDOCUMENTED: registry enumeration, read-only]
 
 Whether every params-XML key is *also* accepted by `-set` is [OPEN] for the export/tool
 families. It is [VERIFIED] for the `sfm*`/`lis*` subset, because `AlignZone.bat` reads
@@ -405,16 +376,16 @@ reason the `-set` replay above exists, and the reason repo policy is "never alig
 instance defaults" — an instance carries whatever the previous session set.
 [CONTRADICTED: older repo scripts and pre-2.x lore passed `-align "%AlignmentParams%"` /
 observed: argument ignored, confirmed against `appbasics/allcommands` and the online
-docs, 2026-07-21] [VERIFIED: FINDINGS 2026-07-21]
+docs, 2026-07-21] [VERIFIED: project testing 2026-07-21]
 
 ### 1.11 Failure signatures to watch
 
 | Symptom | Meaning | Source |
 |---|---|---|
-| `err:7155` in `RealityScan.log`, non-empty errors marker | The `key=value` pair was split by cmd — **setting NOT applied**, workflow aborted | [VERIFIED: NA167 B5] |
-| result `2147549183` = `0x8000FFFF` | Generic "unexpected program state". A broken `-set` and a genuine align failure emit the **identical** code. The real reason line exists only in `%LOCALAPPDATA%\Temp\RealityScan.log`, which is truncated on the next instance boot — snapshot it immediately | [VERIFIED: NA167 B6] |
+| `err:7155` in `RealityScan.log`, non-empty errors marker | The `key=value` pair was split by cmd — **setting NOT applied**, workflow aborted | [VERIFIED: bug B5] |
+| result `2147549183` = `0x8000FFFF` | Generic "unexpected program state". A broken `-set` and a genuine align failure emit the **identical** code. The real reason line exists only in `%LOCALAPPDATA%\Temp\RealityScan.log`, which is truncated on the next instance boot — snapshot it immediately | [VERIFIED: bug B6] |
 | No error, no effect | Unknown-but-parseable key, or a known key given an unhonoured value | [OPEN: `-exportGlobalSettings` diff] |
-| Errors marker contains only a number | The marker carries ErrorWriter's numeric process result, never the `err:NNNN` text — tolerant handlers must match codes, not strings | [VERIFIED: FINDINGS 2026-07-23] |
+| Errors marker contains only a number | The marker carries ErrorWriter's numeric process result, never the `err:NNNN` text — tolerant handlers must match codes, not strings | [VERIFIED: project testing 2026-07-23] |
 
 ---
 
@@ -470,7 +441,7 @@ GUI home: **WORKFLOW tab → Application → Settings**.
 | Key | Type | Default | Allowed values | GUI label / what it controls | Pinned here? |
 |---|---|---|---|---|---|
 | `appIncSubdirs` | bool | `false` | `true` `false` | **Include subdirectories** — applies to the `-addFolder` command only | **YES — `true`, before every `-addFolder`.** See §13.1 |
-| `appLog` | bool | `true` | `true` `false` | **Log file** — Epic: "write and save the log file in the Windows Temp folder". The concrete path on this build is `%LOCALAPPDATA%\Temp\RealityScan.log` [VERIFIED: every post-mortem snapshot in FINDINGS] | no (left at default; the log is load-bearing for post-mortems and must not be disabled) |
+| `appLog` | bool | `true` | `true` `false` | **Log file** — Epic: "write and save the log file in the Windows Temp folder". The concrete path on this build is `%LOCALAPPDATA%\Temp\RealityScan.log` [VERIFIED: every post-mortem snapshot, project testing] | no (left at default; the log is load-bearing for post-mortems and must not be disabled) |
 | `operationLog` | bool | `true` | `true` `false` | **Operation log data** — uploads feature/settings/process telemetry to Epic. Epic states no input data or project files are sent | no |
 | `appAutoSaveMode` | bool | `true` | `true` `false` | **Auto save mode** — writes `<project>.autosave` beside the project; for a new project, into the cache folder | **YES — `false`** at boot |
 | `appAutoSaveCliHandling` | enum | `delete` | `delete` `recover` `abort` `ask` | **Handling of autosaved projects** — what `-load` does when an `.autosave` exists (global equivalent of `-load … recoverAutosave\|deleteAutosave`) | no |
@@ -483,7 +454,7 @@ GUI home: **WORKFLOW tab → Application → Settings**.
 | `appThemeZoom` | enum | `0` | `0` Windows setting · `1` 100% · `1.25` · `1.5` · `2` (4K/200%) · `3` (300%) | **Zoom** — size of UI elements except ribbons | no |
 | `appUIAnim` | bool | `true` | `true` `false` | **Animated UI** | no |
 | `UserInterfaceLanguageId` | int (LCID) | *(empty)* | `2052` zh-Hans · `1028` zh-Hant · `1029` cs · `1033` en · `1036` fr · `1031` de · `1040` it · `1041` ja · `1042` ko · `3082` es | **UI language** (Help included) | no |
-| `appGroupCalibrationByExif` | bool | `false` | `true` `false` | **Group calibration by exif** at import | no — and it is **unusable in either position** on this rig, see below |
+| `appGroupCalibrationByExif` | bool | `false` | `true` `false` | **Group calibration by exif** at import | no — and it was **unusable in either position** on the earlier four-camera rig, see below |
 | `appCopyImportedComponentsToCache` | bool | `false` | `true` `false` | **Copy imported components to cache** — Epic: set Yes when the cache is on an SSD, to speed component access | no |
 | `appIgnoreExifGPS` | bool | `false` | `true` `false` | **Ignore exif GPS** globally (per-camera override lives in `sensorsdb.xml`) | no |
 | `appProcessActionTime` | int (seconds) | `15` | `0`..n | **Minimal process duration** before the end-of-process action fires. `0` = fire for every process | **YES — `0`** |
@@ -509,23 +480,23 @@ here" entry.
   periodic internal heartbeat processes too**, so "the results log grew" does not mean
   "our command finished" — a completion check built on results-log growth raced ahead of a
   running `-align` and was removed entirely. [OFFICIAL, self-conflicting]
-  [VERIFIED: status log 2026-07-21]
+  [VERIFIED: project testing 2026-07-21]
 - `appProcessExecCmd` — the hook must be launched through a **GUI-subsystem** host. A
   console-subsystem child (`cmd /c …`) pops a visible console window on every fired
   trigger when the parent has none — hundreds of flashing windows over a long run. The
   production form runs `wscript.exe //B` on a VBS shim that invokes `ErrorWriter.bat`
-  hidden and synchronously. [VERIFIED: FINDINGS 2026-07-23; `startRealityScan.bat`
+  hidden and synchronously. [VERIFIED: project testing 2026-07-23; `startRealityScan.bat`
   comment]
 - `appProcessExecCmd` — an **unquoted** executable path silently disabled all error
   detection when the checkout path contained a space; found by adversarial review, fixed
-  with escaped quotes. [VERIFIED: status log overhaul item 4, 2026-07-21]
+  with escaped quotes. [VERIFIED: project testing 2026-07-21]
 - `appQuitOnError=false` is deliberate: warning-class results (`0x820000FF`, e.g.
   `err:18002` from `-importFlightLog` when the log references images not in the scene) are
-  routine, and the orchestrator must decide, not the app. [VERIFIED: FINDINGS 2026-07-21]
+  routine, and the orchestrator must decide, not the app. [VERIFIED: project testing 2026-07-21]
 - `appAutoSaveMode=false` is deliberate: autosave would race the destructive in-session
   identity loop, and a modal recovery dialog hangs a headless box forever. No stale
   autosaves appeared in any test run after this was pinned.
-  [VERIFIED: status log verification checklist item 7, 2026-07-21]
+  [VERIFIED: project testing 2026-07-21]
 - `appCacheLocation` / `appCacheCustomLocation` — **the cache is placed by the drive of the
   path given and does NOT move when the project moves.** `D:\rccache` reached 1,089 GB and
   refilled 197 GB of freshly-cleaned space within one run, killing a hull model three
@@ -536,14 +507,13 @@ here" entry.
   folder since this may lead to some failures in the project" — but to free space on the
   cache disk or change the cache disk, so relocation is the sanctioned lever. The supported
   emptying route is the CLI command `-clearCache`, which **requires the project to be saved
-  first**. [VERIFIED: FINDINGS 2026-07-26] [OFFICIAL: Epic "Out of Disk Space" page /
-  appbasics/outofdisk]
-- `appGroupCalibrationByExif` — **wrong in both positions** on an EXIF-identical rig.
-  Enabled, it would collapse two physically different cameras (Make `Z CAM`, Model
-  `E2-F6`, no focal length, no lens tag, identical exposure block) into ONE calibration
-  group. Left `false`, images calibrate without EXIF grouping, which is weak. The answer
-  is per-image XMP `Camera:CalibrationGroup` sidecars, one group per **physical** camera.
-  [VERIFIED-by-inspection: docs/settings-evaluation-2026-07 §1, 2026-07-23]
+  first**. [VERIFIED: project testing 2026-07-26] [OFFICIAL: appbasics/outofdisk]
+- `appGroupCalibrationByExif` — **wrong in both positions** on an EXIF-identical rig such
+  as the earlier four-camera rig. Enabled, it would collapse physically different cameras
+  (Make `Z CAM`, Model `E2-F6`, no focal length, no lens tag, identical exposure block) into
+  ONE calibration group. Left `false`, images calibrate without EXIF grouping, which is
+  weak. The answer is per-image XMP `Camera:CalibrationGroup` sidecars, one group per
+  **physical** camera. [VERIFIED-by-inspection: project test records, 2026-07-23]
 - `appCopyImportedComponentsToCache` — never swept. Worth a probe because it may interact
   with the hard rule that a **relocated** `.rsalign` import hangs forever (`#timeout`,
   observed 6 h+). [OPEN]
@@ -560,9 +530,6 @@ None used here. **Presence of a string is evidence of a namespace member, not pr
 | `appTutorialMode` | Tutorial mode | shows contextual Help per tool |
 | `appNavigationStyle` | Navigation style | Default / Autodesk / Leica |
 | `appAutomaticUpdate`, `appAutoUpdate` | updater | two spellings both present |
-| `appAutoRenew`, `appLicenseAutoRenew`, `appRenewT` | licensing | |
-| `appActivTokenCLI`, `appActivTokenCLIValid` | CLI activation token | relevant to headless licensing [OPEN] |
-| `appLic`, `appLicDel`, `appLicDelMachine` | license management | |
 | `appEnableBadCps` | control points | plausibly "admit low-quality CPs" [INFERRED from the name] |
 | `appExportSettings`, `appImportSettings` | Global Settings export/import | the `.rcconfig` buttons |
 | `appOutputErrorStack` | diagnostics | would be high value against the generic `0x8000FFFF` problem [OPEN] |
@@ -572,9 +539,6 @@ None used here. **Presence of a string is evidence of a namespace member, not pr
 | `appBtnGPUs` | **GPUs to use** button | see the GPU note below |
 | `appRootDir`, `appStartDir` | path state | |
 | `appName`, `appVersion`, `appType`, `appInt`, `appLanguage`, `appInfMouse` | app identity / misc | probably read-only |
-
-Also present but **not settings**: `appConfig`, `appSharedConfig` — the opaque registry
-blobs holding serialised settings (§1.6).
 
 **GUI controls in `appbasics/appsettings` with no key in the table and no obvious binary
 key** — all [OPEN]:
@@ -597,8 +561,7 @@ GUI home: **ALIGNMENT tab → Registration → Settings**.
 [OFFICIAL: appbasics/alignsettings, tutorials/setkeyvaluetable]
 
 Production values below are from `RS_CLI/Metadata/AlignmentParams.xml`, which
-`AlignZone.bat`, `AlignImagesFromFolder.bat`, `GrowZone.bat`, `ProbeLockAlign.bat`,
-`ProbeSubsetAlign.bat` and `ProbeSubsetAlign2.bat` replay row-by-row through `-set`
+`AlignZone.bat` and `GrowZone.bat` replay row-by-row through `-set`
 (filter: key must start with `sfm` or `lis`).
 
 ### 4.1 Documented keys (29)
@@ -611,7 +574,7 @@ Production values below are from `RS_CLI/Metadata/AlignmentParams.xml`, which
 | `sfmImagesOverlap` | enum | `Medium` | `Low` `Medium` `High` | **Images' overlap** — breadth of the candidate-pair search. Epic: set Low below 20% overlap; >60% is best quality | `Medium` (raised from legacy `Low`); `High` is merge-ladder rung 3 and **that rung is judged not defensible**, see §10.4 |
 | `sfmImageDownscaleFactor` | int | `1` | `1`,`2`,`4`,… | **Image downscale factor** before feature detection; 1 = full resolution | `1` |
 | `sfmMaxFeatureReprojectionError` | float | `2.0` | Epic recommends ≤ `3` px | **Max feature reprojection error** — internal precision during alignment | `1.29999995` |
-| `sfmEnableCameraPrior` | bool | `true` | `true` `false` | **Use camera priors for georeferencing** — Epic: "prior positions for the images are used in the alignment process and for georeferencing the scene". (This repo's settings evaluation restates that as "participate **inside** the bundle adjustment"; that stronger reading is repo prose, not Help text — [INFERRED]) | `true`, always |
+| `sfmEnableCameraPrior` | bool | `true` | `true` `false` | **Use camera priors for georeferencing** — Epic: "prior positions for the images are used in the alignment process and for georeferencing the scene". (The project's settings evaluation restated that as "participate **inside** the bundle adjustment"; that stronger reading is project prose, not Help text — [INFERRED]) | `true`, always |
 | `sfmCameraPriorAccuracyX` | float | `10.0` | ≥ 0 | **Position X accuracy** — the range within which a solved position counts as equal to the prior | **never applied**, see §13.3 |
 | `sfmCameraPriorAccuracyY` | float | `10.0` | ≥ 0 | **Position Y accuracy** | **never applied**, §13.3 |
 | `sfmCameraPriorAccuracyZ` | float | `20.0` | ≥ 0 | **Position Z accuracy** | **never applied**, §13.3 |
@@ -633,19 +596,18 @@ Production values below are from `RS_CLI/Metadata/AlignmentParams.xml`, which
 | `sfmPreselectorFeatures` | int | `10000` | positive int; Epic: "1/4–1/2 of the detected features" | **Advanced → Preselector features** | `0x4e20` (20000) |
 | `sfmDetectorSensitivity` | enum | `Medium` | `Low` `Medium` `High` `Ultra` | **Advanced → Detector sensitivity** — Ultra detects more features in weak texture but "may also include less reliable points caused by image noise" | `Ultra` |
 | `sfmMergeGeoreferencedComponents` | bool | `false` | `true` `false` | **Advanced → Merge georeferenced components** — "When multiple components are created and each is georeferenced, enabling this setting allows them to be merged even without visual overlap" | `false` in pass-1 zone aligns; `true` on every merge-ladder rung. **Never observed to work headless** — §12 and §13.4 |
-| `sfmDistortionModel` | enum | `Brown3` | `Division` `Brown3` `Brown4` `Brown3WithTangential2` `Brown4WithTangential2` `KplusBrown3WithTangential2` `KplusBrown4WithTangential2` | **Advanced → Distortion model** | `Division` in the current `AlignmentParams.xml`; `Brown3` is the documented target for a rectilinear rig. **The key is global and all-or-nothing** — §13.5 |
+| `sfmDistortionModel` | enum | `Brown3` | `Division` `Brown3` `Brown4` `Brown3WithTangential2` `Brown4WithTangential2` `KplusBrown3WithTangential2` `KplusBrown4WithTangential2` | **Advanced → Distortion model** | `Brown3` in the current `AlignmentParams.xml` (earlier datasets ran `Division`, §4.2). **The key is global and all-or-nothing** — §13.5 |
 
 [OFFICIAL: tutorials/setkeyvaluetable] for every key/type/default/enum;
 [OFFICIAL: appbasics/alignsettings] for the prose; [VERIFIED-by-inspection:
 `RS_CLI/Metadata/AlignmentParams.xml`, 35 entries: 27 `sfm*`, 1 `lis*`, 7 `s<NNN>l`] for
 every pinned value.
 
-**The params file's own comment on `sfmDistortionModel` is stale.** `AlignmentParams.xml`
-carries, inline above the entry, "Global fallback only: mixed rig, so the real distortion
-model is per-camera via XMP sidecars (fisheye Port/Starboard: division; rectilinear
-Cinema/Zeuss: brown3)." That premise was **refuted** on 2026-07-26 — the global key owns
-the model outright and the per-image XMP hint does not switch it (§13.5). Read the comment
-as history, not as behaviour. [VERIFIED: FINDINGS 2026-07-26 vs the file's own comment]
+**A per-camera model through XMP sidecars is not available.** The premise that a mixed rig
+could run one distortion model per camera through the sidecars' model hint was **refuted**
+on 2026-07-26 — the global key owns the model outright and the per-image XMP hint does not
+switch it (§13.5). `AlignmentParams.xml` now says so in its comment above the entry.
+[VERIFIED: project testing 2026-07-26]
 
 ### 4.2 Distortion-model semantics
 
@@ -667,8 +629,8 @@ fisheye]
 
 Epic's own recommended workflow — "starting with a simpler Division model first, and later
 change it to Brown and click Align Images (F6) to optimize data" — is quoted approvingly in
-this repo's settings evaluation §3. [OFFICIAL: same topic]
-[VERIFIED-by-inspection: docs/settings-evaluation-2026-07 §3]
+the project's settings evaluation. [OFFICIAL: same topic]
+[VERIFIED-by-inspection: project test records, 2026-07]
 
 **Measured, Division vs Brown3, on underwater imagery through a dome port:**
 
@@ -684,7 +646,7 @@ ways — (a) Brown3→Division, (b) the accuracy columns being imported for the 
 (c) orientation priors removed (its cell used a 7-column position-only flight-log format).
 The scale repair cannot be attributed to Division alone. The isolating cell (Brown3 +
 explicit-loose priors on zone_1, ~70 min) was never run; the corrected configuration was
-adopted anyway. [VERIFIED-as-caveat: FINDINGS 2026-07-26] [OPEN]
+adopted anyway. [VERIFIED-as-caveat: project testing 2026-07-26] [OPEN]
 
 ### 4.3 `sfm*` keys in the binary or the GUI-exported XML with no Help coverage
 
@@ -795,7 +757,7 @@ network drive; copy between local SSDs. [OFFICIAL: tutorials/commandline_2]
 triangles are removed **post hoc** with `-selectMarginalTriangles` +
 `-removeSelectedTriangles`, which keeps the removal an inspectable, orderable step in
 `GenerateModel.bat` rather than a mesh-time side effect.
-[VERIFIED: docs/settings-evaluation-2026-07 §7]
+[VERIFIED: project test records, 2026-07]
 
 **GUI control with no documented key:** *Maximal depth-map pixel count* (Preview and
 Normal), described in `appbasics/modelsettings` (default `0` = ignored; does not override
@@ -916,7 +878,7 @@ This repo sets none of these globally; it passes the equivalent values as params
 `ImageLayerForColoring` / `ImageLayerForTexturing` are the CLI face of RealityScan **Image
 Layers** (`.geometry` / `.texture` / `.mask`). Image Layers is the agreed eventual
 mechanism for "align on originals, texture from enhanced imagery" in this pipeline but has
-**never been exercised through this CLI**. [VERIFIED-as-decision: status log 2026-07-26]
+**never been exercised through this CLI**. [VERIFIED-as-decision: project testing 2026-07-26]
 [OPEN]
 
 ### 7.2 `unwrap*` / texturing strings in the binary or repo XML with no Help coverage
@@ -1049,7 +1011,7 @@ quality, **not unseen-area synthesis** — reprojection samples the source surfa
 invent color for surface no camera ever saw. This is why the production recipe textures
 *after* `-closeHoles` + `-cleanModel` (so `-calculateTexture` projects from the source
 images with multi-band blending) rather than texturing a holey model and reprojecting onto
-the filled one. [VERIFIED: docs/settings-evaluation-2026-07 §7]
+the filled one. [VERIFIED: project test records, 2026-07]
 
 ### 8.4 `xmp*` — `-exportXMP <params.xml>`
 
@@ -1072,18 +1034,16 @@ RealityScan reads and writes `<stem>.xmp` **only** (`image.jpg.xmp` is ignored *
 and export naming is determined by the **command**, not by these settings —
 `-exportXMP` writes stem-named sidecars while `-exportXMPForSelectedComponent` writes
 ordinal sidecars (`00000.xmp`, `00001.xmp`, …) in every observed context.
-[VERIFIED: NA167 B7 "XMP sidecar conventions"; the ordinal-export behaviour is the
-*second* B11-adjacent entry numbered B10 in `NA167 notes.md` — that file reuses
-B10 and B11 for both an INT- and an RS-series bug, so cite by title, not number —
-observed NA156 smoke merge 2026-07-23]
+[VERIFIED: bug B7; the ordinal-export behaviour is bug B10, observed on a dataset B smoke
+merge 2026-07-23]
 Full treatment in `05-metadata-xmp-and-sidecars.md`.
 
 ### 8.5 Flight-log / trajectory import — `-importFlightLog` / `-importTrajectory <log> <params.xml>`
 
 Exported: `RS_CLI/Metadata/FlightLogParams.xml` (id `{93DBD041-AE1C-4631-89BC-D9430FCED843}`),
-generated per cruise by `modules/flight_logs.py::write_flight_log_params`.
+generated per survey by `modules/flight_logs.py::write_flight_log_params`.
 
-| Key | Type | Repo value (NA173_H2103a) | Meaning |
+| Key | Type | Repo value (template; the zone is rewritten per log) | Meaning |
 |---|---|---|---|
 | `gpsLogFileFormat` | GUID | `{B438A617-2434-5A24-C1B7-58980F28345A}` | selects a reader from `flightlogs.xml`. The reader ids are current product strings, e.g. `reader="RealityScan.Import.CSVFlightLog"` |
 | `CoordinateSystemFlightLog` | PROJ string | `+proj=utm +zone=57 +south +datum=WGS84 +units=m +no_defs` | flight-log CRS |
@@ -1104,12 +1064,12 @@ All [UNDOCUMENTED: exported XML + binary].
 (YPR)* and *Camera mount* settings, and their value mapping is **undocumented anywhere**:
 the Help documents the settings but not their config keys, `flightlogs.xml` defines only
 column mapping, and neither key string appears in any file under the RealityScan install
-— both are compiled into the binary. [UNDOCUMENTED: FINDINGS 2026-07-26] [OPEN]
+— both are compiled into the binary. [UNDOCUMENTED: project testing 2026-07-26] [OPEN]
 
 **The live prior-accuracy family the params file does not use.** `ifUsePosAcc` and
 `ifUseOriAcc` in `FlightLogParams.xml` are inert (they do not exist in the binary), but the
-Import Trajectory dialog's accuracy block does have live keys — all present **both** in
-`RealityScan.exe` 2.2.0.119430 and in this machine's persisted `appConfig` blob:
+Import Trajectory dialog's accuracy block does have candidate keys — all present in
+`RealityScan.exe` 2.2.0.119430:
 
 | Key | Plausible role |
 |---|---|
@@ -1119,7 +1079,7 @@ Import Trajectory dialog's accuracy block does have live keys — all present **
 | `ifuRotEnable` | enables the orientation-accuracy block — the plausible real counterpart of the inert `ifUseOriAcc` |
 | `ifuuInh`, `ifuuInhEn` | accuracy **inheritance** value / enable (both already in `FlightLogParams.xml`) |
 
-[UNDOCUMENTED: binary strings + `appConfig` registry blob]
+[UNDOCUMENTED: binary strings]
 [INFERRED: every role above, from the names and from the dialog layout — none probed]
 This matters because §13.3 shows the *global* `sfmCameraPriorAccuracy*` keys are also never
 applied here: if neither the global keys nor the import-time `ifu*` keys are set, the priors
@@ -1130,7 +1090,7 @@ Binary-only siblings [UNDOCUMENTED]: `gpsLogFileName`, `gpsLogFolder`, `gpsLogCu
 `ifKModel`, `ifDistortionmode`, `ifRmode`, `ifTmode`, `ifOfsX`, `ifOfsY`, `ifOfsZ`,
 `ifOfsRR`, `ifOfsRP`, `ifOfsRY`, `ifOfsifuUseOffset`.
 The `ifOfs*` set is the **lever-arm / mount-angle offset** block applied at import; this
-repo instead applies those offsets upstream in `georeference_survey.py` and the georeference module.
+repo instead applies those offsets upstream, in the georeference module.
 [INFERRED from the names + repo architecture]
 
 Other CSV import families [UNDOCUMENTED: binary]: `csvGCSep` / `csvGCIgn` (ground control),
@@ -1352,12 +1312,12 @@ Repo-relevant empirical notes:
 
 - `-editInputSelection` works headless; `"inpEnabled=false"` works as a single quoted
   `key=value` argument and `-align` honours enable/disable exactly.
-  [VERIFIED: ALIGN_MERGE_HARDENING cells U1 / U19 / U2, 2026-07-23]
+  [VERIFIED: project testing, cells U1 / U19 / U2, 2026-07-23]
 - `inpPose=3` **takes effect but makes an incremental align refuse outright**, so
   checkpoint/rollback stayed the never-shrink mechanism rather than pose-locking. The
   refusal text is worth knowing verbatim: "prior set to 'Exact' mode must be all aligned in
   a single run. Incremental adding is not supported."
-  [VERIFIED: FINDINGS 2026-07-23, ALIGN_MERGE_HARDENING U18 FAIL]
+  [VERIFIED: project testing 2026-07-23, cell U18 FAIL]
   Note the naming mismatch: `tutorials/editselectioncommand` labels `inpPose=3` **`Locked`**
   (and reserves `Exact` for `inpPosePriorRelative=2`), while RealityScan's own error message
   calls the resulting state **'Exact'**. [CONTRADICTED: Help label vs runtime message —
@@ -1365,17 +1325,17 @@ Repo-relevant empirical notes:
 - Related, from the same probe: **align output is never pose-stable.** A free re-align moved
   all 118 cameras of an already-solved smoke scene and can drop 1–2 marginal ones — so "same
   settings, same images" does not mean "same poses".
-  [VERIFIED: FINDINGS 2026-07-23, U18 bonus]
+  [VERIFIED: project testing 2026-07-23, U18 bonus]
 - The default lens prior is **"No lens distortion" with prior "Approximate"**, which drives
   the solver toward zero distortion — wrong for visibly distorted optics. Use `Unknown` or
   supply coefficients. [OFFICIAL: appbasics/camerasettings_priors]
 - Related but separate: `LensDistortionPrior="Approximate"` **with no coefficients
   supplied does not pin distortion to zero** — a camera carrying exactly that still solved
   k1 = −0.0524 over 2,204 cameras. An earlier caution to the contrary was wrong.
-  [SUPERSEDED → VERIFIED: FINDINGS 2026-07-25]
+  [SUPERSEDED → VERIFIED: project testing 2026-07-25]
 - `aligFeaturesMode` is also reachable as the standalone command
   `-setFeatureSource 0|1|2` on the current image selection — the trio was wrongly believed
-  GUI-only. [SUPERSEDED → VERIFIED: NA167 B11, 2026-07-23]
+  GUI-only. [SUPERSEDED → VERIFIED: bug B11, 2026-07-23]
 - **`-selectImage` matches literal full paths only in this build**, so composing the
   selection these keys act on is a per-image union loop (~0.1–0.3 s per image).
   [CONTRADICTED: the Help documents `selectImage <imagePath|regexp> [set|union|sub|intersect|toggle]`
@@ -1409,7 +1369,7 @@ per-key read-back command. An instance therefore carries whatever the last sessi
 or CLI, yours or someone else's — left in it. Defaults are also undocumented for a large
 part of the namespace and have changed across builds. Consequently: **every run pins every
 key it depends on, and never relies on a default.**
-[VERIFIED: docs/validation/merge_test_plan.md §3 contamination controls, 2026-07-23; repo policy
+[VERIFIED: project test records, 2026-07 contamination controls, 2026-07-23; repo policy
 "never align on instance defaults", `AlignZone.bat` header]
 
 ### 10.1 At instance boot
@@ -1444,7 +1404,7 @@ set "RS_CACHE_ARGS=-set "appCacheLocation=Custom" -set "appCacheCustomLocation=%
 | `appAutoClearCache` | *deliberately NOT set* | Retention is operator policy, not a per-run decision |
 | `appLog` | *deliberately NOT set* (stays `true`) | `RealityScan.log` is the only place the real reason behind a generic `0x8000FFFF` exists |
 
-[VERIFIED: `startRealityScan.bat` + FINDINGS 2026-07-21 / 2026-07-25 / 2026-07-26]
+[VERIFIED: `startRealityScan.bat` + project testing 2026-07-21 / 2026-07-25 / 2026-07-26]
 
 ### 10.2 Before every `-addFolder`
 
@@ -1453,23 +1413,21 @@ set "RS_CACHE_ARGS=-set "appCacheLocation=Custom" -set "appCacheCustomLocation=%
 call :run -addFolder "%input_dir%"
 ```
 
-Present in `AlignZone.bat` (line 72), `AlignImagesFromFolder.bat` (line 133) and the
-legacy [archive/legacy_scripts/AlignZonesSequentially.bat](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/legacy_scripts/AlignZonesSequentially.bat) (line 108). Rationale in §13.1.
+Present in `AlignZone.bat`. Rationale in §13.1.
 
 ### 10.3 Before every `-align`
 
 Replayed row-by-row from `RS_CLI/Metadata/AlignmentParams.xml` (filter `sfm`/`lis`) by
-`AlignZone.bat`, `AlignImagesFromFolder.bat`, `GrowZone.bat`, `ProbeLockAlign.bat`,
-`ProbeSubsetAlign.bat`, `ProbeSubsetAlign2.bat`.
+`AlignZone.bat` and `GrowZone.bat`.
 
 | Key | Value | Rationale |
 |---|---|---|
 | `sfmEnableCameraPrior` | `true` | The GUI's "use camera priors for georeferencing"; required for georeferenced components |
-| `sfmCameraPriorWeight` | `10.0` | Proven on this data class (NA167 zone_13, 93.4%); documented fallback `1.0` if a zone under-registers — never exercised |
+| `sfmCameraPriorWeight` | `10.0` | Proven on this data class (dataset C zone_13, 93.4%); documented fallback `1.0` if a zone under-registers — never exercised |
 | `sfmCameraPriorWeightOrientation` | `10.0` | Same |
 | `sfmCameraPriorAccuracyYaw` / `Pitch` / `Roll` | `10.0` each | Defaults retained explicitly |
 | `sfmControPointImageMeasAccuracy` | `4.0` | Loosened from the `2.0` default |
-| `sfmDistortionModel` | `Division` | NA167 fisheye-through-dome legacy; the documented target for a rectilinear rig is `Brown3`. §13.5 makes the choice consequential |
+| `sfmDistortionModel` | `Brown3` | Matches the model of the camera registry and the calibration sidecars; earlier datasets with fisheye cameras behind a dome ran `Division` (§4.2). §13.5 makes the choice consequential |
 | `sfmDetectorSensitivity` | `Ultra` | Weak underwater texture; the CLAHE A/B was validated at this setting |
 | `sfmMaxFeaturesPerMpx` | `0x36b0` (14000) | More features ⇒ fewer components on low-texture seabed |
 | `sfmMaxFeaturesPerImage` | `0xc350` (50000) | Same |
@@ -1493,7 +1451,7 @@ Replayed row-by-row from `RS_CLI/Metadata/AlignmentParams.xml` (filter `sfm`/`li
 | `s235l`/`s236l`/`s237l`, `s251l`..`s254l` | `5.0`/`5.0`/`0.5`, `0.05`/`0.05`/`0.1`/`0.001` | **Filtered out by the `sfm`/`lis` prefix test and never applied** — §13.3 |
 
 [VERIFIED-by-inspection: `AlignmentParams.xml`; rationale from
-docs/settings-evaluation-2026-07 §4 unless noted]
+project test records, 2026-07 unless noted]
 
 ### 10.4 The merge ladder
 
@@ -1533,7 +1491,7 @@ requires an `-align` rung, since `-mergeComponents` never adds images) with the 
 to **all image features** (`-setFeatureSource 2` / `aligFeaturesMode=2`), because
 component-features and overlaps give an orphan nothing. Note the structural blocker
 recorded with it: `MergeZoneComponents.bat` has **no `-addFolder` at all**, so the merge
-scene cannot currently contain an orphan. [VERIFIED: FINDINGS 2026-07-27]
+scene cannot currently contain an orphan. [VERIFIED: project testing 2026-07-27]
 
 ### 10.5 The minimum pin list for a new driver
 
@@ -1584,11 +1542,11 @@ existing pipeline **omits** them by accident — see §13.3.
 
 | Key(s) | Status | Evidence |
 |---|---|---|
-| `RealityCapture*` — the entire legacy application-settings key family | **DEAD in 2.x.** An exhaustive scan of `RealityScan.exe` 2.2.0.119430 for `RealityCapture[A-Za-z0-9_]{2,40}` returns exactly three identifiers, all ASCII and none a settings key: `RealityCaptureDmp`, `RealityCaptureDmpMeta`, `RealityCaptureModalDialog` (crash-dump / window-class names). The UTF-16LE string space contains no `RealityCapture`-prefixed identifier at all, only the bare word. Replacements: `appQuitOnError`, `appProcessAction`, `appProcessExecCmd`, `appProcessActionTime` | [VERIFIED: binary scan re-run, both encodings] + [VERIFIED: status log overhaul item 2 — "legacy `RealityCapture*` `-set` keys replaced with the `app*` keys RealityScan 2.x actually uses", 2026-07-21] |
+| `RealityCapture*` — the entire legacy application-settings key family | **DEAD in 2.x.** An exhaustive scan of `RealityScan.exe` 2.2.0.119430 for `RealityCapture[A-Za-z0-9_]{2,40}` returns exactly three identifiers, all ASCII and none a settings key: `RealityCaptureDmp`, `RealityCaptureDmpMeta`, `RealityCaptureModalDialog` (crash-dump / window-class names). The UTF-16LE string space contains no `RealityCapture`-prefixed identifier at all, only the bare word. Replacements: `appQuitOnError`, `appProcessAction`, `appProcessExecCmd`, `appProcessActionTime` | [VERIFIED: binary scan re-run, both encodings] + [VERIFIED: project testing 2026-07-21 — legacy `RealityCapture*` `-set` keys replaced with the `app*` keys RealityScan 2.x actually uses] |
 | `sfmControlPointImageMeasAccuracy` (corrected spelling) | **Does not exist.** The live key keeps Epic's typo: `sfmControPointImageMeasAccuracy` — no `l` in "Control". The typo is load-bearing — spell it wrong | [VERIFIED: binary scan re-run — corrected spelling absent as UTF-16LE (both alignments) and ASCII, typo'd spelling present as UTF-16LE] |
 | `appProcessEmailAddres` | Not deprecated, but note the single `s` — the string in the binary is misspelled | [UNDOCUMENTED: binary] |
-| `-setMinComponentSize <n>` | Not a settings key, but the adjacent identifier most likely to bite: **deprecated in 2.2** ("will be removed in the next release") and yet still **required** — without it, components below the default threshold 5 are silently excluded from selection AND from XMP export | [VERIFIED: deprecation warning read from a per-cell `RealityScan.log` snapshot, NA167 #22 / B11, 2026-07-24] |
-| `-selectAllComponents` | **Does not exist in 2.2**; fails as unknown/invalid `0x82000060`. It had lived unnoticed in `AlignZonesSequentially.bat`. Only `selectComponent`, `selectMaximalComponent` and `selectComponentWithLeastReprojectionError` exist | [VERIFIED: NA167 #13 / B2, 2026-07-23] |
+| `-setMinComponentSize <n>` | Not a settings key, but the adjacent identifier most likely to bite: **deprecated in 2.2** ("will be removed in the next release") and yet still **required** — without it, components below the default threshold 5 are silently excluded from selection AND from XMP export | [VERIFIED: deprecation warning read from a per-cell `RealityScan.log` snapshot, bug B11, 2026-07-24] |
+| `-selectAllComponents` | **Does not exist in 2.2**; fails as unknown/invalid `0x82000060`. It had lived unnoticed in a legacy workflow script. Only `selectComponent`, `selectMaximalComponent` and `selectComponentWithLeastReprojectionError` exist | [VERIFIED: bug B2, 2026-07-23] |
 | `-stdConsole` | Live in the product, **removed from this repo**: it allocates a console window per instance boot and nothing reads instance stdout (progress comes from `-writeProgress`, results from the ErrorWriter hook) | [VERIFIED: `startRealityScan.bat` comment, 2026-07-23] |
 | `unwrapButtonDisabled` | Not a setting — exported UI state. Harmless, carries no effect | [INFERRED from the name; present in repo XML and the binary] |
 
@@ -1623,26 +1581,19 @@ same test. [VERIFIED: exhaustive binary scan]
 The last row is the sharpest: a key in a file Epic ships does not exist in the executable
 Epic ships. Do not treat presence in a vendor preset as proof a key is live.
 
-**And do not treat presence in the app's own persisted config as proof either.** `ifKmode`
-— absent from the executable by the test above — **is** present in this machine's
-`appConfig` registry blob (§1.6). The settings layer stores key names the engine never
-resolves, so a key can survive a full write/read round trip while doing nothing. This is the
-mechanism that makes a dead key indistinguishable from a live one through every read-back
-path currently known. [VERIFIED: registry read + binary scan]
-
 ### 12.2 Keys that exist but were measured as having no effect headless
 
 | Key | Claim | What was observed |
 |---|---|---|
-| `sfmMergeGeoreferencedComponents=true` | [OFFICIAL: appbasics/alignsettings] "When multiple components are created and each is georeferenced, enabling this setting allows them to be merged even without visual overlap" | **The documented "without visual overlap" behaviour has never been observed headless.** Cell D1 (`-mergeComponents`, flag on, zone_6+zone_4, no shared content) → no fuse; the result count `1,533` was zone_6 alone. Cell D2 (`-align`, georef `true` + rematch `true`, same pair) → no fuse, `1,533`. Cell D3 (shared-path pair, both flags pinned `false`) → no fuse, `1,534`. In each case the workflow exits SUCCESS and the components stay separate, silently. See the correction immediately below for what this does **not** mean. [CONTRADICTED: NA167 wave-2 cells D1/D2/D3, 2026-07-24, docs/validation/merge_test_plan.md §4 "Wave 2"] |
+| `sfmMergeGeoreferencedComponents=true` | [OFFICIAL: appbasics/alignsettings] "When multiple components are created and each is georeferenced, enabling this setting allows them to be merged even without visual overlap" | **The documented "without visual overlap" behaviour has never been observed headless.** Cell D1 (`-mergeComponents`, flag on, zone_6+zone_4, no shared content) → no fuse; the result count `1,533` was zone_6 alone. Cell D2 (`-align`, georef `true` + rematch `true`, same pair) → no fuse, `1,533`. Cell D3 (shared-path pair, both flags pinned `false`) → no fuse, `1,534`. In each case the workflow exits SUCCESS and the components stay separate, silently. See the correction immediately below for what this does **not** mean. [CONTRADICTED: test wave-2 cells D1/D2/D3, 2026-07-24, project test records, 2026-07 "Wave 2"] |
 | `sfmBackgroundDetectThreadPriority` | — | Inert **by composition** whenever `sfmBackgroundDetectFeatures=false`, which is the production setting [INFERRED] |
 | `sfmEnableAutoSuggestions` | measurement suggestions in the 3Ds view | GUI-only effect; no headless consequence [INFERRED from the Help's description] |
-| `sfmMergeGeoreferencedComponents` without `sfmEnableCameraPrior` | — | Inert by composition: (a) `sfmEnableCameraPrior` is per-camera during alignment and is what makes components georeferenced; (b) `sfmMergeGeoreferencedComponents` is per-component and post-solve. (b) without (a) has nothing to act on [INFERRED from Help prose + design reasoning, docs/settings-evaluation-2026-07 §5; **not isolated by a cell**] |
+| `sfmMergeGeoreferencedComponents` without `sfmEnableCameraPrior` | — | Inert by composition: (a) `sfmEnableCameraPrior` is per-camera during alignment and is what makes components georeferenced; (b) `sfmMergeGeoreferencedComponents` is per-component and post-solve. (b) without (a) has nothing to act on [INFERRED from Help prose + design reasoning, project test records, 2026-07; **not isolated by a cell**] |
 
 **CORRECTION — fusion is CONTENT-driven, not identity-driven.** An earlier version of this
 document (and of the surveys behind it) concluded from D1–D3 that "`-mergeComponents` fuses
 only through cameras shared by identity (the same image path in more than one component)".
-**That conclusion is refuted.** The D7 probe wave (2026-07-24, [archive/campaign_drivers/probe_d7.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/probe_d7.py), smoke
+**That conclusion is refuted.** The D7 probe wave (2026-07-24, smoke
 fixture) fused `zone_c` (78 cams) + `zone_d_c0` (42 cams) — **zero shared basenames, zero
 shared paths** — into one 120-camera component ("Finalizing 1 component", 70 s), both with
 no flight log in the merge scene (`D7b`) and with union log + `-update` (`D7a`); `-align` +
@@ -1657,7 +1608,7 @@ zero path overlap. One rule explains every observation to date:
 Corollaries recorded with it: the union flight log is still **required** to georeference the
 merged result but plays no part in fusion; bbox border gating is the correct candidate
 filter, since content overlap requires spatial adjacency.
-[VERIFIED: FINDINGS 2026-07-24 "D7 RESOLVED"; docs/validation/merge_test_plan.md "D7 probe wave"]
+[VERIFIED: project testing 2026-07-24, D7 probe wave]
 [SUPERSEDED: the identity-only reading]
 
 **Do not close the `sfmMergeGeoreferencedComponents` question yet.** A superseded-risk flag
@@ -1666,11 +1617,11 @@ is recorded against D1/D2: those cells fed the flag components georeferenced fro
 ("each is georeferenced") was arguably never met — RealityScan may distinguish
 prior-weighted georeferencing from ground-control-locked georeferencing. A re-test with
 priors-v2 components is queued and has never been run.
-[SUPERSEDED-RISK: FINDINGS 2026-07-25 RECON] [OPEN]
+[SUPERSEDED-RISK: project testing 2026-07-25] [OPEN]
 
 **Aggravating observation on the same key — the flag's failure mode is not "no fuse", it is
 "fake fuse".** Three accepted `merge_georef` attempts (`-mergeComponents` +
-`sfmMergeGeoreferencedComponents`) on H2024 `cluster_1` scored as exact-sum fusions with
+`sfmMergeGeoreferencedComponents`) on dataset B `cluster_1` scored as exact-sum fusions with
 **zero camera loss** while RealityScan's own log reported "Finalizing 3", then "7", then "8"
 components — the resulting 3,615-camera container held eight disjoint objects. Of
 cluster_1's 28 component pairs, exactly one shared any imagery (343 shared basenames); the
@@ -1686,7 +1637,7 @@ solving.
 Consequent gate rework (uniqueness criterion): components belong in one merge scene
 only when they share imagery or their bboxes truly overlap — `pair_gate=overlap` is now the
 default, `border` retains the old 10 m-margin adjacency for comparison.
-[VERIFIED: FINDINGS 2026-07-28] [OPEN: the exact semantics of `Finalizing N` are not
+[VERIFIED: project testing 2026-07-28] [OPEN: the exact semantics of `Finalizing N` are not
 established — recorded per attempt as `rs_finalizing`, probe queued]
 
 ---
@@ -1705,14 +1656,14 @@ observed, and how.
   per-camera / `preprocessed_images` subfolders added **0 layer images**, every subsequent
   flight-log row failed `err:18002`, and the run "succeeded" in 25 s. The cause was visible
   only in the `RealityScan.log` snapshot (`Added 0 layer images`).
-- **Internal contradiction, resolved:** an earlier NA167 zone_13 run *did* import camera
-  subfolders (34 wca + 904 zeuss into one scene, 93.4% registered) and
-  `NA167 notes` records "subfolders were included WITHOUT setting the key", while
-  `FINDINGS` records the opposite for H2023. Reconciliation adopted: **the flag, not the
-  build, was the variable** — the NA167 run had `appIncSubdirs` set by the fixed workflow.
-  `docs/validation/merge_test_plan.md` line 26 preserves the superseded observation.
+- **Internal contradiction, resolved:** an earlier dataset C zone_13 run *did* import camera
+  subfolders (34 + 904 images of two cameras into one scene, 93.4% registered) and was
+  recorded as "subfolders were included WITHOUT setting the key", while the dataset A
+  observation above shows the opposite. Reconciliation adopted: **the flag, not the build,
+  was the variable** — the dataset C run had `appIncSubdirs` set by the fixed workflow. The
+  superseded observation is kept in the project test records.
 - **Resolution:** `-set "appIncSubdirs=true"` before **every** `-addFolder`, no exceptions.
-  [VERIFIED: FINDINGS 2026-07-23]
+  [VERIFIED: project testing 2026-07-23]
 
 ### 13.2 `sfmFeatureDetectionQuality` — the documented values are not the values the app writes
 
@@ -1722,7 +1673,7 @@ observed, and how.
   Neither `High` nor `Normal` ever appears as the exported value.
   [UNDOCUMENTED: `RS_CLI/Metadata/AlignmentParams.xml` line 3, verbatim]
 - **How many detector ids exist — corrected.** An earlier version of this document said
-  "exactly two". That was an artefact of scanning only the UTF-16LE string pool. The 2.2
+  "exactly two". That was an artefact of scanning only the UTF-16LE strings. The 2.2
   binary actually contains **eight** `RealityScan.FeatureDetector.*` identifiers:
 
   | Id | UTF-16LE | ASCII |
@@ -1736,7 +1687,7 @@ observed, and how.
   | `RealityScan.FeatureDetector.TBv3CSSs2` | no | yes |
   | `RealityScan.FeatureDetector.TBv3NoCSS` | no | yes |
 
-  Only `RSa1` and `TB` are present in the UTF-16LE pool that the settings layer uses, which
+  Only `RSa1` and `TB` are present as UTF-16LE strings, the encoding the settings layer uses, which
   is consistent with those two being the pair the `High`/`Normal` dropdown selects between
   and the other six being internal algorithm registrations. [VERIFIED: regex
   `RealityScan\.FeatureDetector\.[A-Za-z0-9_]+` over the whole binary in both encodings] [INFERRED: the "settings-layer pair" reading]
@@ -1806,19 +1757,20 @@ Full treatment in §12.2. Summary in three lines:
 - **Docs:** describe the global setting and, separately, per-image lens-distortion priors
   including a per-image **Model**.
   [OFFICIAL: appbasics/settings_distortion_models, appbasics/camerasettings_priors]
-- **Observed:** cinema-camera XMP sidecars declared `brown3`, yet **all 2,558 cinema pose
-  XMPs came back `xcr:DistortionModel="division"`** — identical to the 2,492 port records.
+- **Observed:** on the earlier four-camera rig, the rectilinear camera's XMP sidecars
+  declared `brown3`, yet **all 2,558 of its pose XMPs came back
+  `xcr:DistortionModel="division"`** — identical to the 2,492 records of a fisheye camera.
   Aggregated from 5,050 PD-6 harvest records.
 - **Consequence:** a mixed-optics rig gets **one** distortion model; only the coefficients
-  differ per calibration group. The "per-camera model via XMP" plan in
-  `docs/settings-evaluation-2026-07 §3` is not achievable — choose one global model and
-  supply measured coefficients per group.
+  differ per calibration group. A "per-camera model via XMP" plan is not achievable —
+  choose one global model and supply measured coefficients per group.
 - The grouping itself demonstrably works: given the **same** 16.0 mm prior, the solve
-  separated the two cameras by 5.6% with IQRs of ±0.5% (cinema focal 35 mm-eq 16.374,
-  division k1 −0.0378; port focal 15.499, division k1 −0.3875 — an order-of-magnitude k1
+  separated the two cameras by 5.6% with IQRs of ±0.5% (rectilinear focal 35 mm-eq 16.374,
+  division k1 −0.0378; fisheye focal 15.499, division k1 −0.3875 — an order-of-magnitude k1
   gap, the fisheye declaring itself).
-- [CONTRADICTED: settings-evaluation §3 asserted "per-image XMP overrides the global key" /
-  observed: the global key owns the model, 2026-07-26] [VERIFIED: FINDINGS 2026-07-26; PD-2]
+- [CONTRADICTED: an earlier project settings evaluation asserted "per-image XMP overrides
+  the global key" / observed: the global key owns the model, 2026-07-26]
+  [VERIFIED: project testing 2026-07-26; PD-2]
 
 ### 13.6 `unwrapMinTexelSize` / `unwrapMaxTexelSize` are each listed twice with different types
 
@@ -1889,7 +1841,7 @@ Position and orientation / **Locked**, and uses **Exact** only for
 `inpPosePriorRelative=2`. But an `-align` on a scene whose cameras carry `inpPose=3`
 refuses with: "prior set to **'Exact'** mode must be all aligned in a single run.
 Incremental adding is not supported." The two vocabularies collide on the same state.
-[CONTRADICTED: Help label vs runtime message] [VERIFIED: FINDINGS 2026-07-23, U18 FAIL]
+[CONTRADICTED: Help label vs runtime message] [VERIFIED: project testing 2026-07-23, U18 FAIL]
 
 ### 13.13 `-set` has two different one-line descriptions in the Help
 
@@ -2138,40 +2090,32 @@ xmpMerge
 xmpRig
 ```
 
-### Tier 3 — additional key-shaped identifiers in `RealityScan.exe` 2.2.0.119430 — 476
+### Tier 3 — additional key-shaped identifiers in `RealityScan.exe` 2.2.0.119430 — 468
 
 Not in Tier 1 or Tier 2. [UNDOCUMENTED] throughout: presence proves the string exists in
-the build, nothing more. Report variables and identifiable UI ids were excluded where
-recognisable, but some almost certainly remain.
+the build, nothing more. Report variables, identifiable UI ids and account/licence-management
+strings were excluded where recognisable, but some almost certainly remain.
 
 **Amendment (verification pass):** ten `ifu*` flight-log prior-accuracy keys —
 `ifuPosX`/`Y`/`Z`, `ifuPosXl`/`Yl`/`Zl`, `ifuRotY`/`P`/`R`, `ifuRotEnable` — were missing
-from the original 466 and are added below. All ten were confirmed present in the executable
-(UTF-16LE, both byte alignments) **and** in this machine's `appConfig` registry blob. See
-§8.5. The tier is therefore **not** proven exhaustive; treat it as a floor.
+from the original extraction and are added below. All ten were confirmed present in the
+executable (UTF-16LE, both byte alignments). See §8.5. The tier is therefore **not** proven
+exhaustive; treat it as a floor.
 
 ```
-appActivTokenCLI
-appActivTokenCLIValid
 appAutomaticUpdate
-appAutoRenew
 appAutoUpdate
 appEnableBadCps
 appExportSettings
 appImportSettings
 appInfMouse
 appLanguage
-appLic
-appLicDel
-appLicDelMachine
-appLicenseAutoRenew
 appName
 appNavigationStyle
 appOutputErrorStack
 appProcessEmailAddres
 appProcessEmailTempl
 appProcessSoundTheme
-appRenewT
 appRootDir
 appStartDir
 appTheme
@@ -2631,7 +2575,7 @@ unwrapUseLegacyUnwrapAlgorithm
 
 A small number of binary strings named in prose above are deliberately **excluded** from
 Tier 3 as recognisable UI-element ids rather than settings: `appBtnGPUs`, `gpuId`, `gpuUn`,
-`appConfig`, `appSharedConfig`, and the snake_case report variables (`align_*`,
+and the snake_case report variables (`align_*`,
 `unwrap_fill_with_charts`, `unwrap_grid_size_cells`, `gpu_count`, `gpu_names`).
 
 ### Tier 4 — selection-edit key spaces (different commands) — 68
@@ -2717,15 +2661,14 @@ orthoProjectionName
 |---|---|---|
 | 1 | Settings keys documented as usable with `-set` in the RealityScan 2.2 Help | **100** |
 | 2 | Additional keys with a concrete `<Configuration>` XML source (Epic-shipped presets or GUI-exported params files) | **106** |
-| 3 | Additional key-shaped identifiers in `RealityScan.exe` 2.2.0.119430 | **476** (466 + the 10-key `ifu*` amendment) |
-| — | **Settings-namespace subtotal (Tiers 1–3, case-sensitive unique)** | **682** |
+| 3 | Additional key-shaped identifiers in `RealityScan.exe` 2.2.0.119430 | **468** (including the 10-key `ifu*` amendment) |
+| — | **Settings-namespace subtotal (Tiers 1–3, case-sensitive unique)** | **674** |
 | 4 | Selection-edit keys (a different command family) | **68** |
-| — | **Grand total, all key spaces (case-sensitive unique)** | **750** |
+| — | **Grand total, all key spaces (case-sensitive unique)** | **742** |
 
 Tiers 1 and 2 are exhaustive over their sources and were re-counted against them in this
 verification pass. **Tier 3 is a floor, not a census** — the `ifu*` amendment proves the
-extraction missed at least one whole family, and a second evidence layer (the `appConfig`
-registry blob, §1.6) contains tokens that appear in no tier at all, e.g. `appBtn1`.
+extraction missed at least one whole family.
 
 Of the 100 documented keys, **31 are set in production by this repo**: 8 `app*`
 (`appAutoSaveMode`, `appQuitOnError`, `appProcessActionTime`, `appProcessAction`,
@@ -2745,14 +2688,14 @@ by value.
 
 | # | Question | Cheapest probe |
 |---|---|---|
-| 1 | **Is there any oracle for "the engine READ this key"?** Two storage read-backs now exist — `-exportGlobalSettings` and the `appConfig` registry blob (§1.6) — but neither answers the question, because the config layer demonstrably persists key names the executable does not contain (`ifKmode`). `err:7155` fires only on a malformed pair | Storage question (cheap, minutes): `-exportGlobalSettings a.rcconfig` → `-set "<key>=<value>"` → `-exportGlobalSettings b.rcconfig` → diff; or just re-read `appConfig` before/after. **Consumption question (the one that matters): per-key behavioural A/B on the miniature fixture.** Downgraded from the previous claim that the diff probe would settle dozens of rows — it settles only that they parse |
+| 1 | **Is there any oracle for "the engine READ this key"?** `-exportGlobalSettings` is a storage read-back, and storage does not prove consumption (§1.8). `err:7155` fires only on a malformed pair | Storage question (cheap, minutes): `-exportGlobalSettings a.rcconfig` → `-set "<key>=<value>"` → `-exportGlobalSettings b.rcconfig` → diff. **Consumption question (the one that matters): per-key behavioural A/B on the miniature fixture.** Downgraded from the previous claim that the diff probe would settle dozens of rows — it settles only that they parse |
 | 2 | Is the exported global-settings extension `.rcconfig` or `.rsconfig`? Two topics say `.rcconfig` (`appbasics/allcommands`, `appbasics/appsettings`), one says `.rsconfig` (`tutorials/commandline_4`) | Run the export with no extension and read the produced filename. Seconds |
-| 2a | Does the exported `.rcconfig` contain readable key names, i.e. is it the same serialisation as `appConfig`? If so it is directly diffable and no parser is needed | Export once and open the file |
+| 2a | Does the exported `.rcconfig` contain readable key names? If so it is directly diffable and no parser is needed | Export once and open the file |
 | 3 | Which keys actually require `-preset` rather than `-set`, and does `-preset` behave differently at all? | Run `-preset "appCacheLocation=Custom"` at startup and compare against the documented `appQuitOnReset` + `-set` dance: does the app quit? |
 | 4 | Which settings beyond `appCacheLocation` / `appCacheCustomLocation` are restart-class? | Set candidates with `appQuitOnReset=true` and see which invocations quit |
 | 5 | **`sfmMergeGeoreferencedComponents` — was the feature's premise ever met?** D1/D2 fed it components georeferenced from position-only priors at 10 m claimed accuracy; RS may distinguish prior-weighted from control-locked georeferencing | Re-run the D1/D2 pair with priors-v2 (orientation + tight accuracies) components. Queued as a PD follow-on cell, never run |
 | 6 | What exactly does RealityScan's `Finalizing N` log line count? (It disagreed with a "successful, zero-loss" merge — 8 disjoint objects) | Construct a scene with a known component count, merge, read the line |
-| 7 | Which detector id corresponds to Help's `High` and which to `Normal`? Only `RealityScan.FeatureDetector.RSa1` and `…TB` are in the UTF-16LE settings pool, but **eight** detector ids exist in the binary (§13.2) — so "there are only two to choose from" is itself unproven | Toggle the GUI dropdown, re-export the Alignment panel, read the value; then try `-set "sfmFeatureDetectionQuality=High"` and re-export to see whether the name form is accepted at all |
+| 7 | Which detector id corresponds to Help's `High` and which to `Normal`? Only `RealityScan.FeatureDetector.RSa1` and `…TB` are present as UTF-16LE strings, but **eight** detector ids exist in the binary (§13.2) — so "there are only two to choose from" is itself unproven | Toggle the GUI dropdown, re-export the Alignment panel, read the value; then try `-set "sfmFeatureDetectionQuality=High"` and re-export to see whether the name form is accepted at all |
 | 8 | Do the `s<NNN>l` ids really occupy the camera-prior / control-point accuracy slots? | `-set "sfmCameraPriorAccuracyZ=99"`, re-export the panel, see which entry became `99` |
 | 9 | Does applying the *intended* accuracies (5.0 / 5.0 / 0.5 m) change registration, now that §13.3 shows they never shipped? | Add the three `-set "sfmCameraPriorAccuracy{X,Y,Z}=…"` lines and re-run one zone (~70 min) against the recorded baseline |
 | 10 | Is `sfmCameraPriorWeight=10.0` right? Never A/B'd | Two runs of the miniature fixture at `1.0` and `10.0`, judged on registered-camera census |
@@ -2772,7 +2715,7 @@ by value.
 | 24 | Is there a key for the LiDAR *Filtering based on classification* control? | Same GUI-diff probe |
 | 25 | Does `mvsPptInspectTopology` expose Check Topology, which has no CLI command? | Probe #1 on the key, then run a model op and look for a topology report |
 | 26 | Does `appCopyImportedComponentsToCache=true` interact with the relocated-component hang (hard rule 7)? | Set it, import a component from its original location, then from a copy; watch for `#timeout` |
-| 27 | Can headless RS 2.2 hit a licence prompt or expiry that manifests as a silent hang? `appActivTokenCLI` / `appActivTokenCLIValid` exist; two years of production recorded no licensing interaction — absence of evidence only | No probe designed. Watch for a boot that never reaches `-getStatus` ready |
+| 27 | Can headless RS 2.2 hit a sign-in prompt that manifests as a silent hang? The Help names the log-in window as unsuppressable (`01-cli-fundamentals.md` §12); this project's runs recorded no sign-in interaction — absence of evidence only | No probe designed. Watch for a boot that never reaches `-getStatus` ready |
 | 28 | Would `appOutputErrorStack=true` de-genericise `0x8000FFFF`? | Set it, trigger a known failure (a deliberately malformed `-set`), read `RealityScan.log` |
 | 29 | Do two concurrent instances share settings state, and does one instance's `-quit` clobber the other's `-set` values on write-back? | Boot RS1 and RS2, `-set "sfmDetectorSensitivity=Low"` on RS1 only, `-exportGlobalSettings` from each, diff |
 | 30 | Does a `-set` value survive `-newScene`? (Assumed yes from global storage, never isolated) | `-set`, `-newScene`, probe #1 |
@@ -2782,5 +2725,5 @@ by value.
 | 34 | `-selectImage` regexp dialect: the Help documents regexp + set operators; only literal full paths select anything here. This gates how selections for `-editInputSelection` are composed | Forum-mine for a staff reply (standing follow-up since 2026-07-23); or bisect the dialect further |
 | 35 | What does `mvsFltSimplificationType=3` mean? Epic's shipped `simplify.xml` uses it and carries **both** `…TargetTrisCountAbs` and `…TargetTrisCountRel`; this repo only ever uses `0`↔Abs and `1`↔Rel | Run `-simplify` with Epic's shipped preset on the miniature model and count output triangles against 1,000,000 and against 10% |
 | 36 | Do the `ifu*` import-accuracy keys (`ifuPosX/Y/Z`, `ifuRotY/P/R`, `ifuRotEnable`) actually carry the Import Trajectory accuracy block, and do they override or compose with the global `sfmCameraPriorAccuracy*` keys? Both families are currently unset in production (§8.5, §13.3) | Set the Import Trajectory accuracy fields in the GUI, save the params, and diff against the current `FlightLogParams.xml` — one minute, needs the GUI |
-| 37 | How did `ifKmode` get into `appConfig` when the string is not in the executable — params-XML import, GUI dialog, or a runtime-composed name? Determines whether the storage layer accepts *arbitrary* keys | Re-read `appConfig`, `-set "zzTestKeyNotReal=1"` on a live instance, re-read. If it appears, the storage layer accepts anything and no read-back is ever evidence of consumption |
+| 37 | Does the settings storage accept *arbitrary* key names, so that no read-back is ever evidence of consumption? | `-exportGlobalSettings`, `-set "zzTestKeyNotReal=1"` on a live instance, export again, diff |
 | 38 | **Does ordinal `N` really mean the `N`-th row of a string enum?** Proven only for `appProcessAction`. Epic's `unwrapStyle=1` example is weak counter-evidence (it co-occurs with `unwrapMaximalTexCount=1`, a key relevant only to `MaxTexturesCount`) | `-set "unwrapStyle=1"`, export the Unwrap panel from the GUI, read whether it says `FixedTexelSize` or `MaxTexturesCount`. Until then use the **name** form |

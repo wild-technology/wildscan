@@ -56,33 +56,33 @@ rather than all input data" — and correct a faulty scene by exporting the bad 
 a spare scene, reimporting, and re-aligning, at which point "RealityScan engine will apply fixes
 from the corrected component" [OFFICIAL: appbasics/components]. That round trip is the sanctioned
 rollback pattern and this repo adopts it as such [OFFICIAL: appbasics/components] +
-[VERIFIED-as-adopted-policy: FINDINGS 2026-07-23, cells U15/U16 — see §3.5].
+[VERIFIED-as-adopted-policy: project testing 2026-07-23, cells U15/U16 — see §3.5].
 
 **Governing production intent recorded here:** a multi-component terminal state is a *correct*
-outcome, not a failure. An underwater dive can contain two discrete physical features (e.g. bow +
+outcome, not a failure. An underwater survey run can contain two discrete physical features (e.g. bow +
 main hull) that share zero imagery; no mechanism can or should fuse them. "As big as it can get"
 is judged **per feature**, and no deletion/export/success logic may be size-based — only
-containment-based deletion is legal [VERIFIED-as-decision: FINDINGS 2026-07-24].
+containment-based deletion is legal [VERIFIED-as-decision: project testing 2026-07-24].
 
 ### 1.2 Component naming, and why names are not identity
 
 | Fact | Tag |
 |---|---|
-| New components created by an alignment are named `Component N`. `N` is **unstable** across runs — values 5, 9, 0, 3, 4 were observed across two zones. | [VERIFIED: FINDINGS 2026-07-24] |
-| `-importComponent X.rsalign` names the in-scene component `X` — the **file stem**. Two attempt directories that export the same stem therefore put two identically-named components into one assembly. | [VERIFIED: FINDINGS 2026-07-28] |
-| `-selectComponent <name>` **does** resolve names in an assembled project whose components were renamed before export. It silently no-ops in zone scenes that were saved *before* the rename. | [VERIFIED: FINDINGS 2026-07-26] |
+| New components created by an alignment are named `Component N`. `N` is **unstable** across runs — values 5, 9, 0, 3, 4 were observed across two zones. | [VERIFIED: project testing 2026-07-24] |
+| `-importComponent X.rsalign` names the in-scene component `X` — the **file stem**. Two attempt directories that export the same stem therefore put two identically-named components into one assembly. | [VERIFIED: project testing 2026-07-28] |
+| `-selectComponent <name>` **does** resolve names in an assembled project whose components were renamed before export. It silently no-ops in zone scenes that were saved *before* the rename. | [VERIFIED: project testing 2026-07-26] |
 | Whether `-align` UPDATES an existing component in place (keeping its name) when it only grows is **not established**. | [OPEN: hardening cell U6, never run] |
 
 **Consequence for automation:** rename deterministically *before* every export
 (`<zone>_c<K>`, `<tag>_a<attempt>_c<K>`), and correlate a manifest to a scene component by
-**image set**, never by name [VERIFIED-as-design: docs/MERGE_REWORK_RECOMMENDATIONS Q6].
+**image set**, never by name [VERIFIED-as-design: project test records, 2026-07 Q6].
 
 ### 1.3 Alignment fragmentation is nondeterministic
 
 zone_1 (4,540 images, identical settings, identical sidecars, identical inputs) aligned to
 **2 components / 4,391 cameras** in one run and **9 components / 4,392** in another. Total
 registration is stable; component *structure* is not. **Component structure cannot be relied on
-across runs — only manifest-tracked image sets can** [VERIFIED: FINDINGS 2026-07-24].
+across runs — only manifest-tracked image sets can** [VERIFIED: project testing 2026-07-24].
 
 ### 1.4 Small components
 
@@ -107,10 +107,10 @@ verification protocol in §6.
 
 | Question | Answerable from the CLI? | Tag |
 |---|---|---|
-| How many components are in the scene? | **No.** There is no component-count query. The peel loop infers exhaustion from a tolerated `-renameSelectedComponent` failure on an emptied scene. | [UNDOCUMENTED / VERIFIED: FINDINGS 2026-07-24] |
-| Which images are in component X? | **No.** `.rsalign` is opaque binary; membership must be reconstructed from XMP sidecar harvests. The **GUI** answers it directly — expand the component node in the 1Ds view and read the *Camera poses* tree node — so this is a CLI-only blindness, not a product limitation. | [VERIFIED: NA167 notes §1] + [OFFICIAL: tutorials/mergecomponents] |
+| How many components are in the scene? | **No.** There is no component-count query. The peel loop infers exhaustion from a tolerated `-renameSelectedComponent` failure on an emptied scene. | [UNDOCUMENTED / VERIFIED: project testing 2026-07-24] |
+| Which images are in component X? | **No.** `.rsalign` is opaque binary; membership must be reconstructed from XMP sidecar harvests. The **GUI** answers it directly — expand the component node in the 1Ds view and read the *Camera poses* tree node — so this is a CLI-only blindness, not a product limitation. | [VERIFIED: earlier multi-camera dataset, 2026-07] + [OFFICIAL: tutorials/mergecomponents] |
 | What is component X's mean reprojection error? | Only indirectly, via `-selectComponentWithLeastReprojectionError` (which selects, it does not report). `-exportReport` may emit it but has never been driven headless here. | [INFERRED: from the command's presence in `appbasics/allcommands`] + [OPEN: hardening cells U7/U14] |
-| Did the last `-mergeComponents` fuse anything? | **No.** Exit status is SUCCESS either way. | [VERIFIED: NA167 #23–26] |
+| Did the last `-mergeComponents` fuse anything? | **No.** Exit status is SUCCESS either way. | [VERIFIED: earlier multi-camera dataset, 2026-07] |
 | Is a component georeferenced / correctly scaled? | **No CLI query.** Verified in the GUI, or externally by fitting exported poses against nav. | [OPEN: hardening cell U7] |
 
 ---
@@ -128,29 +128,28 @@ reports for the running operation, and come from the Help's table, not from meas
 
 | Command | Params | Official description | Verified delta |
 |---|---|---|---|
-| `-selectMaximalComponent` | — | Select the largest component for further processing. | **Silently no-ops on an empty scene** (no errors marker). The reliable selection primitive. [VERIFIED: FINDINGS 2026-07-23] |
-| `-selectComponent` | `componentName` | Select a component with the specified name (`componentName`) for further processing. | Resolves manifest names in an *assembled* project (components renamed before export); silently no-ops on names a scene does not carry. [VERIFIED: FINDINGS 2026-07-26] Process ID `21857 CLI_SELECT_COMPONENT` [OFFICIAL: tutorials/processids]. |
-| `-selectComponentWithLeastReprojectionError` | — | Select the component with the smallest Mean error [pixels]. | Exists in this build. Not used by this repo (component choice is by camera count). [VERIFIED: NA167 B11] |
-| `-renameSelectedComponent` | `newComponentName` | Rename the currently selected component. | On an **emptied** scene it fails `E_INVALIDARG 0x80070057` (decimal `2147942487`) "in 0 seconds" — that failure **is** the peel-loop exhaustion signal. An earlier observation recorded it silently no-opping instead; both terminals are handled — see §2.3. [VERIFIED: FINDINGS 2026-07-24] Process ID `21859 CLI_RENAME_SELECTED_COMPONENT` [OFFICIAL: tutorials/processids]. |
-| `-deleteSelectedComponent` | — | Delete the currently selected component. | Exists; silently no-ops on an empty scene. [VERIFIED: FINDINGS 2026-07-23] Process ID `21863 CLI_DELETE_SELECTED_COMPONENT` [OFFICIAL: tutorials/processids]. |
-| `-deleteComponent` | `index` | Delete a component by index. Indices start at **0**. | Exists in this build. Never used here — indices are unstable, names and maximal-selection are preferred. [VERIFIED: FINDINGS 2026-07-23] |
-| `-deleteAllComponents` | — | Delete all components. | Exists in this build. [VERIFIED: FINDINGS 2026-07-23] |
-| `-setMinComponentSize` | `size` | Minimal component size for export via `exportLatestComponents` and `exportXMP`. Default **5**. | **DEPRECATED** — the app logs "will be removed in the next release" — but still **required**: without it, components under the default 5 are silently excluded from selection AND from XMP export. Set to `1` before any census export. [VERIFIED: NA167 B11, FINDINGS 2026-07-24] |
-| `-exportSelectedComponentDir` | `folderName` | Export the selected component into a folder as a `.rsalign`. | **The file is named after the COMPONENT, not the scene.** Rename first, or snapshot the directory before/after. `-renameSelectedComponent X` → `X.rsalign`. [VERIFIED: NA167 notes §1; cells U15/U16 2026-07-23] |
+| `-selectMaximalComponent` | — | Select the largest component for further processing. | **Silently no-ops on an empty scene** (no errors marker). The reliable selection primitive. [VERIFIED: project testing 2026-07-23] |
+| `-selectComponent` | `componentName` | Select a component with the specified name (`componentName`) for further processing. | Resolves manifest names in an *assembled* project (components renamed before export); silently no-ops on names a scene does not carry. [VERIFIED: project testing 2026-07-26] Process ID `21857 CLI_SELECT_COMPONENT` [OFFICIAL: tutorials/processids]. |
+| `-selectComponentWithLeastReprojectionError` | — | Select the component with the smallest Mean error [pixels]. | Exists in this build. Not used by this repo (component choice is by camera count). [VERIFIED: bug B11] |
+| `-renameSelectedComponent` | `newComponentName` | Rename the currently selected component. | On an **emptied** scene it fails `E_INVALIDARG 0x80070057` (decimal `2147942487`) "in 0 seconds" — that failure **is** the peel-loop exhaustion signal. An earlier observation recorded it silently no-opping instead; both terminals are handled — see §2.3. [VERIFIED: project testing 2026-07-24] Process ID `21859 CLI_RENAME_SELECTED_COMPONENT` [OFFICIAL: tutorials/processids]. |
+| `-deleteSelectedComponent` | — | Delete the currently selected component. | Exists; silently no-ops on an empty scene. [VERIFIED: project testing 2026-07-23] Process ID `21863 CLI_DELETE_SELECTED_COMPONENT` [OFFICIAL: tutorials/processids]. |
+| `-deleteComponent` | `index` | Delete a component by index. Indices start at **0**. | Exists in this build. Never used here — indices are unstable, names and maximal-selection are preferred. [VERIFIED: project testing 2026-07-23] |
+| `-deleteAllComponents` | — | Delete all components. | Exists in this build. [VERIFIED: project testing 2026-07-23] |
+| `-setMinComponentSize` | `size` | Minimal component size for export via `exportLatestComponents` and `exportXMP`. Default **5**. | **DEPRECATED** — the app logs "will be removed in the next release" — but still **required**: without it, components under the default 5 are silently excluded from selection AND from XMP export. Set to `1` before any census export. [VERIFIED: bug B11, project testing 2026-07-24] |
+| `-exportSelectedComponentDir` | `folderName` | Export the selected component into a folder as a `.rsalign`. | **The file is named after the COMPONENT, not the scene.** Rename first, or snapshot the directory before/after. `-renameSelectedComponent X` → `X.rsalign`. [VERIFIED: earlier multi-camera dataset, 2026-07; cells U15/U16 2026-07-23] |
 | `-exportSelectedComponentFile` | `fileName` | Export the selected component to a named `.rsalign` file. | Not used by this repo (the `Dir` form is). Untested here. [INFERRED: it is the naming-safe alternative to the Dir form; settled by one export.] |
 | `-exportLatestComponents` | `folderName` | Export components created in the **last alignment** as `.rsalign` into a folder; gated by `setMinComponentSize`. | Exports **ALL** components of the last alignment, not just the maximal one — the older maximal-only export was unnecessary loss. [VERIFIED: allcommands sweep + production, 2026-07-23] |
-| `-importComponent` | `component.rsalign` | Import a component from the `component.rsalign` file. | **Only from the ORIGINAL export directory** — see §3.3. In place: ~2 s per 0.7 GB. [VERIFIED: NA167 B1/B11] Process IDs `20594 IMPORT_COMPONENT`, `20597 IMPORT_COMPONENT_STRUCTURE` [OFFICIAL: tutorials/processids]. |
-| `-mergeComponents` | — | Merge already created components. **No new images are added** to the existing components. | The centerpiece — see §5. Fuses only through image **content**; silent no-op otherwise; verify by census, never exit status. [VERIFIED: NA167 #23–26/#30/#31, FINDINGS 2026-07-24] |
-| `-update` | — | Update all components and models by a **rigid transformation** to fit the actual constraints and control points. | A similarity/rigid fit applied *after* reconstruction. It can rotate or rescale a component; it cannot stiffen or repair geometry. This is the step that georeferences a freshly merged component. [VERIFIED: FINDINGS 2026-07-26] Process ID `65542 UPDATE_CONSTRAINTS` [OFFICIAL: tutorials/processids]. |
+| `-importComponent` | `component.rsalign` | Import a component from the `component.rsalign` file. | **Only from the ORIGINAL export directory** — see §3.3. In place: ~2 s per 0.7 GB. [VERIFIED: bug B1/B11] Process IDs `20594 IMPORT_COMPONENT`, `20597 IMPORT_COMPONENT_STRUCTURE` [OFFICIAL: tutorials/processids]. |
+| `-mergeComponents` | — | Merge already created components. **No new images are added** to the existing components. | The centerpiece — see §5. Fuses only through image **content**; silent no-op otherwise; verify by census, never exit status. [VERIFIED: earlier multi-camera dataset, 2026-07, project testing 2026-07-24] |
+| `-update` | — | Update all components and models by a **rigid transformation** to fit the actual constraints and control points. | A similarity/rigid fit applied *after* reconstruction. It can rotate or rescale a component; it cannot stiffen or repair geometry. This is the step that georeferences a freshly merged component. [VERIFIED: project testing 2026-07-26] Process ID `65542 UPDATE_CONSTRAINTS` [OFFICIAL: tutorials/processids]. |
 | `-setCamerasGravityDirection` | `componentID` (optional) | If images' XMP carries `xcr:Gravity`, rotate the component so `-z` follows gravity. Sparse cloud only, not the mesh. | Never exercised here. [OPEN: no ROV imagery in this repo carries `xcr:Gravity`; probe = add the tag to one sidecar and re-align.] |
-| `-exportXMP` | `params.xml` (optional) | Export camera metadata of components created in the **last alignment** as XMP; components must satisfy `setMinComponentSize`. | Writes **stem-named** `<stem>.xmp` beside the images, in every observed context. This is the only identity-preserving census. [VERIFIED: FINDINGS 2026-07-23, B10 final form] |
-| `-exportXMPForSelectedComponent` | — | Export camera metadata of the **selected** component as XMP using current settings. | Writes **ordinal** sidecars `00000.xmp`, `00001.xmp`, … in every observed context. Count is a valid census; identity is lost. [VERIFIED: NA167 B10, four consistent datapoints] The Help documents only the *location* — "XMP files are stored in the same folder as the respective images" — and gives **no naming rule at all** for either XMP command, so ordinal-vs-stem is [UNDOCUMENTED]. [OFFICIAL: appbasics/allcommands] |
+| `-exportXMP` | `params.xml` (optional) | Export camera metadata of components created in the **last alignment** as XMP; components must satisfy `setMinComponentSize`. | Writes **stem-named** `<stem>.xmp` beside the images, in every observed context. This is the only identity-preserving census. [VERIFIED: project testing 2026-07-23, B10 final form] |
+| `-exportXMPForSelectedComponent` | — | Export camera metadata of the **selected** component as XMP using current settings. | Writes **ordinal** sidecars `00000.xmp`, `00001.xmp`, … in every observed context. Count is a valid census; identity is lost. [VERIFIED: bug B10, four consistent datapoints] The Help documents only the *location* — "XMP files are stored in the same folder as the respective images" — and gives **no naming rule at all** for either XMP command, so ordinal-vs-stem is [UNDOCUMENTED]. [OFFICIAL: appbasics/allcommands] |
 
 ### 2.1 `-selectAllComponents` DOES NOT EXIST
 
 `-selectAllComponents` fails as an unknown/invalid command, result code `0x82000060`. It had
-lived unnoticed in [archive/legacy_scripts/AlignZonesSequentially.bat](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/legacy_scripts/AlignZonesSequentially.bat)
-[VERIFIED: NA167 #13 / B2, FINDINGS 2026-07-23]. The Help's master command table lists exactly
+lived unnoticed in a legacy workflow script [VERIFIED: bug B2, project testing 2026-07-23]. The Help's master command table lists exactly
 three component-selection commands: `selectComponent`, `selectMaximalComponent`,
 `selectComponentWithLeastReprojectionError` [OFFICIAL: appbasics/allcommands].
 
@@ -169,12 +168,12 @@ three component-selection commands: `selectComponent`, `selectMaximalComponent`,
 |---|---|---|
 | `-exportComponent` | `tutorials/commandline_1` examples only (`-selectMaximalComponent -exportComponent %MyPath%\max`) | Absent from the master table in `appbasics/allcommands`. [INFERRED: a stale pre-2.x name left in a tutorial example; never invoked here, so its non-existence is not proven] Use `-exportLatestComponents` / `-exportSelectedComponentDir` / `-exportSelectedComponentFile`. |
 | `-minComponentSize` | one `tutorials/commandline_1` example | Master-table name is `-setMinComponentSize`. [INFERRED: same stale-example hypothesis; untested] |
-| `-selectAllComponents` | older third-party/legacy scripts | Proven not to exist (`0x82000060`). [VERIFIED: NA167 #13 / B2] |
+| `-selectAllComponents` | older third-party/legacy scripts | Proven not to exist (`0x82000060`). [VERIFIED: bug B2] |
 
 ### 2.3 Empty-scene behavior and the peel terminal
 
 `-selectMaximalComponent` **silently no-ops on an empty scene and writes no errors marker**
-[VERIFIED: FINDINGS 2026-07-23]. Loop terminals must therefore never be built on "did an error
+[VERIFIED: project testing 2026-07-23]. Loop terminals must therefore never be built on "did an error
 appear?" alone.
 
 **[CONTRADICTED — two in-repo observations disagree about `-renameSelectedComponent` on an
@@ -182,8 +181,8 @@ emptied scene, and both are retained because production depends on handling both
 
 | Date | Observation |
 |---|---|
-| 2026-07-23 | "selectMaximalComponent / renameSelectedComponent / deleteSelectedComponent silently no-op on an empty scene (no errors marker) — loop terminals must be file-existence checks, not error checks" [VERIFIED: FINDINGS 2026-07-23] |
-| 2026-07-24 | With the scene emptied, `-selectMaximalComponent` no-ops and the *following* `-renameSelectedComponent` **fails** `E_INVALIDARG 0x80070057` (`2147942487`) "in 0 seconds", observed on the smoke E2E [VERIFIED: FINDINGS 2026-07-24] |
+| 2026-07-23 | "selectMaximalComponent / renameSelectedComponent / deleteSelectedComponent silently no-op on an empty scene (no errors marker) — loop terminals must be file-existence checks, not error checks" [VERIFIED: project testing 2026-07-23] |
+| 2026-07-24 | With the scene emptied, `-selectMaximalComponent` no-ops and the *following* `-renameSelectedComponent` **fails** `E_INVALIDARG 0x80070057` (`2147942487`) "in 0 seconds", observed on the smoke E2E [VERIFIED: project testing 2026-07-24] |
 
 Neither has been re-run to settle which condition produces which — a *fresh* empty scene and a
 scene *emptied by deletion* may not behave the same
@@ -211,8 +210,8 @@ a missing `.rsalign`) and tolerates no error at all
 |---|---|---|
 | `-correctColors` `layerName` | "Run color correction for all layers or a specified layer (`layerName`) **in the selected component**." Component selection therefore gates it. Never driven here. | [OFFICIAL: appbasics/allcommands] |
 | `-selectLargestModelComponent` | **Model** topology, not alignment components — selects triangles of the largest connected mesh component. It is what makes a rigid-glue container dangerous downstream (§5.7). | [OFFICIAL: appbasics/allcommands] |
-| `-exportRegistration` | Exports registration in a chosen format (the GUI dialog whose first save-as type is the `.rsalign` component). **Blocks forever headless without a params XML.** | [VERIFIED: FINDINGS 2026-07-21] |
-| `-setFeatureSource` `0\|1\|2` | Per-*image-selection* control of which features a later align uses when integrating components — see §5.3. | [OFFICIAL: appbasics/allcommands] + [VERIFIED: NA167 B11] |
+| `-exportRegistration` | Exports registration in a chosen format (the GUI dialog whose first save-as type is the `.rsalign` component). **Blocks forever headless without a params XML.** | [VERIFIED: project testing 2026-07-21] |
+| `-setFeatureSource` `0\|1\|2` | Per-*image-selection* control of which features a later align uses when integrating components — see §5.3. | [OFFICIAL: appbasics/allcommands] + [VERIFIED: bug B11] |
 
 Other component-related process IDs in the Help's table, none of which map to a documented CLI
 command: `21025 EXPAND_CONNECTED_COMPONENTS_SELECTION`, `21026 CALCULATE_COMPONENTS_METADA` (sic),
@@ -231,9 +230,9 @@ command: `21025 EXPAND_CONNECTED_COMPONENTS_SELECTION`, `21026 CALCULATE_COMPONE
 | Extension | `.rsalign` — the Help calls the format "RealityScan Alignment Component" | [OFFICIAL: appbasics/allcommands] |
 | Legacy extension | `.rcalign` is carried in this repo's discovery list (`COMPONENT_EXTENSIONS = ('.rsalign', '.rcalign')`, merge_zones.py line 74) and ARCHITECTURE.md documents it as still readable, but **no `.rcalign` has ever been imported here** and the 2.2 Help never mentions it | [INFERRED: repo policy + code, not an observation] |
 | Content | A small scene file: image lists, image properties, camera poses; control points placed on the component are exported with it | [OFFICIAL: appbasics/components] |
-| Encoding | Opaque binary, magic `TBSM` — **no readable camera list** | [VERIFIED: NA167 notes §1] |
-| Size scaling | **~0.7 GB per ~1,500 cameras** | [VERIFIED: NA167 notes §1] |
-| Membership recovery | Impossible from the file. Must come from the XMP census captured at align time (§6) | [VERIFIED: NA167 B10] |
+| Encoding | Opaque binary, magic `TBSM` — **no readable camera list** | [VERIFIED: earlier multi-camera dataset, 2026-07] |
+| Size scaling | **~0.7 GB per ~1,500 cameras** | [VERIFIED: earlier multi-camera dataset, 2026-07] |
+| Membership recovery | Impossible from the file. Must come from the XMP census captured at align time (§6) | [VERIFIED: bug B10] |
 
 The GUI equivalent of the export is ALIGNMENT ▸ Export ▸ **Registration**, choosing the first
 save-as type ("RealityScan alignment component"), which is the only type that "preserves all
@@ -242,17 +241,15 @@ features of the application" [OFFICIAL: appbasics/components].
 Selection semantics, stated exactly as the Help states them, because they are the trap
 [OFFICIAL: appbasics/components]:
 
-- "Any subset of aligned cameras can be exported as a component."
-- "To export **all** components, leave this selection empty."
-- "A complete component is exported if the current selection is empty **or** it is a single camera
-  selection."
-- "If there are control points placed on the component, they will also be exported with the
-  component."
+- Any subset of aligned cameras can be exported as a component.
+- An empty selection exports **all** components.
+- A whole component is exported when the selection is empty **or** holds a single camera.
+- Control points placed on a component travel with it in the export.
 
 So a **stray active image selection silently narrows or empties the export**, and under `-silent`
 the confirming dialog is auto-answered: an XMP export completed in **0.057 s instead of 20.5 s**
 after a flight-log import left its matched images selected
-[VERIFIED: FINDINGS 2026-07-23] [UNDOCUMENTED: the Help nowhere warns that `-importFlightLog`
+[VERIFIED: project testing 2026-07-23] [UNDOCUMENTED: the Help nowhere warns that `-importFlightLog`
 leaves a selection behind].
 **Always `-deselectAllImages` before any component or XMP export.**
 
@@ -260,7 +257,7 @@ leaves a selection behind].
 
 `-exportSelectedComponentDir <dir>` writes `<componentName>.rsalign` into `<dir>`. The scene name
 is irrelevant. Rename first, or snapshot the directory before/after to identify the new file
-[VERIFIED: NA167 notes §1; U15/U16 PASS 2026-07-23].
+[VERIFIED: earlier multi-camera dataset, 2026-07; U15/U16 PASS 2026-07-23].
 
 ```bat
 :: Deterministic export: rename, then export.
@@ -268,8 +265,8 @@ call :run -deselectAllImages         || goto :fail
 call :run -setMinComponentSize 1     || goto :fail
 call :run -selectMaximalComponent    || goto :fail
 call :run -renameSelectedComponent "zone_1_c0"                         || goto :fail
-call :run -exportSelectedComponentDir "F:\na156_h2024_v2\aligned_components\zone_1" || goto :fail
-:: -> F:\na156_h2024_v2\aligned_components\zone_1\zone_1_c0.rsalign
+call :run -exportSelectedComponentDir "F:\survey_v2\aligned_components\zone_1" || goto :fail
+:: -> F:\survey_v2\aligned_components\zone_1\zone_1_c0.rsalign
 ```
 
 ### 3.3 Import: the hard rule about location
@@ -279,11 +276,11 @@ call :run -exportSelectedComponentDir "F:\na156_h2024_v2\aligned_components\zone
 A `.rsalign` copied or moved elsewhere imports into a **permanent `#timeout` stall**: no error, no
 minidump, no completion. Observed ≥ 6 hours. The stall is invisible to line-change stall detection
 because `#timeout` progress lines keep ticking their elapsed counter
-[VERIFIED: NA167 #11/#12 / B1/B4, FINDINGS 2026-07-23; ARCHITECTURE.md hard rule 7].
+[VERIFIED: bug B1/B4, project testing 2026-07-23; ARCHITECTURE.md hard rule 7].
 This is the highest-severity trap in the component API and it is **entirely undocumented**
 [UNDOCUMENTED: no Help coverage of relocation].
 
-In place, import is cheap: **~2 s per 0.7 GB component** [VERIFIED: NA167 B11, 2026-07-23].
+In place, import is cheap: **~2 s per 0.7 GB component** [VERIFIED: bug B11, 2026-07-23].
 
 Mitigations in force here:
 - Workflows take a `.complist` of **original** paths rather than scanning a staging folder (§4).
@@ -291,7 +288,7 @@ Mitigations in force here:
   precisely so a hull from an earlier run can stay at its original export location
   [VERIFIED-by-inspection: merge_zones.py lines 130–156].
 - Merge-class operations are watchdogged at 45 min in test drivers; alignment operations stay
-  unbounded per repo rule [VERIFIED: NA167 B1 mitigation].
+  unbounded per repo rule [VERIFIED: bug B1 mitigation].
 
 `appCopyImportedComponentsToCache` (bool, default `false`) is the one setting that plausibly
 interacts with this behavior [OFFICIAL: tutorials/setkeyvaluetable]; it has **never been swept**
@@ -308,7 +305,7 @@ imported component's name as a suffix" [OFFICIAL: appbasics/components].)
 Two attempt directories
 exporting the same stem therefore place two identically-named components into one assembly, and
 name-resolved later steps (`-selectComponent`, model naming, `-reprojectTexture`) then cross
-components with a clean exit status [VERIFIED: FINDINGS 2026-07-28 and 2026-07-25].
+components with a clean exit status [VERIFIED: project testing 2026-07-28 and 2026-07-25].
 
 This is why `merge_zones.fused_export_name()` embeds the attempt number:
 
@@ -319,8 +316,8 @@ def fused_export_name(tag: str, attempt_no: int) -> str:
 
 `peel_index` restarts at 0 every attempt, so without the attempt number two accepted fusions in
 one cluster both claim `<tag>_m_c0`: the manifest validator raised "duplicate component identity"
-and killed one H2024 run, and the second silently clobbered the first's lineage
-[VERIFIED: FINDINGS/merge_zones.py comment, 2026-07-28].
+and killed one dataset B run, and the second silently clobbered the first's lineage
+[VERIFIED: project testing 2026-07-28; merge_zones.py comment].
 
 ### 3.5 The component round trip is a sanctioned rollback
 
@@ -329,7 +326,7 @@ constraints) → import it back into the original scene → `-align`, which "wil
 corrected component" [OFFICIAL: appbasics/components]. Adopted here as the rollback pattern; the
 `.rsproj` bundle is **byte-stable across load/delete/export cycles when the session quits without
 saving** (hash-verified twice), which is what makes the destructive in-session peel safe
-[VERIFIED: cells U15/U16, FINDINGS 2026-07-23].
+[VERIFIED: cells U15/U16, project testing 2026-07-23].
 
 ---
 
@@ -340,9 +337,9 @@ saving** (hash-verified twice), which is what makes the destructive in-session p
 A plain-text file, one **absolute** `.rsalign` path per line, extension `.complist`:
 
 ```
-F:\na156_h2024_v2\aligned_components\zone_2\zone_2_c0.rsalign
-F:\na156_h2024_v2\aligned_components\zone_3\zone_3_c0.rsalign
-F:\na156_h2024_v2\aligned_components\zone_5\zone_5_c0.rsalign
+F:\survey_v2\aligned_components\zone_2\zone_2_c0.rsalign
+F:\survey_v2\aligned_components\zone_3\zone_3_c0.rsalign
+F:\survey_v2\aligned_components\zone_5\zone_5_c0.rsalign
 ```
 
 Rules established here [VERIFIED-by-inspection: MergeZoneComponents.bat lines 68–81;
@@ -354,7 +351,7 @@ merge_zones.py lines 817–821]:
 | Line endings | Written CRLF (`newline='\r\n'`) by the driver; `for /f "usebackq delims="` reads either. |
 | Encoding | UTF-8 **without BOM**. |
 | Existence | Every entry is existence-checked before the instance boots; a missing file aborts with exit 1 via `goto :argfail`. |
-| Count guard | `merge` and `align` modes require ≥ 2 components; `assemble` mode requires ≥ 1 (a fully-converged single-feature dive must still be able to produce its assembly project). |
+| Count guard | `merge` and `align` modes require ≥ 2 components; `assemble` mode requires ≥ 1 (a fully-converged single-feature survey must still be able to produce its assembly project). |
 | Paths | Must be the components' **original export locations** (§3.3). This is the entire reason the file exists. |
 
 **BOM hazard:** `Set-Content -Encoding utf8` in Windows PowerShell 5.1 writes a BOM, and a BOM on
@@ -363,7 +360,7 @@ line 1 of a `.complist` silently invalidates the first entry — `merge_zones` r
 without manifests". Python's `encoding='utf-8'` writes no BOM. From PowerShell use
 `[System.IO.File]::WriteAllLines($p,$lines,(New-Object System.Text.UTF8Encoding($false)))`.
 Verified by reading the first three bytes (239, 187, 191)
-[VERIFIED: FINDINGS 2026-07-27].
+[VERIFIED: project testing 2026-07-27].
 
 ### 4.2 Why lists must cross the `.bat` boundary as files
 
@@ -377,7 +374,7 @@ only on whitespace. Two production consequences were observed:
    `'false' failed`, meaning **no flag cell before wave 1f had ever applied its flags** — and the
    parse errors landed in the errors marker, spuriously aborting the workflows that carried them.
 
-[VERIFIED: NA167 #15 / B5, FINDINGS 2026-07-23; ARCHITECTURE.md hard rule 8]
+[VERIFIED: bug B5, project testing 2026-07-23; ARCHITECTURE.md hard rule 8]
 
 **The rule:** lists cross as files (`.complist`, `.imagelist`); settings cross as `key:value` and
 the `.bat` converts the colon back to `=` immediately before `-set`:
@@ -405,7 +402,7 @@ headless here (§5.3). Everything below is what the CLI does, measured.
 
 | Mechanism | Help statement | CLI form | Status here |
 |---|---|---|---|
-| Run alignment again | "RealityScan will first use special algorithms designed for merging components." | `-align` (with components present) | **Works** — align/update: adds new images to existing components AND can fuse them [VERIFIED: NA167 notes §1] |
+| Run alignment again | "RealityScan will first use special algorithms designed for merging components." | `-align` (with components present) | **Works** — align/update: adds new images to existing components AND can fuse them [VERIFIED: earlier multi-camera dataset, 2026-07] |
 | Merge Components tool | "no new images are added to the existing components" | `-mergeComponents` | **Works, conditionally** — see §5.2 |
 | Control Points | ≥ 4 CPs each assigned to more than one image in every component; "Connect two components with any 6 control points" | `-importControlPointsMeasurements`, `-editControlPointSelection`, then `-align` | **Never exercised headless here** [OPEN: O-10] |
 | Ground Control Points | ≥ 3 GCPs assigned to images in different components, ≥ 5 assignments; georeferences components to a common space, then align "will automatically try to improve accuracy by finding additional tie points" | `-importGroundControlPoints`, then `-align` | **Never exercised headless here** [OPEN: O-10] |
@@ -429,11 +426,11 @@ GUI dialog. `-editControlPointSelection "key=value"`, `-selectControlPoint`, `-r
 > **Content overlap ⇒ fusable by either mechanism, with or without scene georeferencing
 > constraints. Zero content overlap ⇒ silent no-fuse, regardless of flags, mechanism or path
 > form.**
-> [VERIFIED: D7 probe wave, [archive/campaign_drivers/probe_d7.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/probe_d7.py), FINDINGS "D7 RESOLVED", 2026-07-24]
+> [VERIFIED: D7 probe wave, project testing 2026-07-24]
 
 The evidence, in the order it was obtained:
 
-**(a) Zero shared cameras never fuse — universal and silent.** NA167 D-cells isolated
+**(a) Zero shared cameras never fuse — universal and silent.** dataset C D-cells isolated
 mechanism × flag × path form on the `zone_6` + `zone_4` pair (which never see the same seafloor):
 
 | Cell | Mechanism | Flags | Result |
@@ -444,12 +441,12 @@ mechanism × flag × path form on the `zone_6` + `zone_4` pair (which never see 
 | D3_align_sharedpath | `-align`, shared-path components | both flags pinned `false` | No fuse — 1,534 |
 
 Every cell exited **SUCCESS**; each took ~17–21 min dominated by boot/import/export overhead
-[VERIFIED: NA167 #26, MERGE_TEST_PLAN wave 2, 2026-07-24].
+[VERIFIED: earlier multi-camera dataset, test wave 2, 2026-07-24].
 
 **(b) Shared cameras DO fuse — the positive proof.** Cell D6: `zone_6` split into two 1,000-image
 halves sharing **390 images**, aligned solo to 749 and 342 cameras, imported into a fresh scene,
 `-mergeComponents` with both flags pinned `false` → **56 minutes of merge reconstruction ending in
-"Finalizing 1 component"** [VERIFIED: NA167 #31 / D6, 2026-07-24].
+"Finalizing 1 component"** [VERIFIED: probe D6, 2026-07-24].
 
 **(c) Path identity is sufficient but NOT necessary.** The D7 probe used `zone_c` (78 cams) and
 `zone_d_c0` (42 cams) built from disjoint image sets — **zero shared basenames, zero shared
@@ -462,17 +459,17 @@ paths** — that nonetheless view the same wreck strip:
 | Q9a | mini_a_c0 (118) + mini_b_c2 (62) | `-align`, `sfmForceComponentRematch:true` | NO | FUSED, 180, 68 s |
 | D7c | same | `-mergeComponents`, georef `true`, prior `true` | YES | FUSED, 180, 93 s |
 
-[VERIFIED: MERGE_TEST_PLAN "D7 probe wave", FINDINGS 2026-07-24]
+[VERIFIED: D7 probe wave, project testing 2026-07-24]
 
 **(d) The reconciliation.** D1–D3 never fused because those pairs had zero *content* overlap.
 They are consistent with the rule, not contradictory
-[VERIFIED: D7 probe wave, [archive/campaign_drivers/probe_d7.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/probe_d7.py), FINDINGS "D7 RESOLVED" 2026-07-24]. The union flight log remains **required to georeference the merged
+[VERIFIED: D7 probe wave, project testing 2026-07-24]. The union flight log remains **required to georeference the merged
 result** but plays no role in fusion — the earlier "union log + `-update` is what enabled the
 duplicate-path merges" hypothesis is **refuted**
 [SUPERSEDED: candidate discriminator recorded 2026-07-24 morning, refuted the same day].
 
 **(e) Two earlier statements now carry SUPERSEDED status but are retained**, because they were the
-correct reading of the NA167 evidence and because the shared-camera path is still the only one
+correct reading of the dataset C evidence and because the shared-camera path is still the only one
 `-mergeComponents` can use *deterministically*:
 
 - "Shared cameras are the ONLY merge mechanism verified to work headless" — **sufficient, not
@@ -482,38 +479,38 @@ correct reading of the NA167 evidence and because the shared-camera path is stil
 The merge-rung admission gate in `merge_zones.py` still requires the shared-image graph to
 **span** the subset (§7.4), for a different reason: a merge rung glues *everything* in the scene
 indiscriminately, so identity connectivity is the safety property, not the fusion mechanism
-[VERIFIED-as-design: FINDINGS 2026-07-28].
+[VERIFIED-as-design: project testing 2026-07-28].
 
 ### 5.3 `sfmMergeGeoreferencedComponents` — documented capability never observed headless
 
 | | |
 |---|---|
 | **Docs claim** | "When multiple components are created and each is georeferenced, enabling this setting allows them to be merged even without visual overlap." Type `bool`, default `false`. [OFFICIAL: appbasics/alignsettings; tutorials/setkeyvaluetable] |
-| **Observed** | With `sfmMergeGeoreferencedComponents=true`, **neither** `-mergeComponents` nor `-align` produced an overlap-free merge for flight-log-prior components. Cells D1 (merge, flag on, zero-overlap pair) → no fuse, 1,533 = zone_6 alone. D2 (align, georef true + rematch true) → no fuse. [CONTRADICTED: NA167 wave-1f/D1/D2, 2026-07-24] |
-| **How observed** | Pose-XMP camera census of the resulting maximal component, per cell, with the swept keys pinned in every cell (values persist across instance restarts) and pose sidecars deleted between cells. [VERIFIED: MERGE_TEST_PLAN §3] |
-| **Caveat that keeps this open** | Those cells fed the flag components georeferenced from **position-only priors at 10 m claimed accuracy**. The feature's documented premise ("each is georeferenced") was arguably never met — RealityScan may distinguish prior-weighted from ground-control-locked georeferencing. **Do not treat D1/D2 as final.** [SUPERSEDED-RISK: FINDINGS 2026-07-25 RECON] |
-| **Aggravating observation** | Three accepted `merge_georef` attempts on H2024 `cluster_1` scored as exact-sum fusions with zero camera loss while RealityScan's own log reported "Finalizing 3", then "7", then "8" components — a container holding eight disjoint objects. Zero loss on a zero-shared-imagery "fusion" is the signature of **co-location, not registration**. [VERIFIED: FINDINGS 2026-07-28] |
+| **Observed** | With `sfmMergeGeoreferencedComponents=true`, **neither** `-mergeComponents` nor `-align` produced an overlap-free merge for flight-log-prior components. Cells D1 (merge, flag on, zero-overlap pair) → no fuse, 1,533 = zone_6 alone. D2 (align, georef true + rematch true) → no fuse. [CONTRADICTED: test wave-1f/D1/D2, 2026-07-24] |
+| **How observed** | Pose-XMP camera census of the resulting maximal component, per cell, with the swept keys pinned in every cell (values persist across instance restarts) and pose sidecars deleted between cells. [VERIFIED: project test records, 2026-07-23] |
+| **Caveat that keeps this open** | Those cells fed the flag components georeferenced from **position-only priors at 10 m claimed accuracy**. The feature's documented premise ("each is georeferenced") was arguably never met — RealityScan may distinguish prior-weighted from ground-control-locked georeferencing. **Do not treat D1/D2 as final.** [SUPERSEDED-RISK: project testing 2026-07-25] |
+| **Aggravating observation** | Three accepted `merge_georef` attempts on dataset B `cluster_1` scored as exact-sum fusions with zero camera loss while RealityScan's own log reported "Finalizing 3", then "7", then "8" components — a container holding eight disjoint objects. Zero loss on a zero-shared-imagery "fusion" is the signature of **co-location, not registration**. [VERIFIED: project testing 2026-07-28] |
 
 Related keys, for completeness (full inventory in `03-settings-keys.md`):
 
 | Key | Type / default | Official prose | Use here |
 |---|---|---|---|
-| `sfmMergeGeoreferencedComponents` | bool / `false` | merge georeferenced components without visual overlap | `false` in pass-1 zone aligns (auto-fusing disjoint pockets by georeference would freeze bad geometry invisibly); `true` on every merge-ladder rung [VERIFIED-as-decision: docs/settings-evaluation-2026-07.md §4] |
-| `sfmForceComponentRematch` | bool / `false` | "the application realigns images and cameras to find better connections. It uses existing camera poses to search for new matches" | `false` in pass-1 zone aligns (a merge-stage tool, wasted per zone); `true` on the align-mode merge rungs [OFFICIAL: appbasics/alignsettings] + [VERIFIED-as-policy: docs/settings-evaluation-2026-07.md §4; merge_zones.LADDERS] |
-| `sfmImagesOverlap` | Low/Medium/High | "Defines how many common features are expected between images" | `Medium` in production. **`High` as a merge-ladder rung is not defensible** — it only widens candidate-pair search, so it can help only where components share content the matcher skipped; zero-overlap components never fuse under any rung, and the hull fused on every rung, so matching was never the constraint [VERIFIED: FINDINGS 2026-07-27] |
+| `sfmMergeGeoreferencedComponents` | bool / `false` | merge georeferenced components without visual overlap | `false` in pass-1 zone aligns (auto-fusing disjoint pockets by georeference would freeze bad geometry invisibly); `true` on every merge-ladder rung [VERIFIED-as-decision: project test records, 2026-07] |
+| `sfmForceComponentRematch` | bool / `false` | "the application realigns images and cameras to find better connections. It uses existing camera poses to search for new matches" | `false` in pass-1 zone aligns (a merge-stage tool, wasted per zone); `true` on the align-mode merge rungs [OFFICIAL: appbasics/alignsettings] + [VERIFIED-as-policy: project test records, 2026-07; merge_zones.LADDERS] |
+| `sfmImagesOverlap` | Low/Medium/High | "Defines how many common features are expected between images" | `Medium` in production. **`High` as a merge-ladder rung is not defensible** — it only widens candidate-pair search, so it can help only where components share content the matcher skipped; zero-overlap components never fuse under any rung, and the hull fused on every rung, so matching was never the constraint [VERIFIED: project testing 2026-07-27] |
 | `sfmEnableCameraPrior` | bool | "prior positions for the images are used in the alignment process and for georeferencing the scene" | `true` throughout; it is what makes components georeferenced in the first place. Composes with the merge flag: (a) is per-camera during alignment, (b) is per-component post-solve; (b) without (a) is inert [INFERRED from Help prose + design reasoning; never isolated by a cell] |
-| `aligFeaturesMode` / `-setFeatureSource 0\|1\|2` | 0 = merge using overlaps, 1 = use component features, 2 = use all image features | Help ties these to "a new alignment of components", set per selected input: `0` uses solely images/points common to all components and "extremely speeds up the reconstruction process, as well as reduces computer memory consumption"; `1` is "the most common and fastest type"; `2` is "the slowest process of all these, recommended for a small number of camera poses" [OFFICIAL: appbasics/components] | **CLI-accessible** (`-setFeatureSource`, composed with `-selectImage` / `-selectAllImages`) — the earlier "GUI-only" conclusion is [SUPERSEDED: NA167 B11, 2026-07-23]. **Consumed by ALIGN, not by Merge Components** [INFERRED from the Help's "a new alignment of components" wording; never A/B'd here]. Mode `0`'s "images/points which are in common (the same in all components)" means **shared-PATH images, not duplicate copies of the same picture** — per-zone copies are different images to RealityScan's identity check [VERIFIED-as-reading: FINDINGS 2026-07-23, caveat added at the 2026-07-24 RECON]. Note `-selectImage` matches **literal full paths only** in this build (the Help documents a regexp dialect that selects nothing), so composing a per-camera selection is a per-image loop — see `02-command-reference.md` |
+| `aligFeaturesMode` / `-setFeatureSource 0\|1\|2` | 0 = merge using overlaps, 1 = use component features, 2 = use all image features | Help ties these to "a new alignment of components", set per selected input: `0` uses solely images/points common to all components and "extremely speeds up the reconstruction process, as well as reduces computer memory consumption"; `1` is "the most common and fastest type"; `2` is "the slowest process of all these, recommended for a small number of camera poses" [OFFICIAL: appbasics/components] | **CLI-accessible** (`-setFeatureSource`, composed with `-selectImage` / `-selectAllImages`) — the earlier "GUI-only" conclusion is [SUPERSEDED: bug B11, 2026-07-23]. **Consumed by ALIGN, not by Merge Components** [INFERRED from the Help's "a new alignment of components" wording; never A/B'd here]. Mode `0`'s "images/points which are in common (the same in all components)" means **shared-PATH images, not duplicate copies of the same picture** — per-zone copies are different images to RealityScan's identity check [VERIFIED-as-reading: project testing 2026-07-23, caveat added at the 2026-07-24 reconciliation]. Note `-selectImage` matches **literal full paths only** in this build (the Help documents a regexp dialect that selects nothing), so composing a per-camera selection is a per-image loop — see `02-command-reference.md` |
 
 ### 5.4 Timing signature — and its scale dependence
 
 - **A working merge takes real time.** ~1 hour for 1–4k-camera pairs (D6: 56 min; D5-alt: 56 min).
   At production scale, **instant completion is the no-fuse signature**
-  [VERIFIED: NA167 #23/#30, MERGE_STRATEGY_REPORT].
+  [VERIFIED: earlier multi-camera dataset, 2026-07].
 - **But the heuristic is scale-dependent and must not be applied blindly.** On the 120-camera D7
   fixture a *genuine* fusion completed in **57–93 s**, and the zero-overlap D-cells took
   **17–21 min** each (dominated by boot, import and export overhead) — i.e. the no-fuse case took
   an order of magnitude *longer* than the small-fixture fuse
-  [VERIFIED: MERGE_TEST_PLAN D7 wave + NA167 #26]. Timing is a smell, never a verdict. The verdict
+  [VERIFIED: D7 probe wave + earlier multi-camera dataset, 2026-07]. Timing is a smell, never a verdict. The verdict
   is the census (§6).
 
 ### 5.5 `-mergeComponents` RETAINS its input components
@@ -524,14 +521,14 @@ A merge or align leaves the **source components in the scene alongside the fused
 |---|---|---|
 | D7 smoke fusion of 78 + 42 | `[120, 78, 42]` | fusion **plus** both originals |
 | Controlled peel of a 3-input attempt | `[267, 116, 94, 57]` | fusion plus all three unconsumed parents |
-| H2023 hull 2-input merge | `[3737, 3026, 714]` | fusion plus both parents |
+| dataset A hull 2-input merge | `[3737, 3026, 714]` | fusion plus both parents |
 
-[VERIFIED: FINDINGS 2026-07-24 and 2026-07-27]
+[VERIFIED: project testing 2026-07-24 and 2026-07-27]
 
-The H2023 hull's fused entry is recorded as **3,737 in one place and 3,738 in another** across the
-findings log (`peel 3,738 or 3,737 matches no subset sum of {3026, 714}`); both are within the
+The dataset A hull's fused entry is recorded as **3,737 in one place and 3,738 in another** in the
+test records (`peel 3,738 or 3,737 matches no subset sum of {3026, 714}`); both are within the
 1–3-camera loss band of §5.9 and neither has been re-measured
-[VERIFIED-as-recorded-inconsistency: FINDINGS 2026-07-27] [OPEN: O-4].
+[VERIFIED-as-recorded-inconsistency: project testing 2026-07-27] [OPEN: O-4].
 
 Two consequences:
 
@@ -558,7 +555,7 @@ merge/align reconstruction. Observed values and contexts:
 | "Finalizing 11 components" | D5-alt, full 3,906 retained | behaviorally positive, count-ambiguous |
 | "Finalizing 3", then "7", then "8" | merged5 `cluster_1`, three accepted `merge_georef` attempts | **the rigid-glue tell** — RS reports many components while the arithmetic scores one fused container |
 
-[VERIFIED: NA167 B11, MERGE_TEST_PLAN, FINDINGS 2026-07-28]
+[VERIFIED: bug B11, project testing 2026-07-24 and 2026-07-28]
 
 **The exact semantics of `Finalizing N` are NOT ESTABLISHED** — new components? scene total?
 components in the finalize phase? The value is recorded per attempt (`rs_finalizing` in
@@ -566,10 +563,10 @@ components in the finalize phase? The value is recorded per attempt (`rs_finaliz
 [OPEN: queued probe — two tiny imports, one merge, count the result; never run].
 
 **Reading the log at all requires a validity check.** `RealityScan.log` is truncated on every
-instance boot, so a snapshot can be a *splice* of two runs: one H2023 attempt's snapshot recorded
-`importComponent` of eleven H2024 components because two merge drivers overlapped. A snapshot must
+instance boot, so a snapshot can be a *splice* of two runs: one dataset A attempt's snapshot recorded
+`importComponent` of eleven dataset B components because two merge drivers overlapped. A snapshot must
 be validated against a run-unique token — the attempt's own complist paths — before any number is
-read out of it [VERIFIED: FINDINGS 2026-07-27]. The implementation:
+read out of it [VERIFIED: project testing 2026-07-27]. The implementation:
 
 ```python
 def rs_finalizing_counts(rslog_path, expected_rsaligns):
@@ -601,7 +598,7 @@ objects** into one component. Of cluster_1's 28 component pairs, exactly **one**
 through transitive bbox adjacency under the old 10 m-margin border gate. All three accepted
 attempts were `merge_georef`; RealityScan logged "Finalizing 3", "7", "8" while the arithmetic
 scored each as an exact-sum fusion with **zero loss**
-[VERIFIED: FINDINGS 2026-07-28, review challenge + manifest forensics].
+[VERIFIED: project testing 2026-07-28, review challenge + manifest forensics].
 
 **The contrast that defines the signature.** The hull in the same run fused by `align`, logged
 "Finalizing 1", and **LOST 5 cameras** — real joint solving. Zero loss on a zero-shared-imagery
@@ -610,7 +607,7 @@ scored each as an exact-sum fusion with **zero loss**
 **Why it matters downstream:** `GenerateModel`'s keep-largest-connected-component step
 (`-selectLargestModelComponent` → `-invertTrianglesSelection` → `-removeSelectedTriangles`) would
 have deleted every smaller object from a model of that container
-[VERIFIED: FINDINGS 2026-07-28; see `10-reconstruction-texturing-export.md`].
+[VERIFIED: project testing 2026-07-28; see `10-reconstruction-texturing-export.md`].
 
 **Detection checklist** — flag a fusion as suspected rigid glue when **all** of these hold:
 
@@ -637,11 +634,11 @@ imported components carried their own georeferencing from their zone solves into
 
 | Claim | Status |
 |---|---|
-| "no new images are added to the existing components" | [OFFICIAL: appbasics/allcommands, tutorials/mergecomponents] — **true and load-bearing**. Orphans can never be picked up by a merge; only `-align` can add images. `MergeZoneComponents.bat` has no `-addFolder` at all, so a merge scene structurally cannot contain an orphan today. [VERIFIED-as-consequence: FINDINGS 2026-07-27] |
-| Merge cannot shrink the *image set* (it can drop a handful of *registered cameras* — see §5.9) and cannot register orphans | [VERIFIED: FINDINGS RECON 2026-07-24 "What stands: merge cannot shrink and cannot register orphans"] |
-| "Merge Components is rigid best-fit — no re-optimization, no repositioning" | **[CONTRADICTED-in-part.]** The Epic staff claim (forums.unrealengine.com/t/712116, OndrejTrhan, 2021-09) predates the rename and falls outside the 4-year trust window. Empirically, with shared cameras `-mergeComponents` runs ~56 min of visible merge reconstruction and can finalize different component counts; and H2023 zone_1's final census read **+37 cameras** against the manifest baseline when a rigid-merge consolidation was the only accepted mutation (attribution unresolved — merge effect vs a sub-`setMinComponentSize` census-mapping artifact). What stands: no new images, no shrink of the image set. What is **UNVERIFIED**: "no re-optimization" in the current build. Note the "no new images added" half **is** corroborated by current 2.2 Help wording, so only the re-optimization half rests on the stale citation. [AUDIT FLAG on the citation; FINDINGS RECON 2026-07-24; ALIGN_MERGE_HARDENING_PLAN audit flag] |
-| `-mergeComponents` with a single component | No-op, and its async re-reconstruction can clear the selection. Replaced by `-selectMaximalComponent` in the smoke workflow. [VERIFIED: status log 2026-07-21] |
-| Merge as a **consolidation** pass | Real: zone_1 went **9 components → 4** in a 38-min accepted growth pass with the same 4,392-image union. [VERIFIED: FINDINGS 2026-07-24] |
+| "no new images are added to the existing components" | [OFFICIAL: appbasics/allcommands, tutorials/mergecomponents] — **true and load-bearing**. Orphans can never be picked up by a merge; only `-align` can add images. `MergeZoneComponents.bat` has no `-addFolder` at all, so a merge scene structurally cannot contain an orphan today. [VERIFIED-as-consequence: project testing 2026-07-27] |
+| Merge cannot shrink the *image set* (it can drop a handful of *registered cameras* — see §5.9) and cannot register orphans | [VERIFIED: project testing 2026-07-24] |
+| "Merge Components is rigid best-fit — no re-optimization, no repositioning" | **[CONTRADICTED-in-part.]** The Epic staff claim (an Epic forum answer, forums.unrealengine.com/t/712116, 2021-09) predates the rename and falls outside the 4-year trust window. Empirically, with shared cameras `-mergeComponents` runs ~56 min of visible merge reconstruction and can finalize different component counts; and dataset A zone_1's final census read **+37 cameras** against the manifest baseline when a rigid-merge consolidation was the only accepted mutation (attribution unresolved — merge effect vs a sub-`setMinComponentSize` census-mapping artifact). What stands: no new images, no shrink of the image set. What is **UNVERIFIED**: "no re-optimization" in the current build. Note the "no new images added" half **is** corroborated by current 2.2 Help wording, so only the re-optimization half rests on the stale citation. [project testing 2026-07-24; the citation is flagged as stale] |
+| `-mergeComponents` with a single component | No-op, and its async re-reconstruction can clear the selection. Replaced by `-selectMaximalComponent` in the smoke workflow. [VERIFIED: project testing 2026-07-21] |
+| Merge as a **consolidation** pass | Real: zone_1 went **9 components → 4** in a 38-min accepted growth pass with the same 4,392-image union. [VERIFIED: project testing 2026-07-24] |
 
 ### 5.9 Fusion arithmetic and camera loss
 
@@ -653,35 +650,35 @@ bookkeeping.
 
 | Run | Case | Inputs | Result | Loss |
 |---|---|---|---|---|
-| H2023 fresh `merged` | hull, `merge` rung | 3,026 + 714 = 3,740 | 3,738 | −2 |
-| H2023 fresh `merged` | hull, align rung 1 | same | 3,739 | −1 |
-| H2023 fresh `merged` | hull, align rung 2 | same | 3,739 | −1 |
-| H2024, post-junction-fix (pre-bounded-loss) | cluster_0 hull, rung 1 | 1,407 + 1,217 + 2,241 = 4,865 | 4,860 | −5 (0.10 %) |
-| H2024, post-junction-fix (pre-bounded-loss) | cluster_0 hull, rungs 2–3 | same | 4,851 + a stray 5 | −14 counting only the fused entry, −9 if the stray fragment counts |
-| H2024 `merged4` | cluster_0 hull, fused 3 → 1 | same | 4,859 | −6 (inside the 12-camera budget) |
-| H2024 `merged5` | cluster_0 hull, rung 1 `merge_georef` | same | 4,854 + a stray 5 | −11 (inside budget, but the stray fragment made attribution `ambiguous` → rejected on the **attribution** term, not the loss term) |
-| H2024 `merged5` | cluster_0 hull, rung 2 `align_rematch` | same | 4,860 | −5, `exact`, **ACCEPTED** |
-| H2024 `merged4` | cluster_1, two accepted fusions | 1,634+69+64; 576+358+345+177 | 1,767; 1,456 | 0 (both exact) |
-| H2024 `merged5` | cluster_1, three progressive fusions (3→1, 5→1, 2→1) | — | 1,767; 3,039; 3,615 | 0 (all exact) |
-| H2024, new-gate non-hull re-run | `{zone_1_c2, zone_4_c1, zone_4_c2}`, align-only | 345+358+177 = 880 | 880 | 0 |
-| H2024, new-gate non-hull re-run | `{zone_1_c4, zone_1_c5}`, align-only | 69+64 = 133 | 133 | 0 |
-| H2024, junction-fix confirmation | `{zone_1_c1, zone_1_c4, zone_1_c5}`, merge | 392+69+64 = 525 | 525 | 0, fused 3 → 1, accepted |
+| dataset A fresh `merged` | hull, `merge` rung | 3,026 + 714 = 3,740 | 3,738 | −2 |
+| dataset A fresh `merged` | hull, align rung 1 | same | 3,739 | −1 |
+| dataset A fresh `merged` | hull, align rung 2 | same | 3,739 | −1 |
+| dataset B, post-junction-fix (pre-bounded-loss) | cluster_0 hull, rung 1 | 1,407 + 1,217 + 2,241 = 4,865 | 4,860 | −5 (0.10 %) |
+| dataset B, post-junction-fix (pre-bounded-loss) | cluster_0 hull, rungs 2–3 | same | 4,851 + a stray 5 | −14 counting only the fused entry, −9 if the stray fragment counts |
+| dataset B `merged4` | cluster_0 hull, fused 3 → 1 | same | 4,859 | −6 (inside the 12-camera budget) |
+| dataset B `merged5` | cluster_0 hull, rung 1 `merge_georef` | same | 4,854 + a stray 5 | −11 (inside budget, but the stray fragment made attribution `ambiguous` → rejected on the **attribution** term, not the loss term) |
+| dataset B `merged5` | cluster_0 hull, rung 2 `align_rematch` | same | 4,860 | −5, `exact`, **ACCEPTED** |
+| dataset B `merged4` | cluster_1, two accepted fusions | 1,634+69+64; 576+358+345+177 | 1,767; 1,456 | 0 (both exact) |
+| dataset B `merged5` | cluster_1, three progressive fusions (3→1, 5→1, 2→1) | — | 1,767; 3,039; 3,615 | 0 (all exact) |
+| dataset B, new-gate non-hull re-run | `{zone_1_c2, zone_4_c1, zone_4_c2}`, align-only | 345+358+177 = 880 | 880 | 0 |
+| dataset B, new-gate non-hull re-run | `{zone_1_c4, zone_1_c5}`, align-only | 69+64 = 133 | 133 | 0 |
+| dataset B, junction-fix confirmation | `{zone_1_c1, zone_1_c4, zone_1_c5}`, merge | 392+69+64 = 525 | 525 | 0, fused 3 → 1, accepted |
 
-[VERIFIED: FINDINGS 2026-07-25 (which explicitly CORRECTS an earlier "3,738 on all three rungs" —
+[VERIFIED: project testing 2026-07-25 (which explicitly CORRECTS an earlier "3,738 on all three rungs" —
 the peel counts are `[3738]`/`[3739]`/`[3739]`), 2026-07-27, 2026-07-28]
 
 **The `merged5` cluster_1 zero-loss rows are exactly the rows §5.7 indicts.** Only **one** of
 cluster_1's 28 component pairs shared any imagery, so most of that consolidation was co-location
 under `merge_georef`, not joint solving. They are listed here as arithmetic, not as evidence of
 registration. The new-gate re-run rows below them are the contrast: same zero loss, but produced by
-**align** over subsets whose relation was proved by content [VERIFIED: FINDINGS 2026-07-28].
+**align** over subsets whose relation was proved by content [VERIFIED: project testing 2026-07-28].
 
 Two caveats that must travel with these numbers:
 
-1. **ICP follow-up over the peel poses:** merge-mode's confirmed drop is `C231C1034` (no fused
+1. **ICP follow-up over the peel poses:** merge-mode's confirmed drop is one camera (no fused
    pose within 2 m); the second is **masked by a ~0.55 m median non-rigid deformation** of the
    merged solution versus zone_1's own solve — itself a direct measurement of under-constraint and
-   a seam/residual expectation [VERIFIED: FINDINGS 2026-07-25].
+   a seam/residual expectation [VERIFIED: project testing 2026-07-25].
 2. **The missing cameras are still not cleanly distinguishable from a harvest artifact.** For real
    loss: the deficit varies by mechanism, and a free re-align already drops 1–2 marginal cameras
    normally. Against: the peel harvest is a single PowerShell
@@ -691,7 +688,7 @@ Two caveats that must travel with these numbers:
    position over those same peel poses, so it is **not independent evidence**
    [OPEN: §Open questions].
 
-**The 5-camera loss that hid an entire fusion.** On the H2024 run made immediately after the
+**The 5-camera loss that hid an entire fusion.** On the dataset B run made immediately after the
 junction fix and **before** bounded-loss acceptance existed, cluster_0 peeled
 `[4860, 2241, 1407, 1217]` on rung 1 and `[4851, 2241, 1407, 1217, 5]` on rungs 2–3 — i.e.
 RealityScan fused essentially the whole hull every time — and the driver **rejected all three
@@ -700,13 +697,13 @@ attempts**, because 4,860 is not an exact subset sum of {2,241, 1,407, 1,217} = 
 False and `accept` never fired. The three parents each attributed to themselves exactly, so the
 attempt still recorded `adopted=3, delta=0` — **a rejection that reads as a clean no-op in
 `merge_report.json`**. A 0.10 % loss is enough to make a real fusion invisible
-[VERIFIED: FINDINGS 2026-07-28]. This is why bounded-loss acceptance exists (§7.6).
+[VERIFIED: project testing 2026-07-28]. This is why bounded-loss acceptance exists (§7.6).
 
 ### 5.10 Georeferencing the merged result
 
 A merged component is a **NEW** component and is **not georeferenced by inheritance** — the input
 components' own georeferencing does not carry over
-[VERIFIED-as-observed: NA156 H2023, 2026-07-23; MergeZoneComponents.bat header].
+[VERIFIED-as-observed: datasets A and B, 2026-07-23; MergeZoneComponents.bat header].
 
 The merge scene must therefore carry its own constraints:
 
@@ -714,7 +711,7 @@ The merge scene must therefore carry its own constraints:
    priors to fit). Rows referencing images absent from the scene make the import report
    warning-class `0x820000FF` / `err:18002` while the trajectory imports fine for every present
    image — tolerated by the `:run_geoimport` subroutine, which matches the numeric code and moves
-   the marker to `expected_18002_<instance>.txt` [VERIFIED: FINDINGS 2026-07-21/23].
+   the marker to `expected_18002_<instance>.txt` [VERIFIED: project testing 2026-07-21/23].
 2. `-update` **after** the merge — the rigid/similarity fit to those constraints is what actually
    georeferences the merged component [VERIFIED: MergeZoneComponents.bat lines 174–177].
 
@@ -727,7 +724,7 @@ Details of union-log construction, CRS/EPSG derivation and the metric-scale orac
 
 > **VERIFY EVERY MERGE BY POSE-XMP CAMERA CENSUS, NEVER BY EXIT STATUS.**
 > The single most repeated operational rule in this repository
-> [VERIFIED: NA167 #23; restated in ARCHITECTURE.md, status log, MERGE_STRATEGY_REPORT].
+> [VERIFIED: earlier multi-camera dataset, 2026-07; restated in ARCHITECTURE.md].
 
 A `-mergeComponents` that fuses nothing exits SUCCESS, writes no errors marker, and leaves an
 export that is simply the largest input.
@@ -736,13 +733,13 @@ export that is simply the largest input.
 
 | Method | How | Yields | Limits |
 |---|---|---|---|
-| **Stem-named XMP census** (`-exportXMP`) | `-deselectAllImages` → `-setMinComponentSize 1` → `-exportXMP`; count `.xmp` files containing `xcr:Position` | Camera count **and identity** (basenames) | Covers only "the last alignment" and silently skips components below `setMinComponentSize` [OFFICIAL: appbasics/allcommands]; only registered cameras get pose entries, which is what makes the count a registration census [VERIFIED: NA167 notes §1] |
-| **Ordinal XMP census** (`-exportXMPForSelectedComponent`) | select a component, export, count files | Camera count of **that one component** | Sidecars are `00000.xmp`, `00001.xmp`, … — **identity is lost**. Valid as a count only. Ordinal sidecars are inert as priors (no image has an ordinal stem) and are deleted by `camera_registry.sanitize_and_census` [VERIFIED: NA167 B10] |
+| **Stem-named XMP census** (`-exportXMP`) | `-deselectAllImages` → `-setMinComponentSize 1` → `-exportXMP`; count `.xmp` files containing `xcr:Position` | Camera count **and identity** (basenames) | Covers only "the last alignment" and silently skips components below `setMinComponentSize` [OFFICIAL: appbasics/allcommands]; only registered cameras get pose entries, which is what makes the count a registration census [VERIFIED: earlier multi-camera dataset, 2026-07] |
+| **Ordinal XMP census** (`-exportXMPForSelectedComponent`) | select a component, export, count files | Camera count of **that one component** | Sidecars are `00000.xmp`, `00001.xmp`, … — **identity is lost**. Valid as a count only. Ordinal sidecars are inert as priors (no image has an ordinal stem) and are deleted by `calibration_sidecars.sanitize_and_census` [VERIFIED: bug B10] |
 | **Successive difference** | Per lap: `-exportXMP` (all remaining components) → harvest stems → export + delete the maximal component → repeat. `members(c_K) = stems(r_K) − stems(r_{K+1})` | Per-component **membership** | Only works in the ORIGINAL aligning scene. Destructive in memory; requires a prior `-save` and a `-quit` without saving [VERIFIED: AlignZone.bat identity loop] |
 | **Count-based peel** | Per lap: select maximal → rename → export `.rsalign` → `-exportXMPForSelectedComponent` → harvest → delete | Per-component **camera counts**, maximal-first | Identity lost (ordinal); membership must come from attribution against input manifests [VERIFIED: MergeZoneComponents.bat `:harvest`] |
 | **Manifest sum** | Sum `camera_count` over the manifests of the components in the assembly | The assembly's camera total | It is the **inputs'** total, not an observation of the assembled project. Assemble mode exports no XMPs, so nothing observes the assembly itself — in particular its metric scale is unmeasured. Tag it as a manifest sum, always [VERIFIED-as-caveat: merge_zones.py EVALUATION_READY text] |
-| **`Finalizing N` from `RealityScan.log`** | Regex over a snapshot validated against the attempt's complist | A cross-check only | Semantics not established; log is truncated per boot and can be a splice [OPEN + VERIFIED: FINDINGS 2026-07-27] |
-| **Exit status / errors marker** | — | **Nothing about fusion** | A silent no-fuse exits SUCCESS and writes no errors marker [VERIFIED: NA167 #23/#26] |
+| **`Finalizing N` from `RealityScan.log`** | Regex over a snapshot validated against the attempt's complist | A cross-check only | Semantics not established; log is truncated per boot and can be a splice [OPEN + VERIFIED: project testing 2026-07-27] |
+| **Exit status / errors marker** | — | **Nothing about fusion** | A silent no-fuse exits SUCCESS and writes no errors marker [VERIFIED: earlier multi-camera dataset, 2026-07] |
 
 ### 6.2 The identity loop (AlignZone) — membership by successive difference
 
@@ -789,7 +786,7 @@ the last-peeled component's sidecars are never re-exported: measured on a fresh 
 4,540 images (17.5 %) were left with no sidecar** — the entire bow component (665/665), 123 of c0,
 8 unregistered. Any re-align of an already-harvested zone then silently runs with a partially
 ungrouped camera set (which confounded cells PD-4 and PD-4a). Fixed by
-`camera_registry.ensure_calibration_sidecars()` [VERIFIED: FINDINGS 2026-07-25]. See
+`calibration_sidecars.ensure_calibration_sidecars()` [VERIFIED: project testing 2026-07-25]. See
 `05-metadata-xmp-and-sidecars.md`.
 
 ### 6.3 The peel loop (merge scenes) — counts only
@@ -850,34 +847,34 @@ if result.success and not sizes and os.path.isfile(first_export):
                        'the measurement channel is broken. Aborting instead of mis-scoring.')
 ```
 
-This exact shape discarded **5 h 12 m** across two runs [VERIFIED: FINDINGS 2026-07-27/28;
+This exact shape discarded **5 h 12 m** across two runs [VERIFIED: project testing 2026-07-27/28;
 merge_zones.py lines 836–845].
 
 **(b) The cause it was protecting against: reparse points.** RealityScan writes **NO XMP sidecars
 when a scene's images resolve through a directory junction, and reports success.** Four baseline
 components on real paths harvested `identity_r0` = 267 files (= 116+94+57, exact); the same
 workflow on junction-rooted components harvested **zero**, silently, across 18 attempts
-[VERIFIED: FINDINGS 2026-07-27] [UNDOCUMENTED: no Epic coverage].
+[VERIFIED: project testing 2026-07-27] [UNDOCUMENTED: no Epic coverage].
 Compounding it, PowerShell 5.1 `Get-ChildItem -Recurse` does **not** descend into junction
 *children* (0 vs 9,835 `.xmp` on the same tree via its real path) while Python's `os.walk` does.
 The ALIGN harvest survived because it is handed the zone folder itself (the junction is the
 enumeration root); the MERGE harvest died because it is handed the parent
-[VERIFIED: FINDINGS 2026-07-27].
+[VERIFIED: project testing 2026-07-27].
 **Fix verified:** replace per-zone junctions with real directories of **hardlinked** `.jpg`
 (9,835 files, 35.8 GB logical, 0.05 GB actual) plus **copied** `.xmp` and flight logs — sidecars
 deliberately not hardlinked so a v2 write cannot corrupt the baseline's. No re-align was needed —
 the components were never the problem, only the paths baked into them
-[VERIFIED: FINDINGS 2026-07-28].
+[VERIFIED: project testing 2026-07-28].
 
 **(c) A merge-scene `-exportXMPForSelectedComponent` can complete and write nothing.** The log
 said "Exporting Registration completed in 8.758 seconds", yet a sweep of the whole drive found
 zero `.xmp` written. Ruled out: "an imported component carries no images" (the merge scene
 reported `Added 1407 images` / `1217` / `2241`). Root cause was the reparse-point write path above
-[VERIFIED: FINDINGS 2026-07-27].
+[VERIFIED: project testing 2026-07-27].
 
 **(d) A truncated peel is currently indistinguishable from a complete one** — the terminal
 subroutine's evidence file `expected_peelend_<instance>.txt` is written and never read
-[VERIFIED: FINDINGS 2026-07-27 adversarial review] [OPEN: §Open questions].
+[VERIFIED: project testing 2026-07-27 adversarial review] [OPEN: §Open questions].
 
 **(e) The peel count is its own only witness, and a stale sidecar can cancel a real loss.**
 The per-lap file count is simultaneously the evidence for membership, for `camera_count` and for
@@ -887,7 +884,7 @@ held. `census_leftover` is recorded in `merge_report.json` and never checked (an
 construction, because the harvest already moved the sidecars out). Consequence: an inflation of
 `+N` stale sidecars can exactly cancel a real solver loss of `−N`, producing
 `confidence == "exact"`, `lost == 0` and a **false accept** whose manifest names basenames the
-component does not contain [VERIFIED: FINDINGS 2026-07-27 adversarial review]
+component does not contain [VERIFIED: project testing 2026-07-27 adversarial review]
 [OPEN: no mechanical check exists; the cheap fix is to assert a clean tree before each attempt and
 to gate on `census_leftover == 0`].
 
@@ -918,13 +915,13 @@ Two historical defects worth carrying forward:
   and could not see a camera **gain** either, which is precisely what `sfmForceComponentRematch`
   and `sfmImagesOverlap:High` exist to produce. Every earlier statement attributing the hull
   rejection to never-shrink is **wrong**; the real gate was exact subset-sum attribution
-  [SUPERSEDED: all prior never-shrink attributions; VERIFIED: FINDINGS 2026-07-27, 35 confirmed /
+  [SUPERSEDED: all prior never-shrink attributions; VERIFIED: project testing 2026-07-27, 35 confirmed /
   11 refuted findings across 9 review passes].
 - **`fused` is inferred from the same arithmetic that fails on a lossy fusion**, so a fusion is
   only *visible* when its count is an exact input-subset sum. No code path in the driver could
   assert that two components fused. The dominant rejection shape records **no reason**:
   `workflow_success: true, attribution: "ambiguous", adopted_count: 0, camera_delta: null`
-  [VERIFIED: FINDINGS 2026-07-27].
+  [VERIFIED: project testing 2026-07-27].
 
 ---
 
@@ -934,7 +931,7 @@ Two historical defects worth carrying forward:
 
 Fixture: `zone_6 ←312 shared→ zone_14 ←239 shared→ zone_4`, 4,131 unique images, **zero** direct
 6↔4 overlap, so a single final component requires transitive stitching. Dual-5090 / 192 GB box,
-GPU 0, instance RS1 [VERIFIED: MERGE_STRATEGY_REPORT, NA167 #19, 2026-07-22…24].
+GPU 0, instance RS1 [VERIFIED: earlier multi-camera dataset, 2026-07-22…24].
 
 | Strategy | CLI shape | Single component? | Registered | Wall time | Peak RAM |
 |---|---|---|---|---|---|
@@ -944,8 +941,8 @@ GPU 0, instance RS1 [VERIFIED: MERGE_STRATEGY_REPORT, NA167 #19, 2026-07-22…24
 
 **Quality is strategy-independent** (94.5 % vs 94.6 % is noise). The choice is resource-shaped:
 C is 2.6× faster than B but 2.7× hungrier, and joint alignment extrapolates to **~700 GB for a
-19k-image dive** — **chunking is mandatory at production scale**
-[VERIFIED: NA167 #19, 2026-07-24].
+19k-image survey** — **chunking is mandatory at production scale**
+[VERIFIED: earlier multi-camera dataset, 2026-07-24].
 
 Production recommendation on record:
 1. Align zones independently (embarrassingly parallel across GPUs via `RS_INSTANCE` /
@@ -957,17 +954,17 @@ Production recommendation on record:
    `12-failure-modes-and-race-conditions.md`).
 4. Batcher change this implies: zones must reference a canonical image pool (hardlinks or
    imagelists) rather than per-zone copies.
-[VERIFIED-as-recommendation: MERGE_STRATEGY_REPORT, 2026-07-24]
+[VERIFIED-as-recommendation: project test records, 2026-07-24]
 
 **Caveat on (3):** incremental growth is **state-sensitive and can degrade existing structure** —
 a z6→z14 two-zone grow fragmented to an 870-camera maximal (below z6's solo 1,533), while the
 three-zone grow through the same stages held 3,906. Growth outcomes are not order- or
 subset-invariant; verify camera counts after every grow step
-[VERIFIED: NA167 #29, 2026-07-24].
+[VERIFIED: earlier multi-camera dataset, 2026-07-24].
 
 ### 7.2 Feature geography — clusters, and why a fraction target is wrong
 
-Running `component_analysis.merge_plan` over the twelve H2023 zone manifests — **pure analysis, no
+Running `component_analysis.merge_plan` over the twelve dataset A zone manifests — **pure analysis, no
 RealityScan** — resolves three spatially disjoint UTM clusters:
 
 | cluster | components | unique images | UTM extent |
@@ -980,15 +977,15 @@ RealityScan** — resolves three spatially disjoint UTM clusters:
 maximal component is **3,720/4,600 = 80.9 %**, below both `--target` values ever used (0.85, 0.83):
 a maximal-fraction gate was **unreachable by construction** and would have burned the full
 three-attempt ladder (~1.7 h measured) and exited 1 on a *correct* result
-[VERIFIED: FINDINGS 2026-07-24; docs/MERGE_REWORK_RECOMMENDATIONS].
+[VERIFIED: project testing 2026-07-24; project test records, 2026-07].
 
 Consequently `--target` in `merge_zones.py` is **informational only, never a gate**, and
 convergence (a full ladder cycle with no fusion) is the terminal condition.
 
-**Do not cite `D:\na156_h2023\merged`'s 83.9 %** as evidence about merge mechanism: five ordinal
+**Do not cite the superseded dataset A `merged` run's 83.9 %** as evidence about merge mechanism: five ordinal
 `Component N.rsalign` exports, empty twin plan, predates manifests; read with the clusters above,
 its 3,860 is a hull-cluster maximal, not a shortfall
-[SUPERSEDED: FINDINGS 2026-07-24].
+[SUPERSEDED: project testing 2026-07-24].
 
 ### 7.3 The pair gate — which components belong in one merge scene
 
@@ -1015,11 +1012,11 @@ def pair_related(a, b):
 rather than assumed [VERIFIED-by-inspection: merge_zones.py lines 257–279, 344–365].
 
 **The margin is applied to BOTH bboxes**, so a 10 m margin treats components up to **20 m** apart
-as bordering. Every description of it as a "10 m-expanded bbox", including several in the findings
-log, understates the reach by 2× [VERIFIED: FINDINGS 2026-07-27, pinned by
+as bordering. Every description of it as a "10 m-expanded bbox", including several in the
+project's test notes, understates the reach by 2× [VERIFIED: project testing 2026-07-27, pinned by
 `tests/test_merge_scope.py`].
 
-**Measured effect of the gate rework:** under the new gate the 8 non-hull H2024 components
+**Measured effect of the gate rework:** under the new gate the 8 non-hull dataset B components
 partition into **5 clusters** (versus **ONE** under the border gate), and both resulting fusions
 were content-driven and exact:
 
@@ -1028,7 +1025,7 @@ were content-driven and exact:
 | `{zone_1_c2, zone_4_c1, zone_4_c2}` | does not span | align-only | `[880, 358, 345, 177]`, 880 = 345+358+177 | fused all three, zero loss — content proved what the bbox suggested |
 | `{zone_1_c4, zone_1_c5}` | zero shared imagery, true bbox overlap | align-only | `[133, 69, 64]` | fused, exact |
 
-[VERIFIED: FINDINGS 2026-07-28]
+[VERIFIED: project testing 2026-07-28]
 
 **Scope — which of the related components actually enter one merge scene.** The pair gate says
 which components are *related*; `--merge_scope` says how many of them are handed to RealityScan at
@@ -1036,7 +1033,7 @@ once [VERIFIED-by-inspection: merge_zones.py lines 740–797]:
 
 | `--merge_scope` | Behaviour | Why |
 |---|---|---|
-| `neighbour` (default) | Walk targets **largest-first** (`growth_order`); each attempt's scene is that target plus every component related to it (`neighbour_subset`). A target relating to nothing is marked exhausted, no attempt run. | An all-at-once scene names no pair when it fails: H2024 `cluster_1` put **12 components in one scene**, and `cluster_0` ran all three rungs with a 0.236-scale component present every time, so it was never learned whether its two sound siblings would fuse alone. |
+| `neighbour` (default) | Walk targets **largest-first** (`growth_order`); each attempt's scene is that target plus every component related to it (`neighbour_subset`). A target relating to nothing is marked exhausted, no attempt run. | An all-at-once scene names no pair when it fails: dataset B `cluster_1` put **12 components in one scene**, and `cluster_0` ran all three rungs with a 0.236-scale component present every time, so it was never learned whether its two sound siblings would fuse alone. |
 | `cluster` | The whole cluster in one scene, the pre-2026-07-27 behaviour. | Retained so the two can be **compared** rather than assumed. |
 
 A `attempted: set[frozenset]` of subset signatures prevents a symmetric pair costing six attempts
@@ -1067,7 +1064,7 @@ reachable from every other [VERIFIED-by-inspection: merge_zones.py lines 316–3
 **Rationale, stated precisely:** merge fuses through camera identity; align fuses through content.
 So an identity-connected subset is the only one a merge rung can act on soundly; anything else
 gets align-only rungs and lets content decide
-[VERIFIED-as-design + measured outcome: FINDINGS 2026-07-28].
+[VERIFIED-as-design + measured outcome: project testing 2026-07-28].
 
 ### 7.5 The escalation ladder
 
@@ -1097,11 +1094,11 @@ LADDERS = {
 Notes:
 - `merge_first` is mechanistically sound for duplicate-path zones and was ~25 % faster than align
   mode in the D7 probe; the D7 verdict made ladder inversion unnecessary
-  [VERIFIED: FINDINGS 2026-07-24].
+  [VERIFIED: project testing 2026-07-24].
 - Rung 3 (`sfmImagesOverlap:High`) is retained but **is not defensible on the evidence** — see
   §5.3.
 - **An accepted rung short-circuits the rest of the ladder** and is worth half the wall clock
-  (merged5 68.3 min vs merged4 121.8 min) [VERIFIED: FINDINGS 2026-07-28].
+  (merged5 68.3 min vs merged4 121.8 min) [VERIFIED: project testing 2026-07-28].
 - A rung that fuses **restarts** the ladder on the new state; convergence is a full cycle with no
   fusion.
 
@@ -1110,7 +1107,7 @@ Notes:
 **Project decision in force (2026-07-28): bounded loss at 0.25 % of input cameras.** The default
 remains **0** (exact subset sums only); the 0.25 % is passed explicitly by the driver
 (`--loss_tolerance 0.0025`), warned at startup, and recorded per attempt and in
-`EVALUATION_READY.txt` [VERIFIED-as-decision: status log "DECISION IN FORCE (2026-07-28)"].
+`EVALUATION_READY.txt` [VERIFIED-as-decision: project testing 2026-07-28].
 
 ```python
 def loss_budget(input_cams, loss_tolerance_frac):
@@ -1124,7 +1121,7 @@ result carries the `loss` it was accepted with [VERIFIED-by-inspection: merge_zo
 434–538].
 
 This exists because acceptance semantics on a deliverable are project decision, not a silent
-default — and because without it, H2024's real 4,860-of-4,865 hull fusion was rejected three times
+default — and because without it, dataset B's real 4,860-of-4,865 hull fusion was rejected three times
 (§5.9).
 
 ### 7.7 Twin components
@@ -1133,7 +1130,7 @@ The 20 % batcher overlap band duplicates images into adjacent zones, and the sam
 independently can fragment into near-identical twins whose residual quality differs with solve
 context.
 
-Policy [VERIFIED: FINDINGS 2026-07-23; `modules/component_analysis.py`, 31-test suite]:
+Policy [VERIFIED: project testing 2026-07-23; `modules/component_analysis.py`, 31-test suite]:
 
 | Rule | Implementation |
 |---|---|
@@ -1158,8 +1155,8 @@ time — the only moment per-camera XMP identity still exists — and persisted 
   "schema": 1,
   "zone": "zone_1",
   "component": "zone_1_c0",
-  "rsalign": "F:\\na156_h2024_v2\\aligned_components\\zone_1\\zone_1_c0.rsalign",
-  "images": ["P231C0003_20231104_edt.jpg", "..."],
+  "rsalign": "F:\\survey_v2\\aligned_components\\zone_1\\zone_1_c0.rsalign",
+  "images": ["IMG_0003.jpg", "..."],
   "camera_count": 123,
   "bbox_utm": [594693.0, 2345096.0, 594719.0, 2345160.0],
   "quality": {"mean_reproj_px": null},
@@ -1191,14 +1188,14 @@ Merge results of record:
 
 | run | result |
 |---|---|
-| H2023 `merged` (**superseded**) | 3,860 / 3,855 / 3,855 cameras across 3 attempts, 31 min for the first |
-| H2023 fresh `merged` | hull pair fused 3,740 → **3,738 (merge rung) / 3,739 / 3,739 (both align rungs)**, **auto-rejected** on exact-subset-sum attribution; 4 components delivered (hull 3,026 + hull strip 714 + bow 665 + west pocket 102), 4,507/4,598 (98.0 %) |
-| H2023 `merged_pd6` | 3 singleton clusters, **zero** merge attempts, 1.5 min solve time, 3 components, 4,496/4,600 (97.7 %) |
-| H2024 `merged4` | 121.8 min, 4 components, 8,474 cams; hull fused 3 → 1 at 4,859 (6-camera loss inside budget) |
-| H2024 `merged5` | 68.3 min, 2 components, 8,475 cams; `cluster_0_a2_c0` 4,860 via `align_rematch`; `cluster_1_a3_c0` 3,615 — **later confirmed a rigid glue of 8 objects** |
-| H2024 `final_assembly` | 6 components, 8,475 cams, all modelled and all metrically measured |
+| dataset A `merged` (**superseded**) | 3,860 / 3,855 / 3,855 cameras across 3 attempts, 31 min for the first |
+| dataset A fresh `merged` | hull pair fused 3,740 → **3,738 (merge rung) / 3,739 / 3,739 (both align rungs)**, **auto-rejected** on exact-subset-sum attribution; 4 components delivered (hull 3,026 + hull strip 714 + bow 665 + west pocket 102), 4,507/4,598 (98.0 %) |
+| dataset A `merged_pd6` | 3 singleton clusters, **zero** merge attempts, 1.5 min solve time, 3 components, 4,496/4,600 (97.7 %) |
+| dataset B `merged4` | 121.8 min, 4 components, 8,474 cams; hull fused 3 → 1 at 4,859 (6-camera loss inside budget) |
+| dataset B `merged5` | 68.3 min, 2 components, 8,475 cams; `cluster_0_a2_c0` 4,860 via `align_rematch`; `cluster_1_a3_c0` 3,615 — **later confirmed a rigid glue of 8 objects** |
+| dataset B `final_assembly` | 6 components, 8,475 cams, all modelled and all metrically measured |
 
-[VERIFIED: FINDINGS/status log 2026-07-24 … 2026-07-29]
+[VERIFIED: project testing 2026-07-24 … 2026-07-29]
 
 The `final_assembly` terminal state, in full, is the concrete shape of "as big as it can get, per
 feature" — note that two of the six are fused results from the new-gate re-run (§7.3) and four are
@@ -1213,9 +1210,9 @@ zone components that were correctly left alone:
 | `zone_1_c1` | 392 | 1.023 | 97.4 min |
 | `cluster_4_a1_c0` | 133 | 0.980 | 40.1 min |
 
-Project `F:\na156_h2024_v2\final_assembly\assembly\H2024_Final_Assembly.rsproj`; dated copy
-`F:\na156_h2024_v2\RC_projects\NA156_H2024_V2_merged_20260729` (95.2 GB)
-[VERIFIED: FINDINGS 2026-07-29; status log "THE DELIVERABLE"].
+Project `F:\survey_v2\final_assembly\assembly\SURVEY_Final_Assembly.rsproj`; dated copy
+`F:\survey_v2\RC_projects\SURVEY_V2_merged_20260729` (95.2 GB)
+[VERIFIED: project testing 2026-07-29].
 
 ---
 
@@ -1236,7 +1233,7 @@ The instance must already be booted and named `RS1` (`-setInstanceName RS1`, see
 subroutine refuses to do**: `-waitCompleted` can return prematurely when it is issued before the
 instance has picked the queued command up, so production code always does
 delegate → ~3 s grace → `-waitCompleted` → ~2 s grace → `-waitCompleted`
-[VERIFIED: FINDINGS 2026-07-21]. The single waits below keep the example readable; do not copy that
+[VERIFIED: project testing 2026-07-21]. The single waits below keep the example readable; do not copy that
 part into anything unattended.
 
 ```bat
@@ -1246,9 +1243,9 @@ set RS="C:\Program Files\Epic Games\RealityScan_2.2\RealityScan.exe"
 %RS% -waitCompleted RS1
 
 :: Import IN PLACE - original export directories only.
-%RS% -delegateTo RS1 -importComponent "D:\na167_h2075\rs_test\merge_test\z6\zone_6_c0.rsalign"
+%RS% -delegateTo RS1 -importComponent "D:\survey\rs_test\merge_test\z6\zone_6_c0.rsalign"
 %RS% -waitCompleted RS1
-%RS% -delegateTo RS1 -importComponent "D:\na167_h2075\rs_test\merge_test\z14\zone_14_c0.rsalign"
+%RS% -delegateTo RS1 -importComponent "D:\survey\rs_test\merge_test\z14\zone_14_c0.rsalign"
 %RS% -waitCompleted RS1
 
 :: Flags cross as key=value, ALWAYS quoted as one argument.
@@ -1256,8 +1253,8 @@ set RS="C:\Program Files\Epic Games\RealityScan_2.2\RealityScan.exe"
 %RS% -delegateTo RS1 -set "sfmEnableCameraPrior=true"
 
 :: Constraints BEFORE the merge so the solve has priors to fit.
-%RS% -delegateTo RS1 -importFlightLog "D:\na167_h2075\rs_test\merge_test\flight_log_53N_UTM.txt" ^
-                                      "D:\na167_h2075\rs_test\merge_test\FlightLogParams_53N.xml"
+%RS% -delegateTo RS1 -importFlightLog "D:\survey\rs_test\merge_test\flight_log_53N_UTM.txt" ^
+                                      "D:\survey\rs_test\merge_test\FlightLogParams_53N.xml"
 %RS% -waitCompleted RS1
 
 %RS% -delegateTo RS1 -mergeComponents
@@ -1273,7 +1270,7 @@ set RS="C:\Program Files\Epic Games\RealityScan_2.2\RealityScan.exe"
 %RS% -delegateTo RS1 -setMinComponentSize 1
 %RS% -delegateTo RS1 -selectMaximalComponent
 %RS% -delegateTo RS1 -renameSelectedComponent "z6_z14_merged"
-%RS% -delegateTo RS1 -exportSelectedComponentDir "D:\na167_h2075\rs_test\merge_test\out"
+%RS% -delegateTo RS1 -exportSelectedComponentDir "D:\survey\rs_test\merge_test\out"
 %RS% -delegateTo RS1 -exportXMPForSelectedComponent
 %RS% -waitCompleted RS1
 %RS% -waitCompleted RS1
@@ -1294,14 +1291,14 @@ MergeZoneComponents.bat  %1 complist|folder  %2 out_dir  %3 name
 
 ```bat
 :: One ladder rung: merge mode, georef flag on, min size 1, peel harvest enabled.
-set "RS_MERGE_FLIGHT_LOG=F:\na156_h2024_v2\merged5\cluster_0\flight_log_cluster_0_57S_UTM.txt"
-set "RS_MERGE_FLIGHT_LOG_PARAMS=F:\na156_h2024_v2\merged5\cluster_0\FlightLogParams_57S.xml"
+set "RS_MERGE_FLIGHT_LOG=F:\survey_v2\merged5\cluster_0\flight_log_cluster_0_57S_UTM.txt"
+set "RS_MERGE_FLIGHT_LOG_PARAMS=F:\survey_v2\merged5\cluster_0\FlightLogParams_57S.xml"
 set "RS_MERGE_HARVEST=1"
-set "RS_MERGE_IMAGES_ROOT=F:\na156_h2024_v2\batched_images_by_zone"
+set "RS_MERGE_IMAGES_ROOT=F:\survey_v2\batched_images_by_zone"
 
 call MergeZoneComponents.bat ^
-  "F:\na156_h2024_v2\merged5\cluster_0\attempt_1_merge_georef\cluster.complist" ^
-  "F:\na156_h2024_v2\merged5\cluster_0\attempt_1_merge_georef" ^
+  "F:\survey_v2\merged5\cluster_0\attempt_1_merge_georef\cluster.complist" ^
+  "F:\survey_v2\merged5\cluster_0\attempt_1_merge_georef" ^
   "cluster_0_a1" merge 1 ^
   "sfmMergeGeoreferencedComponents:true" "sfmEnableCameraPrior:true"
 ```
@@ -1314,11 +1311,11 @@ Produces, in the attempt directory: `cluster_0_a1_c0.rsalign`, `cluster_0_a1_c1.
 
 ```bat
 python merge_zones.py ^
-  --components_root "F:\na156_h2024_v2\aligned_components" ^
-  --images_root     "F:\na156_h2024_v2\batched_images_by_zone" ^
-  --output          "F:\na156_h2024_v2\merged5" ^
-  --name            "H2024_V2_Assembly" ^
-  --project_label   "NA156_H2024_V2" ^
+  --components_root "F:\survey_v2\aligned_components" ^
+  --images_root     "F:\survey_v2\batched_images_by_zone" ^
+  --output          "F:\survey_v2\merged5" ^
+  --name            "SURVEY_V2_Assembly" ^
+  --project_label   "survey_v2" ^
   --min_size 50 --pair_gate overlap --merge_scope neighbour ^
   --ladder merge_first --loss_tolerance 0.0025 ^
   --scale_gate true --auto_model false
@@ -1331,10 +1328,10 @@ Outputs: `merge_report.json` (schema 2 — per-attempt peel sizes, attribution, 
 Assembly-only staging (no ladder, every input carried as-is):
 
 ```bat
-python merge_zones.py --complist "F:\na156_h2024_v2\final.complist" --assemble_only true ^
-  --components_root "F:\na156_h2024_v2\aligned_components" ^
-  --images_root "F:\na156_h2024_v2\batched_images_by_zone" ^
-  --output "F:\na156_h2024_v2\final_assembly" --name "H2024_Final"
+python merge_zones.py --complist "F:\survey_v2\final.complist" --assemble_only true ^
+  --components_root "F:\survey_v2\aligned_components" ^
+  --images_root "F:\survey_v2\batched_images_by_zone" ^
+  --output "F:\survey_v2\final_assembly" --name "SURVEY_Final"
 ```
 
 ---
@@ -1343,18 +1340,18 @@ python merge_zones.py --complist "F:\na156_h2024_v2\final.complist" --assemble_o
 
 | # | Symptom | Cause | Mitigation | Tag |
 |---|---|---|---|---|
-| 1 | `-importComponent` never returns; `#timeout` progress lines tick for hours; no error, no minidump | The `.rsalign` was copied/moved away from its original export directory | Import in place; drive from a `.complist` of original paths; watchdog merge-class ops at 45 min | [VERIFIED: NA167 B1] |
-| 2 | Merge exits SUCCESS, "merged" export is just the biggest input | Zero content overlap between the components | Census every merge; gate candidates on shared imagery or true bbox overlap | [VERIFIED: NA167 #23–26] |
-| 3 | `-selectAllComponents` fails `0x82000060` | The command does not exist in 2.2 | Use `-selectMaximalComponent` / no pre-selection at all | [VERIFIED: NA167 B2] |
-| 4 | Flags appear applied but nothing changed; `err:7155 Parsing setting … failed` in the app log; workflow aborts on the errors marker | `key=value` split by cmd into two `.bat` arguments | Cross the boundary as `key:value`; convert inside the workflow; always quote the pair at `-set` | [VERIFIED: NA167 B5] |
-| 5 | Component/XMP export completes in ~0.06 s and writes nothing | Flight-log import left images actively selected; under `-silent` the "Export Selection" dialog is auto-answered | `-deselectAllImages` before **every** export | [VERIFIED: FINDINGS 2026-07-23] |
-| 6 | Small components missing from exports and from the census | `-setMinComponentSize` default 5 silently excludes them | `-setMinComponentSize 1` before census exports (the command is deprecated but still required) | [VERIFIED: NA167 B11] |
-| 7 | Peel harvest returns `[]` while `<name>_c0.rsalign` exists | Images resolve through a directory junction, so RS writes no sidecars (silently); or PowerShell 5.1 will not descend into junction children | Real directories with hardlinked images; the empty-peel invariant aborts the run | [VERIFIED: FINDINGS 2026-07-27/28] |
-| 8 | Two accepted fusions in one cluster collide on the name `<tag>_m_c0`; "duplicate component identity" | `peel_index` restarts every attempt | Embed the attempt number: `<tag>_a<N>_c<K>` | [VERIFIED: FINDINGS 2026-07-28] |
-| 9 | `merge_zones` aborts with "complist entries without manifests" for a file that exists | UTF-8 **BOM** on line 1 written by PowerShell 5.1 `Set-Content -Encoding utf8` | Write with `UTF8Encoding($false)` or from Python | [VERIFIED: FINDINGS 2026-07-27] |
-| 10 | A completely successful ladder that fused 3 → 1 then aborts with "need at least 2 components" | The `component_count LSS 2` guard was applied to `assemble` mode too | Assemble mode now requires ≥ 1; every other mode still requires ≥ 2 | [VERIFIED-as-fixed: FINDINGS 2026-07-28] |
-| 11 | Report shows `workflow_success: true, attribution: "ambiguous", adopted_count: 0, camera_delta: null` and no rejection reason — looks like a clean no-op | A real but *lossy* fusion is invisible to exact subset-sum attribution | Bounded-loss tolerance (`--loss_tolerance`), explicitly passed | [VERIFIED: FINDINGS 2026-07-27/28] |
-| 12 | Attempts that re-import a previously fused component harvest nothing (`identity_r0: 0`) | Not explained | Do not build on it without a probe | [OPEN: FINDINGS 2026-07-28] |
+| 1 | `-importComponent` never returns; `#timeout` progress lines tick for hours; no error, no minidump | The `.rsalign` was copied/moved away from its original export directory | Import in place; drive from a `.complist` of original paths; watchdog merge-class ops at 45 min | [VERIFIED: bug B1] |
+| 2 | Merge exits SUCCESS, "merged" export is just the biggest input | Zero content overlap between the components | Census every merge; gate candidates on shared imagery or true bbox overlap | [VERIFIED: earlier multi-camera dataset, 2026-07] |
+| 3 | `-selectAllComponents` fails `0x82000060` | The command does not exist in 2.2 | Use `-selectMaximalComponent` / no pre-selection at all | [VERIFIED: bug B2] |
+| 4 | Flags appear applied but nothing changed; `err:7155 Parsing setting … failed` in the app log; workflow aborts on the errors marker | `key=value` split by cmd into two `.bat` arguments | Cross the boundary as `key:value`; convert inside the workflow; always quote the pair at `-set` | [VERIFIED: bug B5] |
+| 5 | Component/XMP export completes in ~0.06 s and writes nothing | Flight-log import left images actively selected; under `-silent` the "Export Selection" dialog is auto-answered | `-deselectAllImages` before **every** export | [VERIFIED: project testing 2026-07-23] |
+| 6 | Small components missing from exports and from the census | `-setMinComponentSize` default 5 silently excludes them | `-setMinComponentSize 1` before census exports (the command is deprecated but still required) | [VERIFIED: bug B11] |
+| 7 | Peel harvest returns `[]` while `<name>_c0.rsalign` exists | Images resolve through a directory junction, so RS writes no sidecars (silently); or PowerShell 5.1 will not descend into junction children | Real directories with hardlinked images; the empty-peel invariant aborts the run | [VERIFIED: project testing 2026-07-27/28] |
+| 8 | Two accepted fusions in one cluster collide on the name `<tag>_m_c0`; "duplicate component identity" | `peel_index` restarts every attempt | Embed the attempt number: `<tag>_a<N>_c<K>` | [VERIFIED: project testing 2026-07-28] |
+| 9 | `merge_zones` aborts with "complist entries without manifests" for a file that exists | UTF-8 **BOM** on line 1 written by PowerShell 5.1 `Set-Content -Encoding utf8` | Write with `UTF8Encoding($false)` or from Python | [VERIFIED: project testing 2026-07-27] |
+| 10 | A completely successful ladder that fused 3 → 1 then aborts with "need at least 2 components" | The `component_count LSS 2` guard was applied to `assemble` mode too | Assemble mode now requires ≥ 1; every other mode still requires ≥ 2 | [VERIFIED-as-fixed: project testing 2026-07-28] |
+| 11 | Report shows `workflow_success: true, attribution: "ambiguous", adopted_count: 0, camera_delta: null` and no rejection reason — looks like a clean no-op | A real but *lossy* fusion is invisible to exact subset-sum attribution | Bounded-loss tolerance (`--loss_tolerance`), explicitly passed | [VERIFIED: project testing 2026-07-27/28] |
+| 12 | Attempts that re-import a previously fused component harvest nothing (`identity_r0: 0`) | Not explained | Do not build on it without a probe | [OPEN: project testing 2026-07-28] |
 
 ---
 
@@ -1364,17 +1361,17 @@ Every `[OPEN]` in this document, with the cheapest probe that would close it.
 
 | # | Question | Cheapest probe | Origin |
 |---|---|---|---|
-| O-1 | What exactly does `Finalizing N component(s)` count — newly created components, scene total, or components entering the finalize phase? It is the strongest available rigid-glue discriminator and its semantics are unknown. | Two tiny imports (e.g. the 78- and 42-camera D7 components), one `-mergeComponents`, then peel and compare the peel length against the logged `N`. ~5 min on the smoke fixture. | FINDINGS 2026-07-28; NA167 B11 ("Finalizing 9 components" on a zero-overlap pair, "fragment behavior under analysis") |
+| O-1 | What exactly does `Finalizing N component(s)` count — newly created components, scene total, or components entering the finalize phase? It is the strongest available rigid-glue discriminator and its semantics are unknown. | Two tiny imports (e.g. the 78- and 42-camera D7 components), one `-mergeComponents`, then peel and compare the peel length against the logged `N`. ~5 min on the smoke fixture. | project testing 2026-07-28; bug B11 ("Finalizing 9 components" on a zero-overlap pair, "fragment behavior under analysis") |
 | O-2 | Was D7b a genuine content fusion or a rigid glue? It satisfies four of the five rigid-glue tests (zero shared basenames, exact 120 = 78+42, `merge_georef`) and is exonerated only by "Finalizing 1" and the absence of a flight log in the merge scene. Do imported components carry their own georeferencing into a new scene? | Re-run D7b with input components aligned **without any flight log** (so they cannot be georeferenced at all). If it still fuses, content fusion is proven independent of georeferencing. ~15 min on the smoke fixture. | This document, §5.7 |
-| O-3 | Does `sfmMergeGeoreferencedComponents=true` work when the components are georeferenced by **ground control**, rather than by 10 m-accuracy position priors? The D1/D2 cells arguably never met the feature's documented premise. | Re-test the georef-flag path with priors-v2 components (tight accuracies), or with ≥ 3 GCPs assigned across the two components, on a zero-content-overlap pair. Queued as a PD follow-on cell, never run. | SUPERSEDED-RISK flag, FINDINGS 2026-07-25 |
-| O-4 | Are the 2 (or 3, or 5) "lost" cameras in a fusion a real solver drop or a harvest artifact? The peel harvest is a single PowerShell `Move-Item -Force` line that exits 0 on non-terminating errors, and the ICP check reused those same poses. | Settle it from artifacts already on disk: re-import `cluster_*_m_c0.rsalign` **from its original export location** into a spare instance and census it. 3,740 ⇒ accounting artifact; 3,738 ⇒ real loss. (Reading RealityScan's own count from `rslog.txt` is not trustworthy on these artifacts because of the log-splice finding.) | FINDINGS 2026-07-27 |
-| O-5 | A **truncated** peel is currently indistinguishable from a complete one — `expected_peelend_<instance>.txt` is written and never read. | Have the driver require that evidence file (or a rename failure record) before treating a peel as complete; assert `peel_index` reached the terminal rather than the 40-lap cap. Code change plus one smoke run. | FINDINGS 2026-07-27 adversarial review |
-| O-6 | Why do attempts that re-import a previously fused component harvest nothing (`identity_r0: 0`)? cluster_1 attempts 2–4 recorded zero while attempts 1 and 5 harvested normally; it did not recur in merged5. | Import one previously fused `.rsalign` from its original location into a fresh scene beside one un-fused component, run the peel, and compare against the same pair with the fused input replaced by its parents. ~20 min. | FINDINGS 2026-07-28 |
+| O-3 | Does `sfmMergeGeoreferencedComponents=true` work when the components are georeferenced by **ground control**, rather than by 10 m-accuracy position priors? The D1/D2 cells arguably never met the feature's documented premise. | Re-test the georef-flag path with priors-v2 components (tight accuracies), or with ≥ 3 GCPs assigned across the two components, on a zero-content-overlap pair. Queued as a PD follow-on cell, never run. | SUPERSEDED-RISK flag, project testing 2026-07-25 |
+| O-4 | Are the 2 (or 3, or 5) "lost" cameras in a fusion a real solver drop or a harvest artifact? The peel harvest is a single PowerShell `Move-Item -Force` line that exits 0 on non-terminating errors, and the ICP check reused those same poses. | Settle it from artifacts already on disk: re-import `cluster_*_m_c0.rsalign` **from its original export location** into a spare instance and census it. 3,740 ⇒ accounting artifact; 3,738 ⇒ real loss. (Reading RealityScan's own count from `rslog.txt` is not trustworthy on these artifacts because of the log-splice finding.) | project testing 2026-07-27 |
+| O-5 | A **truncated** peel is currently indistinguishable from a complete one — `expected_peelend_<instance>.txt` is written and never read. | Have the driver require that evidence file (or a rename failure record) before treating a peel as complete; assert `peel_index` reached the terminal rather than the 40-lap cap. Code change plus one smoke run. | project testing 2026-07-27 adversarial review |
+| O-6 | Why do attempts that re-import a previously fused component harvest nothing (`identity_r0: 0`)? cluster_1 attempts 2–4 recorded zero while attempts 1 and 5 harvested normally; it did not recur in merged5. | Import one previously fused `.rsalign` from its original location into a fresh scene beside one un-fused component, run the peel, and compare against the same pair with the fused input replaced by its parents. ~20 min. | project testing 2026-07-28 |
 | O-7 | Does `-exportLatestComponents` produce anything after a plain `-mergeComponents` (which is not an "alignment", so "the last alignment" may be empty)? The repo restricts the call to align mode on the assumption that it does not. | Run merge mode on the smoke fixture, then `-setMinComponentSize 1` + `-exportLatestComponents <dir>` and count the files. ~5 min. | Hardening cell U9 |
 | O-8 | Does `-align` UPDATE an existing component **in place**, keeping its name, when it only grows — or does it always create a new `Component N`? | Align a scene, rename the maximal component to a distinctive string, add a handful of images, re-align, then `-selectComponent <that string>` and check whether it resolves. ~10 min. | Hardening cell U6 |
-| O-9 | Does `appCopyImportedComponentsToCache` (bool, default `false`) change the relocated-import hang? It is the one setting that plausibly interacts with hard rule 7. | Set it `true`, then `-importComponent` a **deliberately relocated** copy of a small component with a 10-minute watchdog. If it imports, the hang has a supported workaround. | SURVEY_settings; ARCHITECTURE.md hard rule 7 |
+| O-9 | Does `appCopyImportedComponentsToCache` (bool, default `false`) change the relocated-import hang? It is the one setting that plausibly interacts with hard rule 7. | Set it `true`, then `-importComponent` a **deliberately relocated** copy of a small component with a 10-minute watchdog. If it imports, the hang has a supported workaround. | ARCHITECTURE.md hard rule 7 |
 | O-10 | Do the merge-by-**control-point** and merge-by-**ground-control-point** paths work headless? Both are documented (≥ 4 CPs each on more than one image per component / ≥ 3 GCPs with ≥ 5 assignments) and neither has ever been driven through this CLI. | On the smoke fixture, place 6 CPs across the mini_a/mini_b pair via `-importControlPointsMeasurements` + `-editControlPointSelection`, then `-align`; census. The prerequisite params XML must be exported from the GUI dialog once. | tutorials/mergecomponents_cp; never exercised here |
-| O-11 | Which feature-source mode (`-setFeatureSource 0\|1\|2`) is actually consumed by which operation, and does `0` ("merge using overlaps") measurably speed up or improve a merge on duplicated overlap bands? The Help ties the trio to "a new alignment of components", implying align-only, but this has never been A/B'd here. | On the D6 split-zone fixture (390 shared images), run `-selectAllImages -setFeatureSource 0` then `-align`, versus the same with mode `1`, and compare runtime, peak RAM and fused camera count. ~2 h. | [INFERRED] from appbasics/components; NA167 B11 |
+| O-11 | Which feature-source mode (`-setFeatureSource 0\|1\|2`) is actually consumed by which operation, and does `0` ("merge using overlaps") measurably speed up or improve a merge on duplicated overlap bands? The Help ties the trio to "a new alignment of components", implying align-only, but this has never been A/B'd here. | On the D6 split-zone fixture (390 shared images), run `-selectAllImages -setFeatureSource 0` then `-align`, versus the same with mode `1`, and compare runtime, peak RAM and fused camera count. ~2 h. | [INFERRED] from appbasics/components; bug B11 |
 | O-12 | Are the "Small Components" thresholds (*Include smaller than* default 3, *Exclude bigger than*, *As small as a percentage of inputs*) and "Delete all small components" reachable from the CLI at all? | Type likely key prefixes into the GUI console view with TAB completion, or change each control and diff the app config. ~5 min with the GUI. | appbasics/smallcomponents; absent from allcommands |
 | O-13 | Is `-exportSelectedComponentFile <fileName>` a naming-safe alternative to `-exportSelectedComponentDir` (which names the file after the component)? Untested here. | One export of a known component to an explicit filename; check the resulting name. ~2 min. | appbasics/allcommands; unused by this repo |
-| O-14 | Does `-renameSelectedComponent` on an empty scene **fail** `0x80070057` or **silently no-op**? Two in-repo observations disagree (2026-07-23 vs 2026-07-24, §2.3), and the peel terminal depends on it — the workflow currently handles both, but a truncated peel is only detectable if the failure form is guaranteed (see O-5). | `-newScene`, then `-selectMaximalComponent`, then `-renameSelectedComponent x`; read `errors_<instance>.txt`. Repeat once after a delete-to-empty rather than a fresh scene, since those may differ. ~1 min. | FINDINGS 2026-07-23 vs 2026-07-24 |
+| O-14 | Does `-renameSelectedComponent` on an empty scene **fail** `0x80070057` or **silently no-op**? Two in-repo observations disagree (2026-07-23 vs 2026-07-24, §2.3), and the peel terminal depends on it — the workflow currently handles both, but a truncated peel is only detectable if the failure form is guaranteed (see O-5). | `-newScene`, then `-selectMaximalComponent`, then `-renameSelectedComponent x`; read `errors_<instance>.txt`. Repeat once after a delete-to-empty rather than a fresh scene, since those may differ. ~1 min. | project testing 2026-07-23 vs 2026-07-24 |

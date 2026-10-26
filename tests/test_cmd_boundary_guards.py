@@ -3,15 +3,15 @@
 
 Two guards live in RealityScanCLI (hard rule 1: one place launches
 RealityScan, so one check covers every driver), plus the structural
-properties of the workflow scripts themselves that the same audit fixed.
+properties of the workflow scripts themselves.
 
-WHY (audit 2026-08-07, all measured with an echo-only .bat, every case
-rc=0 - the corruption is silent):
+WHY (measured with an echo-only .bat; every case returns rc=0, so the
+corruption is silent):
 
-  'D:\\NA167 Wreck & Debris\\exports' -> ARG1='D:\\NA167 Wreck ', rest RUN
-  'D:\\NA167^b\\exports'              -> 'D:\\NA167b\\exports' (caret eaten)
-  'D:\\dive\\a=b\\exports'            -> split; later positionals shift
-  'D:\\dive\\with,comma\\final'       -> split
+  'D:\\survey data & notes\\exports' -> ARG1='D:\\survey data ', rest RUN
+  'D:\\survey^b\\exports'            -> 'D:\\surveyb\\exports' (caret eaten)
+  'D:\\survey\\a=b\\exports'         -> split; later positionals shift
+  'D:\\survey\\with,comma\\final'    -> split
 
 ARCHITECTURE.md hard rule 8 names this trap for delimited DATA; nothing enforced
 it for PATHS, which is what a fresh user supplies.
@@ -20,9 +20,8 @@ And the boot path accepted '*' as an instance name. '*' means "first
 available instance", a GUI/Epic-Launcher RealityScan answers it, and
 run_batch_script -quits any instance answering the name before
 startRealityScan.bat issues '-newScene -deleteAutosave' - i.e. it would
-destroy a multi-hour interactive reconstruction with no prompt (the ON2026
-near-miss class). Attach mode was hardened against exactly this; the boot
-path never was.
+destroy a multi-hour interactive reconstruction with no prompt. Attach
+mode was hardened against exactly this; the boot path never was.
 
 No RealityScan is launched: the executable is a stub and every guard fires
 BEFORE any subprocess (that is the point of the guard).
@@ -61,6 +60,15 @@ class FakeStore:
         self.data.setdefault(section, {})[key] = value
 
 
+@pytest.fixture(autouse=True)
+def private_errors_dir(tmp_path, monkeypatch):
+    """Instance locks and markers in this test's own folder: a test that
+    gets past the guards takes the RS1 lock, which in the package's
+    RS_CLI/Errors would write into the source tree and collide with a
+    concurrent pytest run."""
+    monkeypatch.setattr(cli_mod, 'ERRORS_DIR', str(tmp_path / 'errors'))
+
+
 def _cli(tmp_path, instance='RS1'):
     exe = tmp_path / 'RealityScan.exe'
     exe.write_text('stub', encoding='utf-8')
@@ -80,16 +88,16 @@ def _no_subprocess(monkeypatch):
 # ------------------------------------------------------- the arg validator
 
 @pytest.mark.parametrize('arg', [
-    r'D:\NA167 Wreck & Debris\exports',      # & : rest of the line RUNS
-    r'D:\NA167^b\exports',                   # ^ : eaten, different path
-    r'D:\dive\a=b\exports',                  # = : splits, positionals shift
-    r'D:\dive\with,comma\final',             # , : splits
-    r'D:\dive\with;semi\final',              # ; : splits
-    r'D:\dive\(parens)\final',               # ( ) : block syntax
-    r'D:\dive\100%complete\final',           # % : parse-time expansion
-    r'D:\dive\bang!\final',                  # ! : delayed expansion
-    r'D:\dive\pipe|it\final',                # | : pipes
-    r'D:\dive\redirect>out\final',           # > : redirection
+    r'D:\survey data & notes\exports',      # & : rest of the line RUNS
+    r'D:\survey^b\exports',                   # ^ : eaten, different path
+    r'D:\survey\a=b\exports',                  # = : splits, positionals shift
+    r'D:\survey\with,comma\final',             # , : splits
+    r'D:\survey\with;semi\final',              # ; : splits
+    r'D:\survey\(parens)\final',               # ( ) : block syntax
+    r'D:\survey\100%complete\final',           # % : parse-time expansion
+    r'D:\survey\bang!\final',                  # ! : delayed expansion
+    r'D:\survey\pipe|it\final',                # | : pipes
+    r'D:\survey\redirect>out\final',           # > : redirection
 ])
 def test_metacharacter_arguments_are_refused(arg):
     with pytest.raises(ValueError) as exc:
@@ -104,8 +112,8 @@ def test_ordinary_paths_and_settings_pass():
     # Everything the live drivers really pass: absolute paths with spaces,
     # component names, numbers, empty strings, and merge key:value settings.
     assert_bat_safe([
-        r'D:\NA167 Wreck\batched_images_by_zone\zone_1',
-        r'D:\NA167 Wreck\aligned_components\zone_1',
+        r'D:\survey data\batched_images_by_zone\zone_1',
+        r'D:\survey data\aligned_components\zone_1',
         '', 'zone_1', '50',
         'sfmMergeGeoreferencedComponents:true', 'sfmImagesOverlap:High',
     ], 'AlignZone.bat')

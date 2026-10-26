@@ -34,7 +34,7 @@ that avoid these failures in the first place (`11-automation-patterns.md`,
 11. [F-57…F-61 — Filesystem traps that break RealityScan specifically](#11-f-57f-61--filesystem-traps-that-break-realityscan-specifically)
 12. [F-62…F-70 — Windows / cmd traps that break the harness](#12-f-62f-70--windows--cmd-traps-that-break-the-harness)
 13. [F-71…F-77 — Resource exhaustion](#13-f-71f-77--resource-exhaustion)
-14. [The NA167 B1–B11 bug list, mapped](#14-the-na167-b1b11-bug-list-mapped)
+14. [Bugs B1–B11, mapped](#14-bugs-b1b11-mapped)
 15. [Diagnostic playbook](#15-diagnostic-playbook)
 16. [Open questions](#open-questions)
 
@@ -48,23 +48,22 @@ a section's range is not always contiguous. Cite the `F-nn`, not the position.
 
 Every failure class in this document shares one shape: **RealityScan reports success and
 the thing you asked for did not happen.** That is not an occasional accident of this
-build — it is the dominant failure mode. Across two years of production use the repo
-records silent non-merges, silent no-op selections, silently-inert settings, silently
+build — it is the dominant failure mode. Across this project's production use the records
+show silent non-merges, silent no-op selections, silently-inert settings, silently
 ignored sidecars, exports that write zero files while logging a duration, an error channel
 that was itself dead for a day, and a measurement harness that reported `0` for a sound
-4,496-camera result. [VERIFIED: FINDINGS "Process conventions"; NA167 #23]
+4,496-camera result. [VERIFIED: project testing, 2026-07; earlier multi-camera dataset, 2026-07]
 
-Three operational rules follow, and they are stated in `ARCHITECTURE.md`, the status log and
-`MERGE_STRATEGY_REPORT.md` in identical terms:
+Three operational rules follow; the first two are also stated in `ARCHITECTURE.md`:
 
 | Rule | Statement | Source |
 |---|---|---|
-| R1 | **Verify every merge and every growth pass by pose-XMP camera census, never by exit status.** | [VERIFIED: NA167 #23] |
-| R2 | **Never infer completion from an event you cannot attribute to your own command** — not process names (`tasklist`), not results-log growth. | [VERIFIED: docs/code-review-2026-07 §3] |
-| R3 | **A metric that reads zero is instrumentation-suspect until the instrument is verified against a known-good and a known-bad case.** | [VERIFIED: docs/code-review-2026-07 §5] |
+| R1 | **Verify every merge and every growth pass by pose-XMP camera census, never by exit status.** | [VERIFIED: earlier multi-camera dataset, 2026-07] |
+| R2 | **Never infer completion from an event you cannot attribute to your own command** — not process names (`tasklist`), not results-log growth. | [VERIFIED: project test records, 2026-07] |
+| R3 | **A metric that reads zero is instrumentation-suspect until the instrument is verified against a known-good and a known-bad case.** | [VERIFIED: project test records, 2026-07] |
 
 A corollary that cost this repo two full production runs: **an oracle that cannot see its
-subject must not publish a number under a name that claims it did.** [VERIFIED: FINDINGS
+subject must not publish a number under a name that claims it did.** [VERIFIED: project testing
 2026-07-25] See F-19.
 
 ---
@@ -84,7 +83,7 @@ itself a diagnostic failure. Know which one you are reading.
 The single most important consequence: **the errors marker carries only the numeric result
 code, never the `err:NNNN` text.** Any tolerant handler must match on the decimal code, and
 any diagnosis of *why* a code appeared requires channel C, which the next boot destroys.
-[VERIFIED: FINDINGS 2026-07-23]
+[VERIFIED: project testing 2026-07-23]
 
 ### 2.1 Process exit codes (channel A)
 
@@ -129,24 +128,24 @@ hex is what appears in `RealityScan.log`.
 | Decimal | Hex | Meaning as established | How known | Tag |
 |---:|---|---|---|---|
 | `0` | — | Success | Epic states `processResult == 0` means the process finished correctly | [OFFICIAL: tutorials/commandline_5] |
-| `1` | — | **Also routine success.** Ordinary successful operations (e.g. `-addFolder`) report `1` through the trigger | Epic's own sample `ErrorWriter.bat` whitelists both `0` and `1`; confirmed in production | [OFFICIAL: tutorials/commandline_5] + [VERIFIED: FINDINGS 2026-07-21] |
-| `2181038335` | `0x820000FF` | **Warning class.** Seen for `err:18002` — `-importFlightLog` where the log references images not in the scene. The trajectory still imports for every image that *is* present | Cross-checked against every component manifest: the 102 "not found" images were exactly the unregistered remainder, zero overlap with any component | [VERIFIED: FINDINGS 2026-07-21, 2026-07-25] — Epic's own sample output in the Help prints this exact decimal, but for process `20599` = `IMPORT_GCP`, not the flight-log import [OFFICIAL: tutorials/commandline_5 + tutorials/processids], so the code is a *class*, not a flight-log signature |
-| `2147942487` | `0x80070057` | `E_INVALIDARG`. Empty / no-op selection paths: `err:5605` "no component selected" after `-renameSelectedComponent` on an emptied scene; `err:5601` "model name not found" from `-selectModel`; `-selectModel <tag>_HighPoly` in every model cleanup loop | Marker artifacts `expected_peelend_RS1.txt` (process `21859`, "in 0 seconds") and `expected_select_RS1_*.txt` (process `21856`) | [VERIFIED: FINDINGS 2026-07-24, 2026-07-29; docs/code-review-2026-07] |
-| `2147549183` | `0x8000FFFF` | **Generic "unexpected program state".** Ambiguous by design: a broken `-set` argument and the zone_14 alignment solver bug emit the identical code | Two unrelated failures, same code; the discriminating text was only in `RealityScan.log` | [VERIFIED: NA167 #16 / B6] |
-| `2147942512` | `0x80070070` | `ERROR_DISK_FULL` — **RealityScan's cache disk**, not necessarily the project disk | The hull-model retry died with this after 143.5 min; the instance log later said `Processing failed: Out of disk space..` | [VERIFIED: FINDINGS 2026-07-26] |
-| `2181038176` | `0x82000060` | **Unknown / invalid command.** Emitted by `-selectAllComponents`, which does not exist in 2.2 | Command taken from an older repo script; Help lists only `selectComponent` / `selectMaximalComponent` / `selectComponentWithLeastReprojectionError` | [VERIFIED: NA167 #13 / B2] — decimal is the arithmetic conversion of the logged hex, not itself observed in a marker |
-| `2181038103` | `0x82000017` | Warning-class load complaint raised by a stale `<name>.rsproj.new` beside the project. The load still completes | An interrupted GUI save left the temp file; the next headless `-load` warned and the error channel then aborted the workflow | [VERIFIED: FINDINGS 2026-07-29] — decimal is the arithmetic conversion of the logged hex |
-| `3` | — | Crash; minidump `RealityScanCrash-YYYYMMDD-HHMMSS.dmp` in the `-silent` directory | The *code* is Epic's; what this repo observed is the minidump plus a dead instance (F-42). **The value `3` has never been read off a process here**, because the crashing process is the delegated headless instance, not the `.bat` that the orchestrator launches — that `.bat` sees `ERROR: Failed to delegate command` and exits `1` | [OFFICIAL: tutorials/commandline_5] for the code; [VERIFIED: FINDINGS 2026-07-26] for the dump + dead-instance signature only |
+| `1` | — | **Also routine success.** Ordinary successful operations (e.g. `-addFolder`) report `1` through the trigger | Epic's own sample `ErrorWriter.bat` whitelists both `0` and `1`; confirmed in production | [OFFICIAL: tutorials/commandline_5] + [VERIFIED: project testing 2026-07-21] |
+| `2181038335` | `0x820000FF` | **Warning class.** Seen for `err:18002` — `-importFlightLog` where the log references images not in the scene. The trajectory still imports for every image that *is* present | Cross-checked against every component manifest: the 102 "not found" images were exactly the unregistered remainder, zero overlap with any component | [VERIFIED: project testing 2026-07-21, 2026-07-25] — Epic's own sample output in the Help prints this exact decimal, but for process `20599` = `IMPORT_GCP`, not the flight-log import [OFFICIAL: tutorials/commandline_5 + tutorials/processids], so the code is a *class*, not a flight-log signature |
+| `2147942487` | `0x80070057` | `E_INVALIDARG`. Empty / no-op selection paths: `err:5605` "no component selected" after `-renameSelectedComponent` on an emptied scene; `err:5601` "model name not found" from `-selectModel`; `-selectModel <tag>_HighPoly` in every model cleanup loop | Marker artifacts `expected_peelend_RS1.txt` (process `21859`, "in 0 seconds") and `expected_select_RS1_*.txt` (process `21856`) | [VERIFIED: project testing 2026-07-24, 2026-07-29; project test records, 2026-07] |
+| `2147549183` | `0x8000FFFF` | **Generic "unexpected program state".** Ambiguous by design: a broken `-set` argument and the zone_14 alignment solver bug emit the identical code | Two unrelated failures, same code; the discriminating text was only in `RealityScan.log` | [VERIFIED: bug B6] |
+| `2147942512` | `0x80070070` | `ERROR_DISK_FULL` — **RealityScan's cache disk**, not necessarily the project disk | The hull-model retry died with this after 143.5 min; the instance log later said `Processing failed: Out of disk space..` | [VERIFIED: project testing 2026-07-26] |
+| `2181038176` | `0x82000060` | **Unknown / invalid command.** Emitted by `-selectAllComponents`, which does not exist in 2.2 | Command taken from an older repo script; Help lists only `selectComponent` / `selectMaximalComponent` / `selectComponentWithLeastReprojectionError` | [VERIFIED: bug B2] — decimal is the arithmetic conversion of the logged hex, not itself observed in a marker |
+| `2181038103` | `0x82000017` | Warning-class load complaint raised by a stale `<name>.rsproj.new` beside the project. The load still completes | An interrupted GUI save left the temp file; the next headless `-load` warned and the error channel then aborted the workflow | [VERIFIED: project testing 2026-07-29] — decimal is the arithmetic conversion of the logged hex |
+| `3` | — | Crash; minidump `RealityScanCrash-YYYYMMDD-HHMMSS.dmp` in the `-silent` directory | The *code* is Epic's; what this repo observed is the minidump plus a dead instance (F-42). **The value `3` has never been read off a process here**, because the crashing process is the delegated headless instance, not the `.bat` that the orchestrator launches — that `.bat` sees `ERROR: Failed to delegate command` and exits `1` | [OFFICIAL: tutorials/commandline_5] for the code; [VERIFIED: project testing 2026-07-26] for the dump + dead-instance signature only |
 
 Codes that appear only in `RealityScan.log` (channel C), with no distinct marker value:
 
 | `err:` code | Meaning | Tag |
 |---|---|---|
-| `err:7155` | `Parsing setting key=value '<key>' failed` — a `-set` argument arrived split across the cmd boundary. The flag was **never applied** | [VERIFIED: NA167 #15 / B5] |
-| `err:18002` | "The file contains N images which are not in the current scene" (flight-log import); surfaces as `0x820000FF` | [VERIFIED: FINDINGS 2026-07-21] |
-| `err:5601` | Model name not found (`-selectModel` on a renamed-away model); surfaces as `0x80070057` | [VERIFIED: FINDINGS 2026-07-29] |
-| `err:5605` | No component selected; surfaces as `0x80070057` | [VERIFIED: docs/code-review-2026-07] |
-| `MSS_STR001` | Internal reconstruction error, printed as `Processing failed: Unexpected program state. [Internal error MSS_STR001]`; surfaces as `0x8000FFFF` | [VERIFIED: NA167 B8; `docs/validation/results/z14_forensic_rslog.txt` line 1491-1493] |
+| `err:7155` | `Parsing setting key=value '<key>' failed` — a `-set` argument arrived split across the cmd boundary. The flag was **never applied** | [VERIFIED: bug B5] |
+| `err:18002` | "The file contains N images which are not in the current scene" (flight-log import); surfaces as `0x820000FF` | [VERIFIED: project testing 2026-07-21] |
+| `err:5601` | Model name not found (`-selectModel` on a renamed-away model); surfaces as `0x80070057` | [VERIFIED: project testing 2026-07-29] |
+| `err:5605` | No component selected; surfaces as `0x80070057` | [VERIFIED: project test records, 2026-07] |
+| `MSS_STR001` | Internal reconstruction error, printed as `Processing failed: Unexpected program state. [Internal error MSS_STR001]`; surfaces as `0x8000FFFF` | [VERIFIED: bug B8; project test records, 2026-07 line 1491-1493] |
 
 **When a code is ambiguous — and `0x8000FFFF` always is — the only remedy is to snapshot
 `%LOCALAPPDATA%\Temp\RealityScan.log` inside the driver, immediately after the failing
@@ -232,14 +231,14 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
 - **Symptom.** Workflow exit 0, no errors marker, "merge" completes in seconds to a few
   minutes; the maximal component afterwards is byte-for-byte one of the inputs.
 - **Cause.** Fusion is **content-driven**. Zero content overlap ⇒ silent no-fuse,
-  regardless of mechanism, flags or path form. [VERIFIED: NA167 #26; FINDINGS "D7 RESOLVED"]
+  regardless of mechanism, flags or path form. [VERIFIED: earlier multi-camera dataset, 2026-07; probe D7, 2026-07-24]
 - **Detected by.** Camera census of the result: the maximal component was exactly
   zone_6's 1,533/1,534 cameras in every cell of a mechanism × flag × path-form matrix.
 - **Mitigation.** Gate merge candidates on shared imagery or true bbox overlap before
   spending a merge; verify by census afterwards (R1).
 - **Detection test.** A working merge takes **real time** — ~56 min for a 1–4 k-camera
   pair with shared cameras. *Instant completion is the no-fuse signature.*
-  [VERIFIED: NA167 #23/#30/#31 / D6]
+  [VERIFIED: probe D6]
 
 ### F-02 — `-mergeComponents` with a single component is a no-op that also clears the selection
 - **Symptom.** `-renameSelectedComponent "Merged"` immediately afterwards fails
@@ -250,7 +249,7 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
   completion-detection bug (F-25) was already fixed.
 - **Mitigation.** Use `-selectMaximalComponent` (no parameters) before the rename; do not
   use `-mergeComponents` as a "select the merged thing" idiom.
-  [VERIFIED: status log 2026-07-21; docs/code-review-2026-07 §4]
+  [VERIFIED: project testing 2026-07-21; project test records, 2026-07]
 - **Detection test.** Issue `-selectMaximalComponent` then `-renameSelectedComponent X`;
   if the rename succeeds where it failed before, the selection was the problem.
 
@@ -266,11 +265,11 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
 - **The same boundary bug in its other shape.** A **semicolon-joined component list**
   arrived as two `.bat` arguments and the merge cell failed reporting "found 1" — same
   cause, different delimiter, and it fails loudly instead of silently. Both shapes are B5.
-  [VERIFIED: NA167 #15 / B5]
+  [VERIFIED: bug B5]
 - **Mitigation.** Never pass delimited data as `.bat` arguments. Settings cross the
   process boundary as `key:value` and the workflow converts the colon; lists cross as
   files (`.complist`, `.imagelist`).
-  [VERIFIED: NA167 #15 / B5, 2026-07-23; `ARCHITECTURE.md` hard rule 8]
+  [VERIFIED: bug B5, 2026-07-23; `ARCHITECTURE.md` hard rule 8]
 - **Detection test.**
   ```bat
   findstr /c:"err:7155" "%LOCALAPPDATA%\Temp\RealityScan.log"
@@ -288,11 +287,11 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
 - **Blast radius when it bit.** All 28 tuned keys in `AlignmentParams.xml` were being
   discarded — camera-prior enablement and weights, `Ultra` detector sensitivity, the
   `Division` distortion model, feature caps. Zone alignments ran on stock settings.
-  [VERIFIED: docs/code-review-2026-07 §6]
+  [VERIFIED: project test records, 2026-07]
 - **Detected by.** Code reading during a settings evaluation, cross-checked against
   `appbasics/allcommands` and Epic's online docs.
   [CONTRADICTED: pre-2.x repo scripts and lore passed a params file / observed: the
-  argument is ignored] [VERIFIED: FINDINGS 2026-07-21]
+  argument is ignored] [VERIFIED: project testing 2026-07-21]
 - **Mitigation.** Parse the `sfm*`/`lis*` entries out of `AlignmentParams.xml` and apply
   each as a delegated `-set` before a plain `-align`. Delegated commands queue FIFO, so
   ordering is guaranteed and the `-set`s need no completion wait.
@@ -306,20 +305,20 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
 - **Cause.** `appIncSubdirs` is `bool` with **default `false`**
   [OFFICIAL: tutorials/setkeyvaluetable — "*relevant for: addFolder command* |
   `appIncSubdirs` | bool | false"], so a zone directory laid out as per-camera subfolders
-  (`zone_1\cinema\`, `zone_1\port\`) contributes **`Added 0 layer images`**. The
+  (`zone_1\cam1\`, `zone_1\cam2\`) contributes **`Added 0 layer images`**. The
   `addFolder` row itself says so: "To include subdirectories, use the command set with a
   key appIncSubdirs as follows: `-set "appIncSubdirs=true"`."
   [OFFICIAL: appbasics/allcommands]
-- **Detected by.** A live H2023 run failing in 25 s; the `RealityScan.log` snapshot showed
+- **Detected by.** A live dataset A run failing in 25 s; the `RealityScan.log` snapshot showed
   the literal `Added 0 layer images`.
 - **Mitigation.** `-set "appIncSubdirs=true"` before **every** `-addFolder`, always,
-  explicitly. An earlier NA167 run *did* recurse — because that workflow had already set
+  explicitly. An earlier dataset C run *did* recurse — because that workflow had already set
   the key. **The flag, not the build, is the variable.**
-  [CONTRADICTED-internally, resolved as flag-dependent: NA167 §1 `-addFolder` claims "in
-  our 2.2 build subfolders were included **without** setting the key (zone_13: wca/ +
-  zeuss/ both imported)"; FINDINGS 2026-07-23 records the same build adding 0 images
-  without it, and adds the nuance that the NA167 run had the key set by its workflow.
-  The Help's documented default settles it.]
+  [CONTRADICTED-internally, resolved as flag-dependent: an earlier dataset C record says
+  subfolders were included **without** setting the key (a zone whose two per-camera
+  subfolders were both imported); project testing 2026-07-23 records the same build adding
+  0 images without it, and that the dataset C run had the key set by its workflow. The
+  Help's documented default settles it.]
 - **Detection test.**
   ```bat
   findstr /c:"Added" "%LOCALAPPDATA%\Temp\RealityScan.log"
@@ -333,7 +332,7 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
 - **Detected by.** An arithmetic anomaly in sidecar counts after aligning zone_13 — 871
   "new" `.xmp` appeared in a folder that already held 904.
 - **Mitigation.** Enforce the stem convention at write time; census sidecars by stem.
-  [VERIFIED: NA167 #3 / B7, 2026-07-22]
+  [VERIFIED: bug B7, 2026-07-22]
 - **Detection test.** `dir /b <images>\*.jpg.xmp` — any hit means those priors are inert.
 
 ### F-07 — Exports silently skip components below `setMinComponentSize`
@@ -361,7 +360,7 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
   "will be removed in the next release" into `RealityScan.log`; it is still required. The
   shipped Help contains **no** deprecation notice for it (or for anything else — the
   string "deprecat" does not occur anywhere in the 2.2 Help tree).
-  [UNDOCUMENTED] [VERIFIED: NA167 #22 / B11, from a per-cell `RealityScan.log` snapshot]
+  [UNDOCUMENTED] [VERIFIED: bug B11, from a per-cell `RealityScan.log` snapshot]
 - **The formal scope of the gate is narrower than the folklore.** `allcommands` attaches
   the `setMinComponentSize` condition to `exportXMP` and `exportLatestComponents` only —
   the `exportXMPForSelectedComponent` row carries no such clause.
@@ -382,7 +381,7 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
   selection.
 - **Detected by.** A two-order-of-magnitude duration anomaly in the app log.
 - **Mitigation.** `-deselectAllImages` before every export. Mandatory.
-  [VERIFIED: FINDINGS 2026-07-23] [UNDOCUMENTED: the Help does not warn that flight-log
+  [VERIFIED: project testing 2026-07-23] [UNDOCUMENTED: the Help does not warn that flight-log
   import leaves a selection]
 - **Detection test.** Compare the export's logged duration against a known-good run of the
   same size; sub-second is the signature.
@@ -401,7 +400,7 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
 - **Detection test.** After any export, count files whose content contains `xcr:Position`
   and whose mtime is after the run start. Zero beside a non-empty component is an
   instrument failure, not a negative result.
-  [VERIFIED: FINDINGS 2026-07-27]
+  [VERIFIED: project testing 2026-07-27]
 
 ### F-10 — `-selectMaximalComponent` / `-renameSelectedComponent` / `-deleteSelectedComponent` silently no-op on an empty scene
 - **Symptom.** A peel loop runs past its terminal condition with no error.
@@ -414,7 +413,7 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
   and the **following** `-renameSelectedComponent` fails `E_INVALIDARG 0x80070057
   (2147942487) "in 0 seconds"` — that tolerated failure **is** the exhaustion signal,
   filed as evidence in `expected_peelend_<inst>.txt`.
-  [VERIFIED: FINDINGS 2026-07-23, 2026-07-24]
+  [VERIFIED: project testing 2026-07-23, 2026-07-24]
 - **Detection test.** The literal artifact:
   ```
   An error occurred: process 21859 finished with result code 2147942487 in 0 seconds.
@@ -426,13 +425,12 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
   correctly, because those components were imported from `.rsalign` files renamed before
   export, so the manifest name, the file stem and the in-scene name are one string.
   Discovered by running the real `--auto_model` path and reading the per-component workflow
-  logs. [VERIFIED: FINDINGS 2026-07-26]
+  logs. [VERIFIED: project testing 2026-07-26]
 - **What is NOT measured [INFERRED].** The corresponding worry for **zone** scenes — that
   manifest component names never match the in-scene names because the zone scene was saved
   *pre*-rename, so a name-based `-selectComponent` silently no-ops — is a design conclusion
-  carried in `status log` (SHOULD-FIX: "cleanup_stale `selectComponent` silently no-ops") and
-  `docs/MERGE_REWORK_RECOMMENDATIONS.md` §Q6. It has **not** been reproduced as an
-  observation, and the 2026-07-26 finding explicitly scopes itself away from zone scenes.
+  carried in the project test records (2026-07: "cleanup_stale `selectComponent` silently
+  no-ops"). It has **not** been reproduced as an observation, and the 2026-07-26 finding explicitly scopes itself away from zone scenes.
   It is plausible because selection commands no-op rather than fail on nothing to act on
   (F-10). [INFERRED — what would settle it: `-selectComponent` a known manifest name in a
   zone scene, then `-renameSelectedComponent` and check for `0x80070057`.]
@@ -452,8 +450,8 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
 - **Detected by.** Bisection probes U-SEL2 … U-SEL8, 2026-07-23.
 - **Mitigation.** Selection composition is a per-image literal union loop at ~0.1–0.3 s
   per image — budget minutes for thousand-image sets.
-  [VERIFIED: FINDINGS 2026-07-23]
-- **Detection test.** `-selectImage "P231C.*"` then any selection-scoped command; a no-op
+  [VERIFIED: project testing 2026-07-23]
+- **Detection test.** `-selectImage "Cam1_.*"` then any selection-scoped command; a no-op
   confirms the dialect mismatch.
 - **[OPEN]** Forum-mine the regexp dialect; a staff reply may explain the discrepancy.
 
@@ -465,7 +463,7 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
 - **Observed.** No fusion in **any** mechanism × flag × path-form combination.
   D1 (`-mergeComponents`, flag on, zero-overlap pair) → no fuse, maximal = zone_6 alone
   (1,533). D2 (`-align`, georef true + rematch true) → no fuse.
-- **Detected by.** NA167 wave-1f cells D1/D2, 2026-07-24.
+- **Detected by.** test wave-1f cells D1/D2, 2026-07-24.
 - **Mitigation.** Do not build a merge ladder rung on this flag alone.
 - **[SUPERSEDED-RISK]** Those cells fed the flag components georeferenced from
   **position-only priors at 10 m claimed accuracy** — the feature's documented premise
@@ -479,13 +477,13 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
 - **Symptom.** No error at any stage; georeferenced output lands in the wrong zone and
   possibly the wrong hemisphere.
 - **Cause.** `FlightLogParams.xml` carried `+proj=utm +zone=4 +datum=WGS84` / EPSG:32604
-  from an earlier project while the cruise was UTM 57S (EPSG:32757).
+  from an earlier project while the survey was UTM 57S (EPSG:32757).
 - **Detected by.** Reading the params file during a first-machine validation, not by any
   failure.
-- **Mitigation.** Derive the zone **per cruise** from the flight log's filename tag
+- **Mitigation.** Derive the zone **per survey** from the flight log's filename tag
   (`flight_log_53N_UTM.txt` → EPSG:32653) and regenerate the params XML per run; never
   hand-edit the template's zone.
-  [VERIFIED: NA167 #6; FINDINGS 2026-07-21/22]
+  [VERIFIED: earlier multi-camera dataset, 2026-07; project testing 2026-07-21/22]
 - **Detection test.** Read `CoordinateSystemFlightLogType` out of the generated params and
   compare against the log's tag before the import runs.
 
@@ -500,8 +498,8 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
 - **Mitigation.** The format was merged into
   `C:\Program Files\Epic Games\RealityScan_2.2\flightlogs.xml` — a hand edit of an
   Epic-shipped schema file that **must be re-checked after any app update.** It is present
-  in the install as of this writing. [VERIFIED: PRIORS_DISTORTION_TEST_PLAN audit item 1,
-  2026-07-25; re-checked against the installed `flightlogs.xml`]
+  in the install as of this writing. [VERIFIED: project test records, 2026-07-25;
+  re-checked against the installed `flightlogs.xml`]
 - **Trap inside the trap: `desc` is a LABEL, not the column list.** The entry reads
 
   ```xml
@@ -538,40 +536,40 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
   it — the bow's solved camera cloud matches nav to **0.8°** in best-fit-plane attitude.
 - **Mitigation.** None in force. The blindness is load-bearing: assemble mode exports no
   poses, so the artifact the operator looked at cannot be measured.
-  [INFERRED-ranked: FINDINGS 2026-07-26] [OPEN]
+  [INFERRED-ranked: project testing 2026-07-26] [OPEN]
 - **Detection test (cheapest, ~2 min).** Re-run the assembly `-update` with a
   **position-only** union log and re-measure the bow's attitude.
 
 ### F-17 — Registration looks perfect while metric scale collapses
-- **Symptom, H2024.** `Success: True` on every zone, 82–93 % registration per zone,
+- **Symptom, dataset B.** `Success: True` on every zone, 82–93 % registration per zone,
   8,709 cameras — and `zone_3_c0` (1,192 cameras) at **0.236 of true scale**, IQR
   0.217–0.253 (a faithful 1:4.24 model). A camera-counting gate passes this dataset
   outright. Locally everything "looks good"; a uniform scale error is **invisible in the
-  viewer.** [VERIFIED: FINDINGS 2026-07-26]
-- **Symptom, H2023 (the first instance).** Fresh-run zone_1 `c0` (hull main, 3,026 cams)
+  viewer.** [VERIFIED: project testing 2026-07-26]
+- **Symptom, dataset A (the first instance).** Fresh-run zone_1 `c0` (hull main, 3,026 cams)
   = **0.175** (IQR 0.168–0.186) and `c1` (714) = **0.220**, while `c2` (bow, 665) = 1.011
   and the other zones were 0.90–0.99. Two components holding 82 % of the delivered
   assembly's cameras were ~5.7× and ~4.5× smaller than reality.
-  [VERIFIED: FINDINGS 2026-07-25]
+  [VERIFIED: project testing 2026-07-25]
 - **Cause.** **Not established** for either instance, and not established for either
-  repair. Ranked candidates for the H2023 repair (PD-6, which restored `c0` to 0.981):
+  repair. Ranked candidates for the dataset A repair (PD-6, which restored `c0` to 0.981):
   Brown3 → Division for the fisheye, the accuracy columns finally importing, and
   orientation priors being absent from PD-6's 7-column log. Three variables changed at
-  once. [VERIFIED-as-unattributed: FINDINGS 2026-07-25, 2026-07-26] The H2024 repair (v2
+  once. [VERIFIED-as-unattributed: project testing 2026-07-25, 2026-07-26] The dataset B repair (v2
   re-align: `zone_3_c0` 0.236 → 0.969, `zone_1_c2` 1.127 → 1.081, `zone_4_c2` 1.196 →
   0.919, all 14 components inside the 0.90–1.10 band) likewise changed several things at
   once — restored calibration sidecars, a fresh solve, code changes — and align
   fragmentation is separately on record as nondeterministic.
-  [VERIFIED-as-unattributed: FINDINGS 2026-07-27]
+  [VERIFIED-as-unattributed: project testing 2026-07-27]
 - **What IS established: it is a pure similarity error, not drift.** The ratio is constant
-  across nav-distance bins (H2023 hull: 0.197 / 0.181 / 0.185 / 0.179 / 0.174 / 0.174
-  across 1–2, 2–4, 4–8, 8–16, 16–32, 32–64 m) and the H2024 IQR is narrow (0.217–0.253) —
+  across nav-distance bins (dataset A hull: 0.197 / 0.181 / 0.185 / 0.179 / 0.174 / 0.174
+  across 1–2, 2–4, 4–8, 8–16, 16–32, 32–64 m) and the dataset B IQR is narrow (0.217–0.253) —
   a whole-component scale collapse, not accumulating error or a fold.
-  [VERIFIED: FINDINGS 2026-07-25, 2026-07-26]
+  [VERIFIED: project testing 2026-07-25, 2026-07-26]
 - **Detected by.** A purpose-built metric-scale oracle (`modules/scale_oracle.py`,
   median solved-vs-nav pairwise-distance ratio per component, invariant to translation and
   rotation), validated against a known-good **and** a known-bad case before use. Three
-  independent confirmations on the H2023 hull: scale-band invariance (above ⇒ similarity,
+  independent confirmations on the dataset A hull: scale-band invariance (above ⇒ similarity,
   not drift), implied ROV speed 0.01 m/s vs nav 0.08 m/s (bow: solve 0.22 vs nav
   0.21 m/s), and the rig itself as a ruler (fixed C–P baseline 1.11–1.21 m in metrically
   sound components, 0.22 m inside the shrunk hull — 0.20×, agreeing with the nav-derived
@@ -590,7 +588,7 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
   | `division_loose` | 656/665 | **1** | **0.989** |
   | `division_tight` | 659/665 | 3 | 0.826 |
 
-  [VERIFIED: PRIORS_DISTORTION_TEST_PLAN "Bow 2×2", 2026-07-25; FINDINGS 2026-07-25/26/27]
+  [VERIFIED: project test records ("Bow 2×2"), 2026-07-25; project testing 2026-07-25/26/27]
 - **Detection test.** Run the scale oracle per component and demand the 0.90–1.10 band. A
   count-based oracle alone cannot see this failure.
 
@@ -616,10 +614,9 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
   the `load` command treats an existing autosave.
 - **The same decision also exists as a `load` parameter — and this is where an identifier
   error hides.** The command row is
-  `load | MyProject.rsproj | recoverAutosave|deleteAutosave` — "Use optional parameters to
-  define the action if there is an autosaved file present for this project. Using
-  `recoverAutosave` will open the autosaved project, while `deleteAutosave` will delete the
-  autosaved project and load the original one." [OFFICIAL: appbasics/allcommands]
+  `load | MyProject.rsproj | recoverAutosave|deleteAutosave`: the optional parameter decides
+  what happens when an autosave exists for the project — `recoverAutosave` opens the
+  autosave, `deleteAutosave` deletes it and loads the original. [OFFICIAL: appbasics/allcommands]
   So `deleteAutosave` is a **parameter of `load`**, not a command in its own right.
 - **[INFERRED — a live defect in this repo's own boot script, found by reading the Help.]**
   `startRealityScan.bat`'s instance-reuse branch issues
@@ -651,13 +648,12 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
 
 ### F-85 — A published mesh sits N metres off vertically, and every check passes
 - **Symptom.** The asset tiles to `COMPLETE`, lands at the right latitude and longitude,
-  looks right in plan view, and is **wrong in depth by a fixed amount** — 72.7 m at NA168
-  H2080, 70.4 m in the Solomon Sea, 27.1 m the *other* way in the Gulf of Mexico.
-- **Cause.** The exported Z is a depth below the **sea surface** (`georeference_survey.py:320` writes
-  `-abs(kalman_depth)`), i.e. an orthometric height on the geoid. Cesium — and any
+  looks right in plan view, and is **wrong in depth by a fixed amount** — 72.7 m at an earlier survey site, 70.4 m in the Solomon Sea, 27.1 m the *other* way in the Gulf of Mexico.
+- **Cause.** The exported Z is a depth below the **sea surface** (the georeference stage writes
+  `-abs(depth)`), i.e. an orthometric height on the geoid. Cesium — and any
   ellipsoid-referenced consumer — reads it as height above the **WGS84 ellipsoid**. Every
   CRS in the chain is 2D, so nothing ever declares which. The gap is the geoid undulation N.
-  [VERIFIED: FINDINGS 2026-08-31] See `06-…` §3.5.
+  [VERIFIED: project testing 2026-08-31] See `06-…` §3.5.
 - **Detected by.** Decoding `root.transform` from the published asset's own `tileset.json`
   and comparing the implied height against `-depth + N`. Nothing inside RealityScan can see
   it: the error is a rigid translation along the ellipsoid normal, so scale oracles, merge
@@ -675,7 +671,7 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
   a *"ballpark vertical transformation, without ellipsoid height to vertical height
   correction"*, which is `+proj=noop` on the vertical. pyproj does not enable network grid
   access by default, so **the default posture on a fresh machine is the silent no-op.**
-  [VERIFIED: FINDINGS 2026-08-31]
+  [VERIFIED: project testing 2026-08-31]
 - **Detected by.** `Transformer.description` contains `ballpark`; or
   `TransformerGroup(...).unavailable_operations` is non-empty and names the missing grid.
 - **Mitigation.** Build every vertical transformer with `allow_ballpark=False`, which raises
@@ -701,19 +697,19 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
   `PATCH /v1/assets/{id}` accepts only name/description/attribution, so a wrong placement
   means re-uploading from source.
 - **Detection test.** Any deep-water asset whose read-back height is within a few metres of
-  zero was never georeferenced. [VERIFIED: FINDINGS 2026-08-31]
+  zero was never georeferenced. [VERIFIED: project testing 2026-08-31]
 
 ### F-88 — Publishing on the flight-log CRS alone relocates the asset by hundreds of kilometres
 - **Symptom.** A mesh uploaded with a correct `EPSG:326xx` lands in open ocean, far from the
-  dive.
-- **Cause.** **Exported vertices are not necessarily in the declared CRS.** The NA168 H2080
-  OBJ has a vertex bbox of X −47972…−47960, Y 396903…396915, Z −348956…−348926 while the
+  survey site.
+- **Cause.** **Exported vertices are not necessarily in the declared CRS.** An earlier survey
+  site's OBJ has a vertex bbox of X −47972…−47960, Y 396903…396915, Z −348956…−348926 while the
   site is really at E ~348355, N ~396318, −585 m — the export applied a DCC transformation
   preset (`settingsRotation="-90 -90 0"`, `exportCoordinateSystemType="2"`) and the frame is
   local. The `.rsInfo`'s `transformToModel` is what puts it back.
-  [VERIFIED: FINDINGS 2026-08-31] See `06-…` §3.6.
+  [VERIFIED: project testing 2026-08-31] See `06-…` §3.6.
 - **Detected by.** Transform the vertices and test them against the CRS's own area of use;
-  a wrong reading falls outside it. A dive's flight-log envelope is the tighter oracle.
+  a wrong reading falls outside it. A survey's flight-log envelope is the tighter oracle.
 - **Mitigation.** Read the frame from the sidecar and **derive** the correct reading of the
   16-value matrix rather than assuming one — it has no single obvious layout. Reject any
   reading whose composed 3×3 has a **negative determinant**: on this site easting (~348 355)
@@ -721,7 +717,7 @@ Each entry: **Symptom / Cause / Detected by / Mitigation / Detection test.**
   CRS-bounds check, but a single axis swap is a reflection and no rigid transform between
   right-handed frames can produce one. Fail when zero, or more than one, reading survives.
 - **Detection test.** `publish_cesium.py --dry-run` prints the derived lat/lon/depth in
-  seconds. *If it does not match where the dive was, stop.*
+  seconds. *If it does not match where the survey was, stop.*
 
 ## 4. F-18…F-26, F-82 — Instrument blindness: when the oracle is the thing that broke
 
@@ -743,7 +739,7 @@ happened".
   `os.path.islink()` is False for Windows junctions on some Python builds). Plus an
   **empty-peel invariant**: an empty peel beside a non-empty export now aborts the run as
   an instrument failure instead of scoring as "nothing fused".
-  [VERIFIED: FINDINGS 2026-07-27/28]
+  [VERIFIED: project testing 2026-07-27/28]
 - **Detection test.** Before the run: walk the images root and assert no child has a
   reparse tag. After each export: assert the harvest moved a non-zero number of sidecars
   whenever the exported component is non-empty.
@@ -756,7 +752,7 @@ happened".
 - **Detected by.** Disbelieving a `0` next to a success flag.
 - **Mitigation.** **A census that cannot see its subject must not be published under a
   name that claims it did.** The field was removed rather than "fixed".
-  [VERIFIED-and-fixed: FINDINGS 2026-07-25]
+  [VERIFIED-and-fixed: project testing 2026-07-25]
 - **Detection test.** For every published metric, name the artifact it reads and assert
   that artifact exists before reporting the number.
 
@@ -778,18 +774,18 @@ happened".
   11-camera loss **inside** the 12-camera budget, yet still rejected, because the stray
   5-camera fragment made attribution `ambiguous`. Rung 2 peeled
   `[4860, 2241, 1407, 1217]`, `exact`, 5-camera loss, **accepted**. A loss budget alone
-  does not rescue an attribution failure. [VERIFIED: FINDINGS 2026-07-28]
+  does not rescue an attribution failure. [VERIFIED: project testing 2026-07-28]
 - **Detected by.** Reading RealityScan's own `Finalizing 1 component` line out of a
   snapshot that had first been validated against a run-unique token (F-40).
 - **Mitigation.** A signed **bounded-loss** tolerance — project decision in force: 0.25 % of
   input cameras, default 0 (exact only), passed explicitly, warned at startup, recorded
   per attempt.
-  [VERIFIED: FINDINGS 2026-07-28; status log 2026-07-29]
+  [VERIFIED: project testing 2026-07-28; project testing 2026-07-29]
 - **Also.** The **never-shrink invariant was dead code and never fired** — `adopted_cams ==
   input_cams` identically, so the clause could neither reject nor see a camera *gain*
   (exactly what `sfmForceComponentRematch` and `sfmImagesOverlap:High` exist to produce).
   Every earlier attribution of the hull rejection to never-shrink is wrong.
-  [SUPERSEDED: FINDINGS 2026-07-27 adversarial review, 35 confirmed / 11 refuted, 9 review passes]
+  [SUPERSEDED: project testing 2026-07-27 adversarial review, 35 confirmed / 11 refuted, 9 review passes]
 - **Detection test.** For any rejected merge, compare the peel's maximal count against the
   input sum. A near-miss (within a fraction of a percent) is a hidden fusion, not a no-op.
 
@@ -822,7 +818,7 @@ happened".
 - **Symptom (a), a bug.** Every merged component was refused a model regardless of its
   real scale: `final_components` never carried an `inputs` key, so the gate fell back to
   the synthetic fused key, found no scale record, and returned `unmeasured` → block.
-  [VERIFIED-and-fixed: FINDINGS 2026-07-27]
+  [VERIFIED-and-fixed: project testing 2026-07-27]
 - **Symptom (b), not a bug.** Even after the fix, all three fused components came back
   `UNMEASURED` while every unfused original passed — **by construction**: merge-scene
   `-exportXMPForSelectedComponent` writes ordinal sidecars with no image identity, so a
@@ -831,7 +827,7 @@ happened".
 - **Mitigation.** Correspondence-free quantile-ratio scale measurement for fused
   components, validated both directions (known-good `zone_1_c1` 1.045 vs the stem oracle's
   1.023; the 0.236-shrunk hull measures 0.235).
-  [VERIFIED: FINDINGS 2026-07-28]
+  [VERIFIED: project testing 2026-07-28]
 - **Two traps inside that measurement.** (a) `xcr:Position` is an **element**
   (`<xcr:Position>x y z</xcr:Position>`) in current exports and an **attribute** in older
   ones — parse both. (b) A fused manifest's `images` is the unique-basename **union** while
@@ -856,9 +852,9 @@ happened".
 
   After any hook-chain change, verify `results_<inst>.log` grows during the next run. Two
   such self-tests are on record: the 2026-07-24 D7 probe (`results_RS1.log` grew after the
-  CRLF normalisation) and the 2026-07-25 test during the H2023 model run, which logged
+  CRLF normalisation) and the 2026-07-25 test during the dataset A model run, which logged
   **six completions between 22:17:02 and 22:17:12**.
-  [VERIFIED: FINDINGS 2026-07-24 (D7 probe), 2026-07-25 (six-completion test)]
+  [VERIFIED: project testing 2026-07-24 (D7 probe), 2026-07-25 (six-completion test)]
 
 ### F-25 — Completion inferred from results-log growth raced ahead of a running `-align`
 - **Symptom.** Intermittent, non-deterministic failures; commands appearing to execute out
@@ -883,7 +879,7 @@ happened".
   documentation and it was wrong, because it depended on an undocumented property of a
   closed-source binary. **Code review cannot validate a contract with a third-party
   executable; only execution can.**
-  [VERIFIED: docs/code-review-2026-07 §3; FINDINGS 2026-07-21]
+  [VERIFIED: project test records, 2026-07; project testing 2026-07-21]
 
 ### F-26 — The orchestrator reported exit 0 while modules refused or raised
 - **Symptom.** Process exit 0 with real failures inside.
@@ -896,20 +892,18 @@ happened".
   — so nine raising zones out of ten still produced exit 0.
   (c) `--scale_min` / `--scale_max` never reached the verdict: every band was baked at
   0.90/1.10 while the report **printed the operator's values.**
-  A dependency shows the same shape: `ROVDataConcat`'s `main_kalman.py` prints
-  `kalman_offset FAILED` / `Aborting` and returns 0.
 - **Mitigation.** A raise records a failed zone; refusal is a failure; parameters are
   pinned end-to-end by a test.
-  [VERIFIED-and-fixed: FINDINGS 2026-07-26, audit #5/#7 2026-07-28]
+  [VERIFIED-and-fixed: project testing 2026-07-26 and 2026-07-28]
 - **Detection test.** Inject a known failure into each reporting path and prove the
   detector fires **before** trusting it.
 
 ### F-82 — `Success: True` from a stage whose output is a DIRECTORY means nothing
-- **Symptom.** Five H2024 zones were silently a **blend of two zonings** and were about to
+- **Symptom.** Five dataset B zones were silently a **blend of two zonings** and were about to
   be aligned: **12,679 `.jpg` on disk against 9,834 reported** (zone_2 1,537 → 3,497,
   zone_5 2,623 → 3,497), i.e. ~2,845 stale images — with the module reporting
   `Success: True`.
-- **Cause.** After a lever-arm correction changed every Port position, the re-batch reused
+- **Cause.** After a lever-arm correction changed every position of one camera, the re-batch reused
   the existing `batched_images_by_zone` folder on the premise that "zone recomputation is
   deterministic for the same log+parameters". That premise was true and **never verified**.
   The flight log had changed, so zone membership changed, and the copy routine skips files
@@ -918,12 +912,12 @@ happened".
 - **Mitigation.** Make the premise mechanical, not a comment: `batch_inputs.json` records
   the flight log's sha256 plus the six zoning parameters, and reuse is **refused** with the
   remedy named when they differ. It fired in anger on the very next re-batch.
-  [VERIFIED-and-fixed: FINDINGS 2026-07-26, 2026-07-28]
+  [VERIFIED-and-fixed: project testing 2026-07-26, 2026-07-28]
 - **Generalisation worth carrying.** A reuse/resume path needs an **input fingerprint**,
   and any newly added parameter must be added to that fingerprint — a later review caught
   `batch_overlap_max_distance_m` missing from it, which would have silently reused zones
   built without a ceiling: the exact fail-open the guard exists to close.
-  [VERIFIED-and-fixed: FINDINGS 2026-07-29]
+  [VERIFIED-and-fixed: project testing 2026-07-29]
 - **Detection test.** After any stage whose deliverable is a directory, count the directory
   and compare against the stage's own reported total. Never accept the report alone.
 
@@ -955,9 +949,9 @@ happened".
   (`RealityScan`, `RealityScan-1`, `-2`, `-3`) in F-79.
 
 ### F-28 — `-waitCompleted` returns PREMATURELY when it beats the instance to the queue [CONTRADICTED]
-- **Docs claim.** `waitCompleted` is for "pausing the execution of other commands until the
-  current process is finished… the following commands are executed **only once the process
-  is finished** in the instance that the command is referring to."
+- **Docs claim.** `waitCompleted` pauses further commands until the current process in the
+  referenced instance has finished, so the commands after it run **only once that process is
+  finished**.
   [OFFICIAL: tutorials/commandline_deleg] Read literally, one `-waitCompleted` after one
   `-delegateTo` is sufficient — which is exactly the pattern Epic's own example shows.
 - **Observed.** A single `-waitCompleted` is **not** sufficient. It blocks until the
@@ -967,8 +961,8 @@ happened".
   `-renameSelectedComponent` fails `No component selected [err:5605]` — intermittently,
   which is what made it expensive to find.
 - **How it was detected.** Non-deterministic smoke-test failures on the first real-machine
-  run; the same script sometimes succeeded. [VERIFIED: docs/code-review-2026-07 §3;
-  status log 2026-07-21]
+  run; the same script sometimes succeeded. [VERIFIED: project test records, 2026-07;
+  project testing 2026-07-21]
 - **Mitigation — the `:run` contract, reproduced literally in every workflow:**
   ```bat
   :run
@@ -992,7 +986,7 @@ happened".
   `ping -n N 127.0.0.1` is the grace delay — `timeout` needs a console and a headless
   parent has none. The grace makes the **first** wait land after pickup; the **second**
   wait is the one that is actually load-bearing.
-  [VERIFIED: FINDINGS 2026-07-21; abort contract probed live 2026-07-24]
+  [VERIFIED: project testing 2026-07-21; abort contract probed live 2026-07-24]
 - **Detection test.** Probe `:run` with a deliberately non-empty errors marker (must exit
   1) and with an empty one (must continue). This was done; the contract is **live**.
 
@@ -1002,9 +996,8 @@ happened".
 - **Cause.** `-getStatus <instance>` returns errorlevel 0 iff the instance exists, and it
   flips to "gone" while the process is still tearing down and still holding handles.
 - **Note on what `-getStatus` is documented to do.** The Help describes it as returning
-  *progress*: "in the console of that specific instance, you will get the result in the
-  form of the progress ID, progress percentage of the current process, elapsed time, and
-  estimated time", e.g.
+  *progress*: the instance's console reports the process id, the percentage complete of the
+  current process, the elapsed time and the estimated remaining time, e.g.
   `id:0x10001 progress:57.5% runtime:4.26sec endEstimation:3.40sec`, redirectable with
   `RealityScan.exe -getStatus * > D:\statusreport.txt`.
   [OFFICIAL: tutorials/commandline_deleg] **The errorlevel semantics this whole harness
@@ -1015,7 +1008,7 @@ happened".
   raises with an explicit "most likely held by a running instance" message. Windows cannot
   delete a file another process holds open, so the retry — not a forced delete — is the
   correct shape.
-  [VERIFIED: NA167 #14 / B3, 2026-07-23]
+  [VERIFIED: bug B3, 2026-07-23]
 - **Detection test.** Time `-getStatus` reporting gone against the handle actually
   releasing; the gap is seconds.
 
@@ -1065,7 +1058,7 @@ happened".
   settings file. A per-instance lock file (`<instance>.lock`, `O_EXCL`, PID inside, stale
   detection via an exact `tasklist /FO CSV` PID-field comparison — a substring check would
   match PID 123 against 1234) prevents two orchestrators driving one instance name.
-  [VERIFIED: FINDINGS 2026-07-28]
+  [VERIFIED: project testing 2026-07-28]
 - **Detection test.** Before any probe, log the resolved instance name from the CLI object
   itself, not from the environment you think you set.
 
@@ -1078,7 +1071,7 @@ happened".
   codes, and 12 iterations overwrote the same evidence file.
 - **Mitigation.** The same double-wait shape as every other subroutine, plus per-model
   evidence names (`expected_select_<inst>_<model>.txt`).
-  [VERIFIED-and-fixed: audit #4, FINDINGS 2026-07-28]
+  [VERIFIED-and-fixed: project testing 2026-07-28]
 - **Detection test.** After the cleanup loop, assert the kept model names still resolve
   (`-selectModel <tag>_Simplified_Textured`).
 
@@ -1091,7 +1084,7 @@ happened".
   GPU pinning via `RS_GPU_DEVICES` → `CUDA_VISIBLE_DEVICES` is exercised; two concurrent
   instances on different GPUs is untested.
   [OPEN: boot RS1 on GPU 0 and RS2 on GPU 1, align two small zones simultaneously, confirm
-  marker-file isolation and no cache contention — NA167 loose end #2]
+  marker-file isolation and no cache contention]
 - **Known real cost of overlap.** Two merge drivers running at once produced a **spliced**
   `RealityScan.log` snapshot — see F-40. Note that channel C is *global and per-launch*,
   so it is the one shared resource the per-instance marker namespace does **not** protect.
@@ -1107,7 +1100,7 @@ happened".
 - **Mitigation.** Distinguish the two in triage: a *rejected operation* writes a result
   code to the errors marker; a *dead instance* fails at delegation with nothing in the
   marker at all.
-  [VERIFIED: FINDINGS 2026-07-26]
+  [VERIFIED: project testing 2026-07-26]
 - **Detection test.** `RealityScan.exe -getStatus RS1` — non-zero errorlevel confirms the
   instance is gone. Then look for a `.dmp` in the `-silent` directory.
 
@@ -1133,7 +1126,7 @@ with no documented meaning. Everything below is [UNDOCUMENTED] behaviour establi
       last_activity = time.monotonic()
       stall_warned = False
   ```
-  [VERIFIED: NA167 #12 / B4, 2026-07-23]
+  [VERIFIED: bug B4, 2026-07-23]
 - **Detection test.** `tail` the progress file: identical `algId`, frozen fraction,
   monotonically rising elapsed, `#timeout` suffix.
 
@@ -1148,7 +1141,7 @@ with no documented meaning. Everything below is [UNDOCUMENTED] behaviour establi
   45 min while alignment stays unbounded.
   This is also why superseded merge trees holding original export locations are **kept**
   even when hundreds of GB could be reclaimed.
-  [VERIFIED: NA167 #11 / B1, 2026-07-23]
+  [VERIFIED: bug B1, 2026-07-23]
 - **Detection test.** `#timeout` on `algId 20594` (`IMPORT_COMPONENT`) from fraction 0.00.
 
 ### F-37 — `#timeout` does NOT always mean hung
@@ -1159,7 +1152,7 @@ with no documented meaning. Everything below is [UNDOCUMENTED] behaviour establi
   2*60*60` in `realityscan_cli.py`); **never auto-kill an align.** There is deliberately
   **no overall timeout** on any RealityScan operation — 10+ hour runs are normal; startup
   (120 s, `startRealityScan.bat`'s `startTries GEQ 120` loop) and shutdown are the only
-  bounds. [VERIFIED: NA167 #28, 2026-07-24; `realityscan_cli.py`; `ARCHITECTURE.md` hard rule 3]
+  bounds. [VERIFIED: earlier multi-camera dataset, 2026-07-24; `realityscan_cli.py`; `ARCHITECTURE.md` hard rule 3]
 - **If you ever do need to stop one, do it properly.** RealityScan documents
   `-pauseInstance <name>`, `-unpauseInstance <name>` and `-abortInstance <name>` for
   exactly this, "beneficial mainly when processing on servers or render farms"
@@ -1174,7 +1167,7 @@ with no documented meaning. Everything below is [UNDOCUMENTED] behaviour establi
 - **Mitigation.** The monitor samples available physical RAM via `GlobalMemoryStatusEx`
   and warns once per workflow below `LOW_MEMORY_WARN_GB = 4.0`, and includes the RAM
   figure in the stall warning so a later `#timeout` can be attributed correctly.
-  [VERIFIED: FINDINGS 2026-07-24]
+  [VERIFIED: project testing 2026-07-24]
 - **Detection test.** Available RAM at the moment of the stall. Three causes must be
   separated before intervening: hung operation (F-36), legitimate heavy phase (F-37),
   memory pressure (F-38).
@@ -1189,7 +1182,7 @@ with no documented meaning. Everything below is [UNDOCUMENTED] behaviour establi
 - **Mitigation.** **Never call `-exportRegistration` without a params file.** Save one from
   the GUI's registration-export dialog first and pass it explicitly. The XMP path
   (`-exportXMP <params.xml>` / `-exportXMPForSelectedComponent`) is what this pipeline uses
-  instead. [VERIFIED: FINDINGS 2026-07-21, "RealityScan 2.2 CLI behavior"]
+  instead. [VERIFIED: project testing 2026-07-21, "RealityScan 2.2 CLI behavior"]
 - **Fourth cause of an apparent hang.** Add this to the F-36 / F-37 / F-38 triage: a
   command waiting on a dialog. Distinguishing signature — it hangs from the **very
   beginning**, with no `#started` line for the operation at all, whereas F-36 emits
@@ -1226,7 +1219,7 @@ with no documented meaning. Everything below is [UNDOCUMENTED] behaviour establi
       except (OSError, shutil.Error) as exc:
           logger.warning('Could not snapshot RealityScan.log: %s', exc)
   ```
-  [VERIFIED: NA167 #16 / B6, 2026-07-23]
+  [VERIFIED: bug B6, 2026-07-23]
 - **The log can also be switched off entirely.** `appLog` is `bool`, **default `true`**;
   `operationLog` ("Operation log data") likewise. [OFFICIAL: tutorials/setkeyvaluetable]
   Neither is set by this repo, so channel C exists — but a skill inheriting someone else's
@@ -1234,9 +1227,9 @@ with no documented meaning. Everything below is [UNDOCUMENTED] behaviour establi
   truncated, check `appLog` before concluding anything about the run.
 
 ### F-40 — A saved snapshot can be a DIFFERENT run's log, spliced mid-file
-- **Symptom.** An H2023 attempt's `rslog.txt` — filed beside an unambiguously H2023
-  complist and an H2023 identity harvest (3,737 / 3,026 / 714) — records
-  `importComponent` of **eleven H2024 components**. The reciprocal case exists in the same
+- **Symptom.** An dataset A attempt's `rslog.txt` — filed beside an unambiguously dataset A
+  complist and an dataset A identity harvest (3,737 / 3,026 / 714) — records
+  `importComponent` of **eleven dataset B components**. The reciprocal case exists in the same
   run: another attempt's `rslog.txt` contains **no** `importComponent` line at all.
 - **Cause.** Two merge drivers overlapped. `snapshot_rs_log` copies the **global,
   per-launch** log after the workflow returns; the second instance's launch truncated the
@@ -1251,7 +1244,7 @@ with no documented meaning. Everything below is [UNDOCUMENTED] behaviour establi
   out['counts'] = [int(n) for n in re.findall(r'Finalizing (\d+) component', text)]
   ```
   A count read from an unvalidated snapshot is worthless.
-  [VERIFIED: FINDINGS 2026-07-27]
+  [VERIFIED: project testing 2026-07-27]
 - **Consequence for an open question.** The plan "settle the 2 missing cameras by reading
   RealityScan's own registered count out of the attempt's `rslog.txt`" is **not trustworthy
   on those artifacts**. Re-importing `cluster_*_m_c0.rsalign` **from its original export
@@ -1274,11 +1267,9 @@ with no documented meaning. Everything below is [UNDOCUMENTED] behaviour establi
     [\0x13011\0x13010\0x10001\0x4999\0x10001]
   Reconstruction failed after 1452.842 seconds.
   ```
-  (`docs/validation/results/z14_forensic_rslog.txt` lines 1490–1496; the bracketed trace line is
-  emitted twice, and the `quit` follows immediately.) Note the reproduction count rose as
-  the cells ran and the sources were written at different moments —
-  `NA167 notes` B8 says 2/2, `historical FINDINGS log` #17 says 3/3, #27 is the fourth,
-  and `MERGE_STRATEGY_REPORT` and FINDINGS both settle on **4/4**. Cite 4/4.
+  (from the forensic log kept with the project test records, 2026-07; the bracketed trace
+  line is emitted twice, and the `quit` follows immediately.) The reproduction count rose as
+  the cells ran, so earlier records say 2/2 and 3/3; the final count is **4/4**. Cite 4/4.
 - **Cause.** A RealityScan solver bug. The **data is formally exonerated**: full-pixel
   decode of all 1,476 frames, zero MD5 duplicates, zero near-black/featureless frames by
   Laplacian, clean nav, normal motion profile, bracketed by healthy neighbours. The same
@@ -1287,11 +1278,10 @@ with no documented meaning. Everything below is [UNDOCUMENTED] behaviour establi
 - **Detected by.** Repeated failure with escalating exoneration of every input hypothesis.
 - **Mitigation — the production rule.** **When a zone fails alignment solo, GROW IT FROM AN
   ALIGNED NEIGHBOUR; do not retry solo.**
-  [VERIFIED: NA167 #17/#18/#27 / B8]
+  [VERIFIED: bug B8]
 - **Detection test.** `findstr /c:"MSS_STR001"` in a valid log snapshot. Failure at the
   reconstruction phase **after** feature detection completes is the shape.
-- **[OPEN]** The internal reason is unknown and the bug has never been reported to Epic
-  (status log P1 item 8).
+- **[OPEN]** The internal reason is unknown and the bug has never been reported to Epic.
 
 ### F-42 — Crash: minidump plus a dead instance
 - **Symptom.** The workflow's next command cannot be delegated at all
@@ -1304,7 +1294,7 @@ with no documented meaning. Everything below is [UNDOCUMENTED] behaviour establi
   crashing process**, which here is the delegated headless instance, not the `.bat` the
   orchestrator launched. What the orchestrator actually sees is `ERROR: Failed to delegate
   command` → `exit /b 1`, plus a `.dmp` on disk and nothing in the errors marker.
-  [VERIFIED: FINDINGS 2026-07-26]
+  [VERIFIED: project testing 2026-07-26]
 - **Real instance.** `RealityScanCrash-20260726-054742.dmp`, written during step **[5/8]**
   (`-closeHoles` / `-cleanModel`) on the 3,738-camera hull — the largest mesh in the
   deliverable. The `merge_zones` driver recorded `success: false` for that component and
@@ -1316,7 +1306,7 @@ with no documented meaning. Everything below is [UNDOCUMENTED] behaviour establi
      (`ERROR_DISK_FULL`).
   3. "The project disk filled" — **refuted by the instance log naming the cache.**
   Each superseding step was cheaper than the last and none required a re-run.
-  [SUPERSEDED ×3: FINDINGS 2026-07-26] See F-71.
+  [SUPERSEDED ×3: project testing 2026-07-26] See F-71.
 - **Mitigation.** `:fail` quits **without saving**, so a failed model run leaves the
   assembly intact (verified: parses clean, no zero-byte files, previously-built models
   present). The driver records `success: false` for that component and carries on.
@@ -1331,24 +1321,24 @@ with no documented meaning. Everything below is [UNDOCUMENTED] behaviour establi
   mutating attempt. Checkpoint = a plain **file copy of the `.rsproj` bundle**; restore =
   copy back. Battle-tested in anger (a growth run killed mid-pass was fully recovered).
   **Component reimport is NOT a valid checkpoint** — it drops non-member images.
-  [VERIFIED: NA167 #29; FINDINGS 2026-07-23/24]
+  [VERIFIED: earlier multi-camera dataset, 2026-07; project testing 2026-07-23/24]
 
 ### F-44 — Pose locking is unusable as a growth anchor
 - **Symptom.** `-editInputSelection inpPose=3` (Exact/Locked) takes effect, and `-align`
   then **refuses**: *"prior set to 'Exact' mode must be all aligned in a single run.
   Incremental adding is not supported."*
 - **Mitigation.** Checkpoint/rollback remains the primary never-shrink mechanism.
-  [VERIFIED: FINDINGS cell U18 FAIL, 2026-07-23]
+  [VERIFIED: project testing, cell U18 FAIL, 2026-07-23]
 
 ### F-45 — A free re-align is never pose-stable and can shrink components
 - **Behaviour.** `-align` with components already in the scene is align/**update**: it adds
   new images to existing components and can fuse components — and it can also **drop
-  marginal cameras** (H2023 3,860 → 3,855; zone_1 c7's pass lost 51 previously-registered
+  marginal cameras** (dataset A 3,860 → 3,855; zone_1 c7's pass lost 51 previously-registered
   images) and **move every camera** (all 118 of a solved smoke scene).
 - **Consequence.** A 1–2 camera deficit after any re-solve is normal, which is exactly why
   a small merge deficit cannot be attributed to the solver without independent evidence
   (F-46).
-  [VERIFIED: FINDINGS 2026-07-23/24, cell U18 bonus]
+  [VERIFIED: project testing 2026-07-23/24, cell U18 bonus]
 
 ### F-46 — The 2–3 "missing cameras" after a fusion are still not distinguishable from a harvest artifact
 - **For real loss.** The deficit **varies by mechanism** (−2 merge, −1/−1 align) where
@@ -1364,7 +1354,7 @@ with no documented meaning. Everything below is [UNDOCUMENTED] behaviour establi
   (3,737 / 3,026 / 714) — `-mergeComponents` **retains its inputs** alongside the fused one
   — so 3,737 is the fused component's own size measured while both parents were still in
   the scene.
-  [VERIFIED: FINDINGS 2026-07-25, 2026-07-27]
+  [VERIFIED: project testing 2026-07-25, 2026-07-27]
 - **[OPEN] — settleable from artifacts already on disk.** Re-import
   `cluster_*_m_c0.rsalign` **from its original export location** into a spare instance and
   census it: 3,740 means accounting artifact, 3,738 means real loss. Do **not** use the
@@ -1382,7 +1372,7 @@ See **F-06**. RealityScan reads and writes `<stem>.xmp` only.
   **stem-named** sidecars; `-exportXMPForSelectedComponent` writes **ordinal** sidecars
   (`00000.xmp`, `00001.xmp`, …) in every observed context. Four consistent datapoints.
   [SUPERSEDED: an earlier session-based hypothesis — "stems require the live aligning
-  session" — was WRONG] [VERIFIED: FINDINGS 2026-07-23, B10 final form]
+  session" — was WRONG] [VERIFIED: project testing 2026-07-23, B10 final form]
 - **Consequences.**
   - Count remains a valid registration census; **per-camera identity is only available from
     the original aligning scene.**
@@ -1391,32 +1381,32 @@ See **F-06**. RealityScan reads and writes `<stem>.xmp` only.
   - Any stem-pairing oracle (e.g. the scale gate) has nothing to join on in a merge scene
     (F-23).
   - Ordinal sidecars are **inert as priors** (no image has an ordinal stem);
-    `camera_registry.sanitize_and_census` deletes them quietly.
+    `calibration_sidecars.sanitize_and_census` deletes them quietly.
 - **Directory semantics differ by scene type.** **ALIGN-scene `identity_r<K>` directories
   are CUMULATIVE** (rK = laps K..end); **MERGE-scene rK is component K alone.** Component
   K's own sidecars in an align scene are the stem difference rK minus rK+1.
-  [VERIFIED: FINDINGS 2026-07-28]
+  [VERIFIED: project testing 2026-07-28]
 
 ### F-84 — The per-camera `Camera:DistortionModel` sidecar hint is SILENTLY OVERRIDDEN by the global key
 - **Symptom.** A mixed-optics rig writes `division` for its fisheye and `brown3` for its
   rectilinear cameras in the calibration sidecars, and **every solved camera comes back
   with the same model.**
-- **Cause.** `sfmDistortionModel` is **global and all-or-nothing**. Under the PD-6 config
-  the cinema sidecars declared `brown3`, yet all **2,558** cinema pose XMPs came back
-  `xcr:DistortionModel="division"` — the same model as the 2,492 port records.
+- **Cause.** `sfmDistortionModel` is **global and all-or-nothing**. Under the PD-6 config on
+  the earlier four-camera rig, the rectilinear camera's sidecars declared `brown3`, yet all
+  **2,558** of its pose XMPs came back `xcr:DistortionModel="division"` — the same model as
+  the 2,492 records of a fisheye camera.
 - **Detected by.** Aggregating solved intrinsics out of an identity harvest, not by any
   error. The earlier reading — "the fisheye is being solved as brown3 *despite* its
   division sidecar" — had the polarity reversed but the same root: the global key wins in
   whichever direction it is set.
-  [VERIFIED: FINDINGS 2026-07-26; supersedes PRIORS_DISTORTION_TEST_PLAN audit item 3's
-  hypothesis by settling it]
+  [VERIFIED: project testing 2026-07-26; settles an earlier test-plan hypothesis]
 - **What the sidecar grouping DOES still do.** Calibration/distortion **groups** work: with
-  both cameras given the same 16.0 mm prior, the solve separated them by 5.6 % (cinema
-  focal 35 mm-eq **16.374**, IQR 16.302–16.476, division k1 **−0.0378**; port **15.499**,
+  both cameras given the same 16.0 mm prior, the solve separated them by 5.6 % (rectilinear
+  focal 35 mm-eq **16.374**, IQR 16.302–16.476, division k1 **−0.0378**; fisheye **15.499**,
   IQR 15.435–15.574, k1 **−0.3875**) with IQRs of about ±0.5 %. Since the JPGs are
   EXIF-identical, the XMP groups are the only mechanism that could have separated them.
   So: **one distortion model per project, coefficients per group.**
-  [VERIFIED: FINDINGS 2026-07-26]
+  [VERIFIED: project testing 2026-07-26]
 - **Mitigation.** Choose the global model for the camera that needs it most and verify the
   other tolerates it (here the rectilinear camera tolerated `division` fine: k1 −0.038,
   tight IQR, hull scale 0.982). Supplying *measured* coefficients remains per-group and
@@ -1429,7 +1419,7 @@ See **F-06**. RealityScan reads and writes `<stem>.xmp` only.
 - **Behaviour.** Current exports write an **element**
   (`<xcr:Position>x y z</xcr:Position>`); older ones write an **attribute**. Both forms
   must be parsed or a whole harvest silently reads as unregistered.
-  [VERIFIED: FINDINGS 2026-07-28]
+  [VERIFIED: project testing 2026-07-28]
 - **Related.** Exported pose XMPs carry `xcr:CalibrationGroup="-1"` /
   `DistortionGroup="-1"` **alongside** `Camera:CalibrationGroup="3"` — the `-1` is an
   export artifact, not a lost grouping. [UNDOCUMENTED]
@@ -1441,7 +1431,7 @@ See **F-06**. RealityScan reads and writes `<stem>.xmp` only.
   images.
 - **Mitigation.** Sanitize the tree to calibration-only content after every census, before
   any run that must be independent.
-  [VERIFIED: NA167 B7, 2026-07-22]
+  [VERIFIED: bug B7, 2026-07-22]
 - **Detection test.** Count sidecars containing `xcr:Position` under the images root
   immediately before a run; non-zero means contamination.
 
@@ -1454,19 +1444,19 @@ See **F-06**. RealityScan reads and writes `<stem>.xmp` only.
   component (665/665), 123 of c0, 8 unregistered.
 - **Blast radius.** **PD-4 and PD-4a both re-aligned zone_1 in this state, so their
   "collapse" results (669 and 782 of 4,540) are CONFOUNDED.**
-- **Mitigation.** `camera_registry.ensure_calibration_sidecars()`.
-  [VERIFIED: FINDINGS 2026-07-25]
+- **Mitigation.** `calibration_sidecars.ensure_calibration_sidecars()`.
+  [VERIFIED: project testing 2026-07-25]
 - **Detection test.** Compare the sidecar count against the image count per zone before
   every align.
 
 ### F-52 — Prior CONTENT is not automatically beneficial
 - **Observation.** An A/B on zone_13 with priors absent (because of F-06) vs promoted
-  measured **96.3 % → 89.6 %** on Zeuss.
-- **Probable cause.** The old writer grouped `cammid`+`camupper`+`camlower` together at
-  "12 mm fisheye" when `camlower` is actually rectilinear 17 mm.
-- **Mitigation.** Prior generation became opt-in (`batch_xmp_priors`, default off);
+  measured **96.3 % → 89.6 %** on one camera.
+- **Probable cause.** The old writer grouped three cameras together at "12 mm fisheye" when
+  one of them was actually rectilinear 17 mm.
+- **Mitigation.** Prior generation became opt-in;
   corrected per-camera values must be validated **per rig**.
-  [VERIFIED: NA167 #4 / B7]
+  [VERIFIED: bug B7]
   [SUPERSEDED-in-scope: with corrected per-camera values the calculus reverses — calibration
   sidecars cut zone_1 fragmentation from 9 components to 3 at equal-or-better registration.
   Validate per rig before trusting either direction.]
@@ -1485,7 +1475,7 @@ See **F-06**. RealityScan reads and writes `<stem>.xmp` only.
   Cheapest probe: import two small components, merge, export the fused `.rsalign`, then in
   a fresh scene import that fused file alongside a third component, merge, and check
   whether any `xcr:Position`-bearing sidecar appears. ~10 min.
-  [OPEN: FINDINGS 2026-07-28; status log loose end #5]
+  [OPEN: project testing 2026-07-28]
 
 ---
 
@@ -1502,7 +1492,7 @@ a downstream operation silently targets the wrong object.
 - **Consequence.** A per-component model run targets whichever component RealityScan
   resolves first — **silently**.
 - **Mitigation.** Export naming `<tag>_a<attempt>_c<K>`.
-  [VERIFIED-and-fixed: FINDINGS 2026-07-28; status log 2026-07-29]
+  [VERIFIED-and-fixed: project testing 2026-07-28; project testing 2026-07-29]
 - **Detection test.** Assert component-name uniqueness across the assembly's manifests
   before any per-component operation.
 
@@ -1515,7 +1505,7 @@ a downstream operation silently targets the wrong object.
 - **Detected by.** **Reading the workflow before the second component started** — not by a
   failure.
 - **Mitigation.** All 19 references namespaced by `%model_tag%`.
-  [VERIFIED-and-fixed: FINDINGS 2026-07-25]
+  [VERIFIED-and-fixed: project testing 2026-07-25]
 
 ### F-55 — Model names silently leave the project mid-recipe
 - **Symptom.** `-selectModel <comp>_HighPoly_Raw` → `err:5601 'not found'`; and
@@ -1529,9 +1519,9 @@ a downstream operation silently targets the wrong object.
   2026-07-29, and the dense PLY export falls back to `_HighPoly_Textured`, the densest
   model guaranteed to exist.
 - **[CONTRADICTED, inside this repo's own record — do not smooth this over.]**
-  `FINDINGS 2026-07-28` states "the H2023 PD6 deliverable confirms it empirically: its
+  `project testing 2026-07-28` states "the dataset A PD6 deliverable confirms it empirically: its
   cleanup ran and all three kept models (`_HighPoly_Raw`, `_HighPoly_Textured`,
-  `_Simplified_Textured`) survived", and `status log 2026-07-29`'s deliverable table repeats
+  `_Simplified_Textured`) survived", and `project testing 2026-07-29`'s deliverable table repeats
   "Three kept models each: `_HighPoly_Raw`, `_HighPoly_Textured`, `_Simplified_Textured`".
   The same day's **direct export probe** on the real assembly got
   `-selectModel cluster_4_a1_c0_HighPoly_Raw` → `err:5601 'not found'`. The probe is the
@@ -1543,15 +1533,15 @@ a downstream operation silently targets the wrong object.
   `_HighPoly_Raw`. The command exists: "`duplicateSelectedModel` | | Duplicate the
   selected model (including textures)." [OFFICIAL: appbasics/allcommands]
   [INFERRED: not tested in this recipe.]
-  [VERIFIED: FINDINGS 2026-07-29 export probe]
+  [VERIFIED: project testing 2026-07-29 export probe]
 - **Not a prefix hazard.** `-selectModel` matches on the **exact** name — "`selectModel`
   modelName | Select a model with the specified name (modelName)"
   [OFFICIAL: appbasics/allcommands] — so deleting `<tag>_HighPoly` cannot collaterally
   take `<tag>_HighPoly_Textured`. Checked explicitly because the cleanup loop depends on
-  it. [VERIFIED: FINDINGS 2026-07-28]
+  it. [VERIFIED: project testing 2026-07-28]
 - **[OPEN]** The `_HighPoly` select-miss cause is not investigated; the
   `GenerateModel` error-whitelist redesign is queued behind it. Six for six across every
-  modelled component. [OPEN: status log 2026-07-29 loose end #3]
+  modelled component. [OPEN: project testing 2026-07-29]
 
 ### F-56 — Component numbering is unstable across runs
 - **Behaviour.** New components are named `Component N` with **unstable N** (observed 5, 9,
@@ -1562,7 +1552,7 @@ a downstream operation silently targets the wrong object.
 - **Mitigation.** **Component structure cannot be relied on across runs — only
   manifest-tracked image sets can.** Rename immediately after selection; key everything on
   image basenames.
-  [VERIFIED: FINDINGS 2026-07-24]
+  [VERIFIED: project testing 2026-07-24]
 - **[OPEN]** Whether align **updates** an existing component in place, keeping its name,
   when it only grows (hardening cell U6, never run).
 
@@ -1578,7 +1568,7 @@ a downstream operation silently targets the wrong object.
   save, while all eight component passes ran 03:31→03:54.
   **A single ACCEPTED component pass would have persisted it.**
 - **Detected by.** Reading the workflow while reconstructing which artifact was
-  authoritative — not by any failure. [VERIFIED-as-defect: FINDINGS 2026-07-24]
+  authoritative — not by any failure. [VERIFIED-as-defect: project testing 2026-07-24]
 - **Mitigation.** The defect stands as a queued fix, not a closed one. Operationally:
   checkpoint/rollback is what contained it, which is the general argument for F-43's
   "checkpoint before every mutating attempt".
@@ -1594,7 +1584,7 @@ a downstream operation silently targets the wrong object.
   every mode, including `assemble`, where a single component is a perfectly valid input
   (import, georeference, save).
 - **Latency.** Invisible on multi-cluster runs — N clusters yield ≥ N final components, so
-  two clusters can never trip it. It only bites a fully-converged single-feature dive,
+  two clusters can never trip it. It only bites a fully-converged single-feature survey,
   which is the *best* possible outcome.
 - **Mitigation.** `assemble` now requires ≥ 1; every other mode still requires ≥ 2.
   Verified three ways via `cmd /c` with nothing else running: 1 + `assemble` proceeds past
@@ -1602,7 +1592,7 @@ a downstream operation silently targets the wrong object.
   found 1"; 0 + `assemble` exits 1. Both reject paths return **1, not 0**, because they use
   a top-level `goto :argfail` rather than an `exit /b` inside a parenthesised block (F-63).
   File re-verified pure CRLF (**342 CRLF, 0 bare LF**).
-  [VERIFIED-and-fixed: FINDINGS 2026-07-28]
+  [VERIFIED-and-fixed: project testing 2026-07-28]
 - **Detection test.** Exercise every mode of a shared workflow at its **boundary** input
   count, not just at typical counts.
 
@@ -1649,18 +1639,18 @@ a downstream operation silently targets the wrong object.
 - **Note.** The junction was never necessary: `--r_input` and `--output_dir` are
   independent, so aligning **from** the real tree **into** a separate output protects a
   baseline just as well.
-- **Counter-case where a junction is legitimate.** `D:\na156_h2023_fresh` is a junction to
-  `F:\na156_h2023_fresh` precisely because saved `.rsproj` files store **absolute** image
+- **Counter-case where a junction is legitimate.** `D:\survey_a_fresh` is a junction to
+  `F:\survey_a_fresh` precisely because saved `.rsproj` files store **absolute** image
   paths and hard rule 7 (F-36) means a bare move would break both. If it is ever deleted:
   ```powershell
-  New-Item -ItemType Junction -Path 'D:\na156_h2023_fresh' -Target 'F:\na156_h2023_fresh'
+  New-Item -ItemType Junction -Path 'D:\survey_a_fresh' -Target 'F:\survey_a_fresh'
   ```
   **The distinction that matters: a junction on the path RealityScan *reads a project
   through* is survivable; a junction on the path a scene's images *resolve through* is not.**
-  [VERIFIED: FINDINGS 2026-07-27/28; status log 2026-07-27] [UNDOCUMENTED: no Epic coverage
+  [VERIFIED: project testing 2026-07-27/28; project testing 2026-07-27] [UNDOCUMENTED: no Epic coverage
   of reparse-point behaviour]
 - **Detection test (cheap, run before every harvest-dependent run).** This is
-  `assert_harvestable()` in [archive/campaign_drivers/run_h2024_v2.py](https://github.com/wild-technology/wildscan/blob/0401a5a04097cba149989f7e8c60e57c09c1c549/archive/campaign_drivers/run_h2024_v2.py), reproduced in essence:
+  `assert_harvestable()` (now `modules/harvest_guard.py`), reproduced in essence:
   ```python
   def is_reparse(path: str) -> bool:
       if os.path.islink(path):
@@ -1685,8 +1675,8 @@ a downstream operation silently targets the wrong object.
   Two things this gets right that a naive version does not: `os.path.islink()` alone is
   **False** for Windows junctions on some Python builds, so `st_reparse_tag` is the load-
   bearing check; and the scan must be **recursive** — the guard originally checked only
-  top-level children, and a junction one level down (`zone_1\cinema` as a link) reproduces
-  the blindness just as completely. [VERIFIED-and-fixed: FINDINGS 2026-07-29 final review
+  top-level children, and a junction one level down (`zone_1\cam1` as a link) reproduces
+  the blindness just as completely. [VERIFIED-and-fixed: project testing 2026-07-29 final review
   item (f)]
 
 ### F-58 — A stale `<name>.rsproj.new` beside the project makes a load report `0x82000017`
@@ -1694,7 +1684,7 @@ a downstream operation silently targets the wrong object.
   channel then aborts the workflow.
 - **Cause.** An interrupted GUI save leaves the `.rsproj.new` temp beside the project.
 - **Mitigation.** Rename the temp aside (reversible) and re-load.
-  [VERIFIED: FINDINGS 2026-07-29]
+  [VERIFIED: project testing 2026-07-29]
 - **Detection test.** `dir /b "<project dir>\*.rsproj.new"`.
 
 ### F-59 — A BOM invalidates the first line of a `.complist`
@@ -1708,7 +1698,7 @@ a downstream operation silently targets the wrong object.
   [System.IO.File]::WriteAllLines($p, $lines, (New-Object System.Text.UTF8Encoding($false)))
   ```
 - **Detection test.** Read the first three bytes; `239,187,191` is the BOM.
-  [VERIFIED: FINDINGS 2026-07-27]
+  [VERIFIED: project testing 2026-07-27]
 
 ### F-60 — The cache lives on the drive of the path you gave and does NOT move with the project
 See **F-71**. Filed here because it presents as a filesystem surprise: the project disk can
@@ -1720,7 +1710,7 @@ show 773.9 GB free for an entire run while the cache disk hits zero.
 - **Cause.** The batcher writes per-zone **copies** of overlap images, so a copied image is
   two physical files with one trajectory row and no shared-path identity.
 - **Mitigation (queued, never applied).** A common image pool — imagelists or hardlinks.
-  [OPEN: status log loose end #6]
+  [OPEN]
 - **Note.** Since D7, path identity is known to be **sufficient but not necessary**:
   content overlap fuses regardless of path. Copies still cost the `-mergeComponents`
   mechanism, which fuses through camera identity.
@@ -1740,7 +1730,7 @@ the substrate. Every trap below was hit in practice.
 - **Mitigation.** All `.bat` and `.vbs` must be CRLF. `.gitattributes` pins
   `*.bat text eol=crlf` and `*.vbs text eol=crlf`. **Re-normalize after any scripted edit
   and re-verify** (e.g. "342 CRLF, 0 bare LF").
-  [VERIFIED: NA167 #21 + H2023, independently hit on BOTH machines, 2026-07-23]
+  [VERIFIED: earlier multi-camera dataset, 2026-07 + dataset A, independently hit on BOTH machines, 2026-07-23]
 - **Corollary policy.** **Reviews run review-only while live processes hold files** —
   `cmd` reads a `.bat` by byte offset, so a mid-run edit corrupts execution. The
   coordinator applies fixes in safe windows.
@@ -1766,7 +1756,7 @@ the substrate. Every trap below was hit in practice.
   `MergeZoneComponents.bat`'s **top-level complist validations**, which returned 0 — an
   unreadable component list would have been reported and then **ignored**. Fixed by routing
   every validation to a top-level `:argfail`.
-  [VERIFIED: FINDINGS 2026-07-24, superseding the broader 2026-07-23 statement]
+  [VERIFIED: project testing 2026-07-24, superseding the broader 2026-07-23 statement]
 - **Detection test.** `cmd //c probe.bat & echo %errorlevel%` on the exact nesting shape in
   question. Do not reason about it; measure it.
 
@@ -1774,27 +1764,27 @@ the substrate. Every trap below was hit in practice.
 - **Symptom.** `cmd /c foo.bat` under MSYS converts `/c` to `C:\` and launches an
   **interactive** cmd that exits **0** silently — a test that proves nothing.
 - **Mitigation.** Use `cmd //c` or PowerShell for `.bat` invocation tests.
-  [VERIFIED: FINDINGS 2026-07-23]
+  [VERIFIED: project testing 2026-07-23]
 - **Related, same family.** `RealityScanCLI` invokes the `.bat` **by absolute path without
   an explicit `cmd /c`**: a bare script name fails to resolve under
   `NoDefaultCurrentDirectoryInExePath` (e.g. Git Bash), and a self-built
   `cmd /c "path with spaces.bat"` has its quotes stripped by cmd. The `:run` line-count
   also had to be fully qualified as `%SystemRoot%\System32\find.exe`, because a bare `find`
   resolves to **GNU find** when launched from Git Bash and scans the whole disk.
-  [VERIFIED: status log 2026-07-21; docs/code-review-2026-07 §2]
+  [VERIFIED: project testing 2026-07-21; project test records, 2026-07]
 
 ### F-65 — cp1252 console crashes on non-ASCII
 - **Symptom.** A `UnicodeEncodeError` kills a stage at a `print`/log call, not at the work.
-- **Cause.** The Windows console codepage is cp1252 on this box; any non-ASCII character
+- **Cause.** The Windows console codepage is cp1252 on the production box; any non-ASCII character
   routed to stdout raises.
 - **Mitigation.** ASCII-only console output everywhere; `PYTHONIOENCODING=utf-8` when
-  parsing UTF-8 sources. Hit twice, once on each research line.
-  [VERIFIED: FINDINGS "Windows & automation traps"; `ARCHITECTURE.md` §8]
+  parsing UTF-8 sources. Hit twice.
+  [VERIFIED: project testing, 2026-07; `ARCHITECTURE.md` "Environment"]
 - **Note for readers of the app log.** `RealityScan.log` itself is not ASCII — its banner
   line contains a non-ASCII copyright glyph (`RealityScan 2.2.0.119430 ... 2026 Epic Games,
   Inc.`), so a parser that opens it in the console codepage can fail on line 1. Read it
   with an explicit encoding and `errors='replace'`.
-  [VERIFIED: `docs/validation/results/z14_forensic_rslog.txt` line 1]
+  [VERIFIED: project test records, 2026-07 line 1]
 
 ### F-66 — `isatty()` LIES under hidden consoles
 - **Symptom, in its full three-supersession form.** "The batcher spends ~3 h in zone
@@ -1809,7 +1799,7 @@ the substrate. Every trap below was hit in practice.
 - **Method lesson recorded.** *A faster run is not a control unless it did equivalent work.
   A blocking UI call is indistinguishable from slow compute if you only look at elapsed
   time.*
-  [SUPERSEDED ×3, RESOLVED: FINDINGS 2026-07-26 → 2026-07-28]
+  [SUPERSEDED ×3, RESOLVED: project testing 2026-07-26 → 2026-07-28]
 
 ### F-67 — Console-subsystem children pop visible windows when the parent has none
 - **Symptom.** Hundreds of flashing terminal windows stealing focus over a long run.
@@ -1820,7 +1810,7 @@ the substrate. Every trap below was hit in practice.
   `ErrorWriter.bat` hidden and **synchronously** (`shell.Run …, 0, True`) to preserve
   marker-file write ordering. A direct `cmd /c` in `appProcessExecCmd` pops a window for
   every completed process, heartbeats included.
-  [VERIFIED: `realityscan_cli.py`; FINDINGS 2026-07-23]
+  [VERIFIED: `realityscan_cli.py`; project testing 2026-07-23]
 
 ### F-68 — VBS quote escaping in string literals
 - **Symptom.** A malformed command line that launches nothing, silently (F-24).
@@ -1830,7 +1820,7 @@ the substrate. Every trap below was hit in practice.
   shell.Run "cmd /c " & q & q & bat & q & args & q, 0, True
   ```
   Then **verify the composed line actually executes.**
-  [VERIFIED: FINDINGS 2026-07-24]
+  [VERIFIED: project testing 2026-07-24]
 
 ### F-69 — Piped stdin: BOM and CRLF corrupt scripted prompts
 - **Symptom.** `input()` returned `"a\r"`; the first prompt answer was corrupted outright.
@@ -1839,14 +1829,14 @@ the substrate. Every trap below was hit in practice.
   stdin pipes; every driver subprocess gets `stdin=DEVNULL` and every option is pinned —
   on a console a child's `input()` blocked forever on an invisible prompt, and detached it
   silently inherited another session's `rs_settings.json` values.
-  [VERIFIED: NA167 #10 / B9, 2026-07-22; FINDINGS 2026-07-29]
+  [VERIFIED: bug B9, 2026-07-22; project testing 2026-07-29]
 
 ### F-70 — One-off, unexplained: `%RealityScan%` expanded EMPTY
 - **Symptom.** After D6's 56-minute merge block, `%RealityScan%` expanded to nothing
   (`'-delegateTo' is not recognized`) and the export step died.
 - **Frequency.** Single occurrence across ~10 identical workflows.
 - **Cause.** Not established.
-  [OPEN: NA167 #31 note, 2026-07-24 — watch for recurrence]
+  [OPEN: earlier multi-camera dataset, 2026-07 note, 2026-07-24 — watch for recurrence]
 - **Detection test.** Echo `%RealityScan%` at each phase boundary in long workflows.
 
 ---
@@ -1905,7 +1895,7 @@ the substrate. Every trap below was hit in practice.
   monitor built around one hypothesis will confirm or refute that hypothesis and tell you
   nothing else.* Free space on **both** the project drive and the cache drive are now trace
   columns with peak-minimums in the summary line.
-  [VERIFIED: FINDINGS 2026-07-26]
+  [VERIFIED: project testing 2026-07-26]
 - **Detection test.** Sample `shutil.disk_usage()` on the project directory **and** on
   `RS_CACHE_DIR` every 30 s, flushed per sample.
 
@@ -1925,7 +1915,7 @@ in the progress feed it is indistinguishable from a hang.
 - **Mitigation.** Sample commit *and* physical RAM — a run can exhaust commit while
   physical RAM still looks comfortable (`ullAvailPageFile` in `MEMORYSTATUSEX` is the
   system commit availability, not a paging-file-only figure).
-  [VERIFIED: FINDINGS 2026-07-26]
+  [VERIFIED: project testing 2026-07-26]
 
 ### F-74 — The ~5,000-camera model envelope does NOT plateau
 | component | cameras | model wall clock | peak commit | min available RAM |
@@ -1936,29 +1926,29 @@ in the progress feed it is indistinguishable from a hang.
 | `zone_4_c0` | 576 | 106.1 min | 116.8 GB | 3.0 GB |
 | `zone_1_c1` | 392 | 97.4 min | 107.1 GB | 3.5 GB |
 | `cluster_4_a1_c0` | 133 | 40.1 min | 96.2 GB | 25.9 GB |
-| `pd6_zone_1_c0` (H2023 hull) | 3,738 | 384.1 min | 142.3 GB | 0.3 GB |
+| `pd6_zone_1_c0` (dataset A hull) | 3,738 | 384.1 min | 142.3 GB | 0.3 GB |
 
 The apparent plateau at ~140 GB across 392–1,634 cameras was an artifact of that range; the
 hull pushed ~9 GB past it and completed with **under a gigabyte of headroom on a 93.6 GB
 box**. **Treat anything materially larger as at risk, not covered by precedent.**
-[VERIFIED: FINDINGS 2026-07-29]
+[VERIFIED: project testing 2026-07-29]
 
 ### F-75 — Alignment memory scales badly enough that chunking is mandatory
 Per-zone aligns (~1.5 k images) peak ≤ ~60 GB; a joint 4,131-image align peaked ~165 GB on
 a 192 GB box (27 GB commit headroom left). **Joint alignment extrapolates to ~700 GB for a
-19 k-image dive.** Sequential growth and joint align give identical quality and differ
+19 k-image survey.** Sequential growth and joint align give identical quality and differ
 2.6× in time and 2.7× in memory, with opposite winners (B: 94.6 %, 444 min, ≤60 GB;
 C: 94.5 %, 169 min, ~165 GB).
 Also: **alignment runtime varies ~3× with scene character at equal image count** (61.6/97.8
 min vs 24.3/20.8 min, both ~1.5 k frames, same GPU, both run twice) — **budget by zone, not
 by image count.**
-[VERIFIED: NA167 #19/#20]
+[VERIFIED: earlier multi-camera dataset, 2026-07]
 
 ### F-76 — Memory readings are confounded by multiple `RealityScan.exe` processes
 Workflows run a **persistent instance plus transient helpers**. A "2.2 GB during a
 4,540-image align" reading was a 30 MB transient; the real instance was ~11 GB + 4 GB VRAM.
 **Identify the instance by largest working set or tracked PID before quoting any memory
-number.** [VERIFIED: FINDINGS 2026-07-24, caught in review]
+number.** [VERIFIED: project testing 2026-07-24, caught in review]
 
 ### F-77 — Saving is a resource event in its own right
 `GenerateModel.bat` took **two** `RC_projects` copies per component, one of them
@@ -1968,20 +1958,20 @@ and one dated copy of the finished six-component project took **13.1 min / 95.2 
 Saving with ~15 models live is the "inordinate save" case. The **per-component scene save
 must stay** (the workflow loads/models/quits per component); the dated copy is deferred to
 one end-of-project call.
-[VERIFIED: FINDINGS 2026-07-29]
+[VERIFIED: project testing 2026-07-29]
 
 ---
 
-## 14. The NA167 B1–B11 bug list, mapped
+## 14. Bugs B1–B11, mapped
 
-the NA167 notes §2 is the original numbered list. **Note the source file
-REUSES B10 and B11 for two different findings each.** RS = RealityScan-side, INT =
+The numbered bug list kept while processing an earlier multi-camera dataset (2026-07). **The
+list numbers B10 and B11 twice each**, so both uses are shown. RS = RealityScan-side, INT =
 integration-side.
 
 | ID | Class | Finding | Entry here |
 |---|---|---|---|
 | **B1** | RS | Relocated `-importComponent` hangs forever (`#timeout`, 6 h+, no error, no dump) | F-36 |
-| **B2** | RS | `-selectAllComponents` does not exist (`0x82000060`). `appbasics/allcommands` lists only `selectComponent`, `selectMaximalComponent` and `selectComponentWithLeastReprojectionError`; the dead command had lived unnoticed in `AlignZonesSequentially.bat` | §2.2 (`0x82000060` row) |
+| **B2** | RS | `-selectAllComponents` does not exist (`0x82000060`). `appbasics/allcommands` lists only `selectComponent`, `selectMaximalComponent` and `selectComponentWithLeastReprojectionError`; the dead command had lived unnoticed in a legacy workflow script | §2.2 (`0x82000060` row) |
 | **B3** | RS | `getStatus`/teardown race — instance reports gone while holding `progress_<inst>.txt` | F-29 |
 | **B4** | RS | `#timeout` progress defeats stall detection | F-35 |
 | **B5** | INT | cmd splits unquoted `;` `,` `=`; Python quotes only on whitespace → flags silently never applied **and** parse errors abort the workflow | F-03 |
@@ -2107,7 +2097,7 @@ Do **not** conclude the label is missing — it resolved ten times earlier in th
 4. If only the **assembled** artifact is wrong, suspect `-update` fitting mis-converted
    orientation priors (F-16); the cheap decisive test is a position-only re-`-update`.
 5. Check the flight-log format GUID is actually installed (F-15) and the UTM zone is the
-   cruise's (F-14).
+   survey's (F-14).
 
 ### P-10. "The run died and there is nothing in the error channel"
 1. **Is the hook alive?** Active `progress_<inst>.txt` + non-growing `results_<inst>.log`
@@ -2150,7 +2140,7 @@ Every `[OPEN]` in this document, with the cheapest probe that would settle it.
 
 | # | Question | Entry | Cheapest probe |
 |---|---|---|---|
-| O-1 | What is the internal reason for `MSS_STR001`? | F-41 | Not settleable locally — **report to Epic** with `docs/validation/results/z14_forensic_rslog.txt`. Never done (status log P1 item 8). |
+| O-1 | What is the internal reason for `MSS_STR001`? | F-41 | Not settleable locally — **report to Epic** with the forensic log kept with the project test records (2026-07). Never done. |
 | O-2 | Is the 2–3 camera deficit after a fusion a real solver drop or a harvest artifact? | F-46 | Re-import `cluster_*_m_c0.rsalign` **from its original export location** into a spare instance and census it. 3,740 = artifact; 3,738 = real loss. Artifacts already on disk; do **not** use `rslog.txt` (F-40). |
 | O-3 | What are the exact semantics of `Finalizing N component(s)`? | F-20 | Two tiny imports, one `-mergeComponents`, count the result. Queued probe (a); never run. |
 | O-4 | Is `merged5`'s `cluster_1_a3_c0` a single component or a rigid glue container of 8 objects? | F-20 family | Re-import it from its original location and census. Queued probe (b). |
@@ -2161,9 +2151,9 @@ Every `[OPEN]` in this document, with the cheapest probe that would settle it.
 | O-9 | What are `21856` and `21896` in the process-ID space? | §2.3 | Fire `-selectModel` alone and read the marker's process id (confirms 21856); bracket a boot/quit and read `21896`'s neighbours. Minutes. |
 | O-10 | What does the `timeout` argument of `-writeProgress <file> <timeout>` actually bound? | §2.4 | Production passes `600` and multi-hour runs keep emitting progress, so it clearly does not stop writing after 600 s [INFERRED-by-consequence]. Settle by passing `5` and watching whether lines stop. Minutes. |
 | O-11 | Why does `-selectModel <tag>_HighPoly` return the empty-selection code in every cleanup loop? | F-55 | Dump the model list at that point in the recipe (GUI or a probe) and see which name exists. Blocks the `GenerateModel` error-whitelist redesign (queued probe (e)). |
-| O-12 | Do two concurrent instances on different GPUs stay isolated (markers, cache)? | F-33 | Boot RS1 on GPU 0 and RS2 on GPU 1, align two small zones simultaneously, check marker isolation and cache contention. NA167 loose end #2. |
-| O-13 | Can headless RS 2.2 hit a licensing/activation prompt that manifests as a silent hang? | §1 | No probe designed. Two years of headless production recorded no licensing interaction — absence of evidence, not evidence of absence. |
-| O-14 | What is the shutdown bound on a very large scene? | F-30 | Time `-quit` → `-getStatus` gone on a 4,000+ camera scene once. Costs one teardown. Only verified on small scenes; code allows 900 s, `ARCHITECTURE.md` still says 300 s. |
+| O-12 | Do two concurrent instances on different GPUs stay isolated (markers, cache)? | F-33 | Boot RS1 on GPU 0 and RS2 on GPU 1, align two small zones simultaneously, check marker isolation and cache contention. |
+| O-13 | Can headless RS 2.2 hit a sign-in prompt that manifests as a silent hang? | §1 | No probe designed. This project's headless runs recorded no sign-in interaction — absence of evidence, not evidence of absence. |
+| O-14 | What is the shutdown bound on a very large scene? | F-30 | Time `-quit` → `-getStatus` gone on a 4,000+ camera scene once. Costs one teardown. Only verified on small scenes; code allows 900 s. |
 | O-15 | Why did `%RealityScan%` expand empty once after a 56-minute blocked wait? | F-70 | None designed. Echo the variable at phase boundaries and watch for recurrence. |
 | O-16 | Is the truncated-peel / unasserted-instrument defect closed? | F-21, F-22 | Assert `expected_peelend_<inst>.txt` is read, and sanitize + check `census_leftover` before each attempt. Both are **open defects**, not just unknowns. |
 | O-17 | Does `-update` explain the 45° bow tilt? | F-16 | Re-run the assembly `-update` with a **position-only** union log and re-measure the bow's attitude (~2 min). Queued probe (h). |
@@ -2171,7 +2161,7 @@ Every `[OPEN]` in this document, with the cheapest probe that would settle it.
 | O-19 | Why does an attempt whose scene contains a previously fused `.rsalign` harvest **zero** sidecars? | F-83 | Import two small components, merge, export; in a fresh scene import that fused file plus a third component, merge, export, and sweep for `xcr:Position`. ~10 min. Did not recur in `merged5`, so it may not reproduce. |
 | O-20 | Does `-exportRegistration` with no params XML block on a GUI dialog, or on something else? | F-78 | Run it once under `RS_HEADLESS=0` and look at the screen. Minutes. Currently [INFERRED]. |
 | O-21 | Does `setMinComponentSize` gate **selection** as well as export? | F-07 | The Help attaches the condition only to `exportXMP` / `exportLatestComponents`. Align a scene that yields a sub-5-camera component, then try to reach it by peel at `1` vs `5`. Hardening cell U5. |
-| O-22 | Does `<comp>_HighPoly_Raw` survive the model recipe on *any* component? | F-55 | The 2026-07-29 export probe says no (`err:5601`); FINDINGS 2026-07-28 and status log 2026-07-29 both say yes. Enumerate the model list per component in the GUI or with a probe. Minutes, settles a live internal contradiction. |
+| O-22 | Does `<comp>_HighPoly_Raw` survive the model recipe on *any* component? | F-55 | The 2026-07-29 export probe says no (`err:5601`); project testing 2026-07-28 and project testing 2026-07-29 both say yes. Enumerate the model list per component in the GUI or with a probe. Minutes, settles a live internal contradiction. |
 | O-23 | What does a second instance do when it opens a project already open, with `allowReadOnly=false` (the default)? | F-33 | Boot RS1, `-load` a project, boot RS2, `-load` the same project, read the marker. Minutes. |
 | O-24 | Which of `delete` / `recover` / `abort` / `ask` does a headless `-load` actually exhibit for `appAutoSaveCliHandling`? | F-79 | Create an autosave (enable autosave, make a change, kill the instance), then `-load` under each of the four values and observe. The `ask` case is the one that could hang an unattended run. |
 | O-25 | Do `-pauseInstance` / `-unpauseInstance` / `-abortInstance` leave a loadable scene, and do they emit a marker line? | F-37 | Abort a small align, read `errors_<inst>.txt` / `results_<inst>.log`, then reload the project. Minutes. Documented but never exercised here. |

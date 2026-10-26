@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Within-zone component growth driver.
 
-Implements the within-zone half of the "Revised order of operations"
-(docs/merge-growth-strategy-2026-07.md) on ONE zone's ORIGINAL aligned
-scene (features cached, image identity intact - never a scene rebuilt
+Implements the within-zone half of the revised merge/growth order of
+operations on ONE zone's ORIGINAL aligned scene (features cached, image identity intact - never a scene rebuilt
 from component imports, which silently lacks the orphan images):
 
   1. Checkpoint: snapshot the scene bundle and export the current
@@ -20,7 +19,7 @@ from component imports, which silently lacks the orphan images):
      capped by --max_passes.
   5. Export final components + manifests; write grow_report.json.
 
-Checkpoint/rollback design (mandated 2026-07-23): the checkpoint
+Checkpoint/rollback design: the checkpoint
 is a plain file copy of the .rsproj plus its companion data folder (the
 sibling directory named after the project stem, holding sfmN.dat etc.),
 restored to the SAME path on rollback. The officially sanctioned
@@ -32,10 +31,10 @@ stage exists to register. It remains a manual fallback only.
 
 Example (PowerShell, from the Git checkout):
     & "./.venv/Scripts/python.exe" grow_zone.py `
-        --scene "D:/dive/aligned_components/zone_1/zone_1.rsproj" `
-        --images_root "D:/dive/batched_images_by_zone/zone_1" `
-        --components_dir "D:/dive/aligned_components/zone_1" `
-        --output "D:/dive/grown/zone_1" --min_size 50 --max_passes 8
+        --scene "<workspace>/aligned_components/zone_1/zone_1.rsproj" `
+        --images_root "<workspace>/batched_images_by_zone/zone_1" `
+        --components_dir "<workspace>/aligned_components/zone_1" `
+        --output "<workspace>/grown/zone_1" --min_size 50 --max_passes 8
 
 See --help for feature-source, selection and checkpoint options.
 
@@ -43,8 +42,8 @@ All prompts default to the previous run's answers (rs_settings.json).
 RS_HEADLESS resolves through the settings store's 'realityscan' section
 (default: visible; an RS_HEADLESS already in the environment wins -
 module_base.settings_store.realityscan_env). --lock_anchor (inpPose=3 on the component
-being grown) stays OFF by default until hardening cell U18 verifies the
-locked-pose behavior.
+being grown) stays OFF by default: the locked-pose behavior has not been
+verified.
 """
 from __future__ import annotations
 
@@ -60,9 +59,14 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 from module_base.settings_store import SettingsStore, realityscan_env
-from modules import camera_registry
+from modules import calibration_sidecars
+from modules.flight_logs import (ensure_frame_match, require_utm_zone,
+                                 write_flight_log_params)
+from modules.realityscan_interface.realityscan_interface import (
+    alignment_params_template, backup_pre_existing_sidecars, flight_log_params_template)
 from modules.realityscan_interface.realityscan_cli import (
-    RealityScanCLI, set_project_save_env)
+    METADATA_DIR, RealityScanCLI, set_project_save_env)
+from modules.wildsync_intake.intake import workspace_calibration
 
 # Parallel-developed bookkeeping modules (manifest contract schema 1;
 # twin/orphan analysis). Import-guarded so this driver runs - degraded
@@ -101,8 +105,8 @@ def registered_basenames(images_root: str, stem_index: dict[str, str],
     """Registration census: image basenames whose XMP sidecar carries a
     pose (-exportXMP writes pose entries only for registered cameras).
     Read-only - callers must follow up with
-    camera_registry.sanitize_and_census so pose sidecars can never leak
-    into later adds as exact-pose priors (bug B7)."""
+    calibration_sidecars.sanitize_and_census so pose sidecars can never leak
+    into later adds as exact-pose priors."""
     names: set[str] = set()
     unmapped = 0
     for root, _dirs, files in os.walk(images_root):
@@ -128,11 +132,33 @@ def registered_basenames(images_root: str, stem_index: dict[str, str],
     return names
 
 
-def take_census(images_root: str, stem_index: dict[str, str], logger) -> set[str]:
+def take_census(images_root: str, stem_index: dict[str, str], logger,
+                calibration: tuple[dict[str, str], dict[str, float]] | None = None
+                ) -> set[str]:
+    """Registration census, then sidecar hygiene over the zone tree.
+
+    ``calibration`` is the workspace's (modes, starting focals) from the
+    intake manifest (modules.wildsync_intake.intake.workspace_calibration).
+    With it every pose sidecar of a prior/groups camera is rewritten to the
+    calibration sidecar the alignment stage wrote, and any image the
+    harvest left without one gets it back - a growth pass must never leave
+    the tree without the sidecars a later -add relies on. Without it
+    (no Wild Sync workspace) pose sidecars are deleted, as before.
+    """
     names = registered_basenames(images_root, stem_index, logger)
-    pose_count, _restored, removed = camera_registry.sanitize_and_census(images_root)
+    modes, focals = calibration if calibration else (None, None)
+    pose_count, restored, removed = calibration_sidecars.sanitize_and_census(
+        images_root, modes, focals)
     if removed:
         logger.warning('%d pose sidecars of unknown cameras deleted', removed)
+    if restored:
+        logger.info('census: %d pose sidecars rewritten to their calibration '
+                    'sidecar', restored)
+    created, _unknown = calibration_sidecars.ensure_calibration_sidecars(
+        images_root, modes, focals)
+    if created:
+        logger.info('census: %d calibration sidecar(s) restored under %s',
+                    created, images_root)
     if pose_count != len(names):
         logger.info('census: %d pose sidecars, %d mapped to images',
                     pose_count, len(names))
@@ -142,7 +168,7 @@ def take_census(images_root: str, stem_index: dict[str, str], logger) -> set[str
 # ----------------------------------------------------------------------
 # Scene checkpoint / rollback (mandated design: bundle file copy)
 # ----------------------------------------------------------------------
-# Implementation moved to module_base/scene_checkpoint.py (2026-07-24)
+# Implementation lives in module_base/scene_checkpoint.py
 # so the cross-zone merge driver shares the SAME battle-tested restore
 # path. Re-exported here for existing callers/tests.
 from module_base.scene_checkpoint import (  # noqa: F401
@@ -187,9 +213,8 @@ def load_contract_manifests(directory: str, logger) -> dict[str, dict]:
 def write_manifest(manifest: dict, directory: str) -> str:
     """Write a manifest next to its component using the CONTRACT naming
     (<rsalign>.manifest.json) so component_analysis.load_manifests and
-    merge_zones can find it. Review finding 2026-07-24: the previous
-    '<component>.json' naming made growth manifests invisible to the
-    merge stage. Approximate membership is flagged in the manifest
+    merge_zones can find it; any other naming makes growth manifests
+    invisible to the merge stage. Approximate membership is flagged in the manifest
     itself so twin resolution can refuse to discard on fuzzy data."""
     safe = re.sub(r'[^A-Za-z0-9._ -]', '_', str(manifest['component']))
     rsalign_guess = manifest.get('rsalign') or os.path.join(directory, f'{safe}.rsalign')
@@ -338,24 +363,25 @@ def main() -> int:
                              'pool - without this, every other pool image '
                              'counts as an "orphan" and component passes '
                              'try to enable tens of thousands of '
-                             'non-zone images (run3 2026-08-28).')
+                             'non-zone images.')
     parser.add_argument('--flight_log', default=None,
                         help='zone flight log to RE-IMPORT at every grow step '
-                             '(project decision 2026-08-08: the flight log is '
+                             '(the flight log is '
                              'loaded at each alignment step; P4-verified to '
                              're-place aligned components onto current priors '
                              'via -update without a re-align)')
     parser.add_argument('--flight_log_params', default=None,
-                        help='flight-log params XML for --flight_log '
-                             '(default: the local-frame template)')
+                        help='FlightLogParams XML template for --flight_log '
+                             '(default: UTM or local template selected from the '
+                             "flight log's filename, with frame validation)")
     parser.add_argument('--lock_anchor', action='store_true',
                         help='lock the grown component poses (inpPose=3) during its '
-                             'align - EXPERIMENTAL, off until U18 verifies it')
+                             'align - EXPERIMENTAL, unverified, off by default')
     parser.add_argument('--skip_global', action='store_true',
                         help='skip the opening global re-align pass')
     parser.add_argument('--project_label', default=None,
-                        help='expedition_dive label for the RC_projects daily-save '
-                             'schema (e.g. NA156_H2023)')
+                        help='dataset label for the RC_projects daily-save '
+                             'schema')
     args = parser.parse_args()
 
     def ask(key, cli_value, fallback):
@@ -378,6 +404,17 @@ def main() -> int:
     if not os.path.isdir(images_root):
         logger.error('images root not found: %s', images_root)
         return 1
+    try:
+        calibration = workspace_calibration(images_root)
+    except ValueError as exc:
+        logger.error('%s', exc)
+        return 1
+    if calibration:
+        logger.info('calibration sidecars kept through every census: %s',
+                    calibration[0])
+    else:
+        logger.info('no Wild Sync intake manifest above %s: preserving legacy '
+                    'camera calibration during sidecar hygiene', images_root)
 
     zone = os.path.splitext(os.path.basename(scene))[0]
     os.makedirs(output_dir, exist_ok=True)
@@ -395,30 +432,45 @@ def main() -> int:
     # RealityScan machine constants (RS_INSTANCE / RS_CACHE_DIR /
     # RS_HEADLESS) from the settings store's 'realityscan' section -
     # realityscan_env is the single source of truth (headless defaults
-    # False = visible, project decision 2026-08-07); a variable already set
+    # False = visible); a variable already set
     # in the environment wins over the stored default.
     os.environ.update(realityscan_env(settings))
 
     # Selection-command strategy + experimental lock anchor, consumed by
     # GrowZone.bat via the environment.
     os.environ['RS_GROW_SELECT_CMDS'] = args.selection_cmds or 'editsel'
-    # Per-step flight-log reload (FLIGHTLOG_ARCHITECTURE 1b). Env-gated
-    # in GrowZone.bat: unset = legacy behavior, byte-identical.
+    # Per-step flight-log reload. Env-gated in GrowZone.bat: unset =
+    # legacy behavior, byte-identical. The params file is generated for
+    # the UTM zone the flight log's own filename names, as the align
+    # stage does.
     if args.flight_log:
         if not os.path.isfile(args.flight_log):
             logger.error('--flight_log not found: %s', args.flight_log)
             return 1
+        template = flight_log_params_template(
+            METADATA_DIR, args.flight_log, args.flight_log_params)
+        try:
+            frame = ensure_frame_match(args.flight_log, template)
+            if frame == 'utm':
+                log_zone, log_band = require_utm_zone(args.flight_log)
+                params = write_flight_log_params(
+                    template,
+                    os.path.join(logs_dir, f'FlightLogParams_{log_zone}{log_band}.xml'),
+                    log_zone, log_band)
+            else:
+                params = write_flight_log_params(
+                    template, os.path.join(logs_dir, 'FlightLogParams_local.xml'),
+                    frame='local_euclidean')
+        except (ValueError, OSError) as exc:
+            logger.error('%s', exc)
+            return 1
         os.environ['RS_GROW_FLIGHT_LOG'] = os.path.abspath(args.flight_log)
-        params = args.flight_log_params or os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), 'modules',
-            'realityscan_interface', 'RS_CLI', 'Metadata',
-            'FlightLogParamsLocal.xml')
         os.environ['RS_GROW_FLIGHT_LOG_PARAMS'] = os.path.abspath(params)
         logger.info('per-step flight-log reload: %s', args.flight_log)
     if args.lock_anchor:
         os.environ['RS_GROW_LOCK_ANCHOR'] = '1'
-        logger.warning('lock-anchor mode is ON (inpPose=3) - unverified '
-                       'until hardening cell U18')
+        logger.warning('lock-anchor mode is ON (inpPose=3) - its '
+                       'locked-pose behavior is unverified')
     else:
         os.environ.pop('RS_GROW_LOCK_ANCHOR', None)
 
@@ -455,7 +507,16 @@ def main() -> int:
     untrusted: set[str] = set()          # census-approximate manifests
     last_export: dict[str, str] = {}     # component -> latest .rsalign path
 
+    try:
+        preserved = backup_pre_existing_sidecars(images_root, output_dir)
+    except (OSError, ValueError) as exc:
+        logger.error('Could not preserve existing XMP sidecars: %s. Native processing was not started.', exc)
+        return 1
+    if preserved:
+        logger.info('Pre-existing XMP sidecars copied and verified in %s', preserved)
+
     cli = RealityScanCLI(logger, settings)
+    cli.alignment_params_path = alignment_params_template(calibration is not None)
     report = {
         'zone': zone,
         'scene': scene,
@@ -503,7 +564,7 @@ def main() -> int:
                 'workflow_success': False, 'errors': result.errors})
         return 1
     note_exports(baseline_export)
-    baseline = take_census(images_root, stem_index, logger)
+    baseline = take_census(images_root, stem_index, logger, calibration)
     if not baseline:
         logger.error('checkpoint census found no registered cameras - is '
                      '%s an aligned zone scene?', scene)
@@ -581,7 +642,7 @@ def main() -> int:
         checkpoint_scene(scene, checkpoints_dir, tag, logger)
         logger.info('--- stage 2: global re-align (all images enabled) ---')
         result = run_pass(tag, 'global', export_dir=export_dir)
-        after = take_census(images_root, stem_index, logger)
+        after = take_census(images_root, stem_index, logger, calibration)
         accepted, lost = evaluate(tag, baseline, after, result.success)
         entry = {'tag': tag, 'mode': 'global',
                  'workflow_success': result.success, 'errors': result.errors,
@@ -660,7 +721,7 @@ def main() -> int:
                 continue  # dropped by a cleanup earlier in this sweep
             # Orphans from the ZONE census, not the manifests: growth
             # passes are align-UPDATES that refresh every component, and
-            # post-pass manifests may be approximate (2026-07-24 fix for
+            # post-pass manifests may be approximate and would report
             # phantom gains).
             orphans = set(all_basenames) - baseline
             if not orphans:
@@ -690,14 +751,14 @@ def main() -> int:
                               fsource=str(feature_source),
                               export_dir=export_dir,
                               secondary=secondary_list)
-            # ZONE-LEVEL accounting (2026-07-24): -align with components
+            # ZONE-LEVEL accounting: -align with components
             # present is an UPDATE that refreshes every component in the
             # scene, so the census after an "isolated" pass covers the
             # WHOLE zone. Comparing it against one component's membership
             # produced phantom gains (observed: "sweep gain 1856" on a
             # 976-image zone). The invariant and the gain are therefore
             # evaluated against the zone baseline census.
-            after = take_census(images_root, stem_index, logger)
+            after = take_census(images_root, stem_index, logger, calibration)
             before = set(baseline)
             accepted, lost = evaluate(tag, before, after, result.success)
             gain = len(after) - len(before)
@@ -757,7 +818,7 @@ def main() -> int:
                    'duration_seconds': round(result.duration_seconds, 1)}
     if result.success:
         note_exports(final_dir)
-        final_census = take_census(images_root, stem_index, logger)
+        final_census = take_census(images_root, stem_index, logger, calibration)
         if final_census:
             final_entry['registered'] = len(final_census)
             baseline |= final_census
@@ -795,7 +856,7 @@ def main() -> int:
         'components': final_components,
     }
 
-    # grow -> merge handoff (review backlog MUST-FIX, 2026-07-24): a
+    # grow -> merge handoff: a
     # .complist naming every final component at its authoritative export
     # path, consumable directly by merge_zones.py --complist. Only
     # MANIFESTED components are listed - the feature-aware merge refuses

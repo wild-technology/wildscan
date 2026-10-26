@@ -5,6 +5,18 @@ georeference dive imagery, batch it, and drive **RealityScan 2.2**
 (Epic Games, formerly RealityCapture) through its CLI to align images and
 generate textured models.
 
+WCA and Zeuss video, imagery and navigation workflows remain supported. The
+Sony ILX-LR1 [Wild Sync intake](docs/ILX-LR1.md) is an additional workflow:
+select it for a Wild Sync recording, rather than replacing the existing
+extraction and georeferencing stages. It records Sony calibration decisions
+and uses its own alignment settings. Generic datasets keep their camera
+profiles, navigation conventions and alignment defaults.
+
+The [Windows SPDX SBOM](sbom.spdx.json), [licence evidence](third_party_licenses/)
+and [third-party notices](THIRD_PARTY_NOTICES.md) record the tested Python
+environment, including transitive dependencies. Wild Scan runs from an editable source checkout;
+a built wheel alone does not include the complete native workflow.
+
 Start with a dataset or an existing results folder. WildScan helps identify
 available imagery and navigation files, review pipeline artifacts, and select
 the next processing stages. RealityScan performs alignment and reconstruction;
@@ -344,9 +356,12 @@ pipeline-made zone tree:
 - missing calibration sidecars are **regenerated** for recognised
   cameras.
 
-A run whose input folder already contains pose sidecars logs a loud
-warning naming the count before anything moves. Copy the folder first if
-those sidecars are yours.
+Python alignment, growth and merge first copy existing XMP files to a unique
+`<output>/pre_existing_sidecars/<snapshot>/` folder and verify their hashes.
+Each snapshot includes `backup_manifest.json`; retries keep earlier snapshots.
+The working sidecars still undergo the changes above. A failed backup stops
+native processing. Direct calls to low-level `.bat` utilities bypass the Python
+backup step and require a separate working copy.
 
 ### Multi-GPU
 

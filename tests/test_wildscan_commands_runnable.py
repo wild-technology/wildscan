@@ -4,9 +4,9 @@
 WildScan builds one main.py invocation for the enabled chain. main.py
 builds its argparse from the ENABLED modules only and rejects unknown
 flags with exit 2 - and build_commands forwarded the WHOLE persisted
-answer set plus the five forced model flags, unconditionally.
+answer set plus the forced alignment flags, unconditionally.
 
-Measured (audit 2026-08-07): 16 of 31 stage selections rejected on a first
+Measured: 16 of 31 stage selections rejected on a first
 session, 29 of 31 once rs_settings.json carried a previous full run's
 answers. default_enabled() deliberately unticks completed stages, so the
 SECOND session always landed in the broken region. The six existing
@@ -15,12 +15,12 @@ and every one of them includes 'align'.
 
 This file feeds the generated argv to main.py's OWN parser
 (main.build_arg_parser over main.initialize_parameters for the same
-RS_MODULES set) for all 31 selections, in both states - plus one real
+RS_MODULES set) for all 15 selections, in both states - plus one real
 subprocess to prove the parser under test is the one the process uses. It
 is the test the old ones were not.
 
-Also here: the required data-type question, the publish CRS, and the
-camera records the wizard collects as REQUIRED answers and then drops.
+Also here: the intake flags, the run-directory anchoring and the publish
+CRS.
 
 No RealityScan and no pipeline work. wildscan.session imports cleanly
 without textual (only the TUI needs it), so these run everywhere.
@@ -30,7 +30,6 @@ Run:  py -3.13 -m pytest tests/test_wildscan_commands_runnable.py
 from __future__ import annotations
 
 import itertools
-import json
 import logging
 import os
 import subprocess
@@ -41,13 +40,18 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-import main as main_mod  # noqa: E402
-import wildscan.session as session_mod  # noqa: E402
-from wildscan.session import (CHAIN_STAGES, MODULE_DISPLAY, Question,  # noqa: E402
-                              Session, build_commands, build_questions,
-                              chain_arg_names, scan_raw_data,
-                              workspace_input_crs, write_camera_records)
-from wildscan.workspace import Workspace  # noqa: E402
+import main as main_mod
+import wildscan.session as session_mod
+from wildscan.session import (
+    CHAIN_STAGES,
+    MODULE_DISPLAY,
+    Question,
+    Session,
+    build_commands,
+    chain_arg_names,
+    workspace_input_crs,
+)
+from wildscan.workspace import Workspace
 
 
 class FakeStore:
@@ -71,25 +75,25 @@ def store(monkeypatch):
 # A full previous run's answers - what load_last_run() hands the next
 # session, and the state that broke 29 of 31 selections.
 FULL_ANSWERS = {
-    "i_input": "D:/cruise/dive.mov",
-    "i_output_fpm": "60",
-    "g_input": "D:/ws/raw_images",
-    "g_flight_log": "D:/cruise/nav.csv",
-    "g_type": "All",
-    "g_declination": "0.0",
+    "i_input": "D:/data/video.mp4",
+    "g_input": "D:/data/images",
+    "g_flight_log": "D:/data/nav.csv",
+    "g_type": "WCA",
+    "w_input": "D:/runs/260820_1925_transect-01",
+    "w_variant": "card",
+    "w_calibration": "auto",
+    "w_declination": "0.0",
     "p_input": "D:/ws/raw_images",
     "b_input": "D:/ws/preprocessed_images",
     "b_target_images": "3000",
     "r_input": "D:/ws/batched_images_by_zone",
-    "r_project_label": "NA167_H2075",
-    "cam_vn_name": "Voyis New",
-    "cam_vn_lever": "1.0/0.0/1.0",
-    "cam_vn_tilt": "30",
+    "r_project_label": "SAMPLE_LABEL",
 }
 
 ALL_SELECTIONS = [list(combo)
                   for size in range(1, len(CHAIN_STAGES) + 1)
-                  for combo in itertools.combinations(CHAIN_STAGES, size)]
+                  for combo in itertools.combinations(CHAIN_STAGES, size)
+                  if not ("intake" in combo and any(k in combo for k in ("extract", "georeference")))]
 
 
 def _chain_command(session):
@@ -126,10 +130,9 @@ def _parse_or_fail(cmd, chain, label):
 @pytest.mark.parametrize('enabled', ALL_SELECTIONS,
                          ids=['+'.join(s) for s in ALL_SELECTIONS])
 def test_every_stage_selection_produces_accepted_arguments(enabled, tmp_path):
-    """Fresh session AND resumed session, all 31 chain selections."""
+    """Fresh session AND resumed session, all 15 chain selections."""
     for label, answers in (('no', {}), ('full', dict(FULL_ANSWERS))):
-        session = Session(expedition='NA167', dive='H2075',
-                          results_root=str(tmp_path / 'ws'),
+        session = Session(results_root=str(tmp_path / 'ws'),
                           enabled=list(enabled), answers=dict(answers))
         cmd = _chain_command(session)
         assert cmd is not None
@@ -141,9 +144,8 @@ def test_the_real_process_accepts_the_generated_argv(tmp_path):
     to be the one main.py actually uses. The run is expected to FAIL in
     module validation (the workspace is empty) - what must never appear is
     argparse's 'unrecognized arguments'."""
-    session = Session(expedition='NA167', dive='H2075',
-                      results_root=str(tmp_path / 'ws'),
-                      enabled=['georeference', 'preprocess', 'batch'],
+    session = Session(results_root=str(tmp_path / 'ws'),
+                      enabled=['preprocess', 'batch'],
                       answers=dict(FULL_ANSWERS))
     cmd = _chain_command(session)
     env = dict(os.environ)
@@ -159,7 +161,7 @@ def test_the_real_process_accepts_the_generated_argv(tmp_path):
                      str(tmp_path / 'subprocess-settings.json'), *cmd.argv[1:]]
     proc = subprocess.run(isolated_argv, capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, cwd=REPO_ROOT, env=env,
-                          timeout=600)
+                          timeout=600, check=False)
     combined = proc.stdout + proc.stderr
     assert 'unrecognized arguments' not in combined, combined[-500:]
     assert proc.returncode != 2, combined[-500:]
@@ -169,30 +171,26 @@ def test_plan_anchors_filesystem_values_and_preserves_tokens(tmp_path, monkeypat
     from pathlib import Path
 
     monkeypatch.chdir(tmp_path)
-    session = Session(expedition='NA173', dive='H2104', cruise_folder='cruise',
-                      raw_images_dir='raw', video_path='cruise/clip.mov',
-                      processed_data='processed', results_root='results',
-                      enabled=list(session_mod.ALL_STAGES), answers={
-                          'i_input': 'cruise/clip.mov', 'g_input': 'raw',
-                          'g_flight_log': 'cruise/nav.csv', 'p_input': 'raw',
-                          'b_input': 'processed', 'b_flight_log_path': 'cruise/flight_log.txt',
-                          'r_input': 'zones', 'r_flight_log': 'cruise/flight_log.txt',
-                          'r_flight_log_params': 'cruise/params.xml',
-                          'r_project_label': 'MY_LABEL', 'g_type': 'All',
-                          'g_declination': '-1.2', 'cam_custom_name': 'My Camera'})
+    session = Session(run_dirs='runs', results_root='results',
+                      enabled=list(session_mod.WILDSYNC_CHAIN_STAGES + session_mod.POST_STAGES), answers={
+                          'w_input': 'runs/a;runs/b', 'p_input': 'raw',
+                          'b_input': 'processed', 'b_flight_log_path': 'nav/flight_log.txt',
+                          'r_input': 'zones', 'r_flight_log': 'nav/flight_log.txt',
+                          'r_flight_log_params': 'nav/params.xml',
+                          'r_project_label': 'MY_LABEL', 'w_variant': 'review',
+                          'w_declination': '-1.2'})
     plans = build_commands(session)
-    for field in ('cruise_folder', 'raw_images_dir', 'video_path',
-                  'processed_data', 'results_root'):
+    for field in ('run_dirs', 'results_root'):
         assert Path(getattr(session, field)).is_absolute()
         assert tmp_path in Path(getattr(session, field)).parents
-    for arg in ('i_input', 'g_input', 'g_flight_log', 'p_input', 'b_input',
-                'b_flight_log_path', 'r_input', 'r_flight_log', 'r_flight_log_params'):
+    assert session.answers['w_input'] == f"{tmp_path / 'runs' / 'a'};{tmp_path / 'runs' / 'b'}"
+    for arg in ('p_input', 'b_input', 'b_flight_log_path', 'r_input',
+                'r_flight_log', 'r_flight_log_params'):
         assert Path(session.answers[arg]).is_absolute()
         assert tmp_path in Path(session.answers[arg]).parents
     assert session.answers['r_project_label'] == 'MY_LABEL'
-    assert session.answers['g_type'] == 'All'
-    assert session.answers['g_declination'] == '-1.2'
-    assert session.answers['cam_custom_name'] == 'My Camera'
+    assert session.answers['w_variant'] == 'review'
+    assert session.answers['w_declination'] == '-1.2'
     for plan in plans:
         assert plan.cwd == str(tmp_path)
         assert plan.workspace == str(tmp_path / 'results')
@@ -207,9 +205,9 @@ def test_disabled_paths_keep_their_identity_when_a_later_run_changes_cwd(
     other.mkdir()
     monkeypatch.chdir(caller)
     original = Session(results_root='results', enabled=['model'], answers={
-        'i_input': 'raw/clip.mov', 'r_input': 'zones', 'r_flight_log': 'nav.csv',
+        'p_input': 'raw', 'r_input': 'zones', 'r_flight_log': 'nav.csv',
         'r_flight_log_params': 'params.xml', 'r_project_label': 'UNCHANGED_LABEL',
-        'g_type': 'All', 'cam_custom_name': 'My Camera', 'unknown_answer': 'leave/me'})
+        'w_variant': 'review', 'unknown_answer': 'leave/me'})
     build_commands(original)
     session_mod.save_last_run(original)
     monkeypatch.chdir(other)
@@ -219,28 +217,24 @@ def test_disabled_paths_keep_their_identity_when_a_later_run_changes_cwd(
     for flag, name in [('--r_input', 'zones'), ('--r_flight_log', 'nav.csv'),
                        ('--r_flight_log_params', 'params.xml')]:
         assert plan.argv[plan.argv.index(flag) + 1] == str(caller / name)
-    assert restored.answers['i_input'] == str(caller / 'raw' / 'clip.mov')
+    assert restored.answers['p_input'] == str(caller / 'raw')
     assert restored.answers['r_project_label'] == 'UNCHANGED_LABEL'
-    assert restored.answers['g_type'] == 'All'
-    assert restored.answers['cam_custom_name'] == 'My Camera'
+    assert restored.answers['w_variant'] == 'review'
     assert restored.answers['unknown_answer'] == 'leave/me'
 
 
 def test_forced_model_flags_only_ride_with_align(tmp_path):
-    """The five --r_model_* / --r_display_output flags belong to
-    RealityScan Alignment; appending them unconditionally alone rejected
-    every align-less selection."""
-    for enabled in (['georeference'], ['georeference', 'preprocess', 'batch'],
-                    ['extract']):
+    """The forced --r_display_output flag belongs to RealityScan
+    Alignment; appending it unconditionally alone rejected every
+    align-less selection."""
+    for enabled in (['preprocess'], ['preprocess', 'batch'], ['batch']):
         session = Session(results_root=str(tmp_path / 'ws'),
                           enabled=list(enabled), answers=dict(FULL_ANSWERS))
         argv = _chain_command(session).argv
-        assert '--r_model_generate' not in argv, enabled
         assert '--r_display_output' not in argv, enabled
     session = Session(results_root=str(tmp_path / 'ws'),
                       enabled=['batch', 'align'], answers=dict(FULL_ANSWERS))
     argv = _chain_command(session).argv
-    assert '--r_model_generate' in argv
     assert '--r_display_output' in argv
 
 
@@ -250,8 +244,8 @@ def test_answers_from_other_stages_are_kept_but_not_forwarded(tmp_path):
     session = Session(results_root=str(tmp_path / 'ws'),
                       enabled=['batch', 'align'], answers=dict(FULL_ANSWERS))
     argv = _chain_command(session).argv
-    assert '--g_input' not in argv and '--p_input' not in argv
-    assert session.answers['g_input'] == os.path.abspath(FULL_ANSWERS['g_input'])
+    assert '--p_input' not in argv
+    assert session.answers['p_input'] == os.path.abspath(FULL_ANSWERS['p_input'])
 
 
 def test_disable_when_module_active_is_honoured_by_the_filter(tmp_path):
@@ -275,21 +269,6 @@ def test_chain_arg_names_matches_main_pys_own_parameter_build(chain):
     expected = {p.cli_long
                 for p in main_mod.initialize_parameters(modules).values()}
     assert chain_arg_names(chain) == expected, chain
-
-
-# ------------------------------------------------------ required data type
-
-def test_geo_input_type_is_required_and_constrained(tmp_path):
-    session = Session(results_root=str(tmp_path / 'ws'),
-                      enabled=['georeference'])
-    questions = {q.arg: q for q in build_questions(session,
-                                                   scan_raw_data(tmp_path))}
-    q = questions['g_type']
-    assert q.required, 'a blank answer used to reach validate_parameters'
-    assert q.validate('') == 'this one is required'
-    assert q.validate('nonsense') is not None
-    for good in ('All', 'wca', 'Zeuss', 'WCA2025'):
-        assert q.validate(good) is None, good
 
 
 def test_question_choices_do_not_affect_unconstrained_questions():
@@ -316,12 +295,12 @@ def test_publish_carries_the_workspace_crs(tmp_path, tag, epsg):
     session = Session(results_root=str(ws), enabled=['publish'])
     argv = build_commands(session)[0].argv
     # Placement now comes from each mesh's own .rsInfo sidecar; the flight
-    # log rides along as the INDEPENDENT nav check (2026-08-31).
+    # log rides along as the INDEPENDENT nav check.
     assert '--flight-log' in argv
     assert f'flight_log_{tag}_UTM.txt' in argv[argv.index('--flight-log') + 1]
 
 
-def test_publish_omits_the_crs_for_a_local_frame_campaign(tmp_path):
+def test_publish_omits_the_crs_for_an_untagged_flight_log(tmp_path):
     ws = tmp_path / 'ws'
     (ws / 'raw_images').mkdir(parents=True)
     (ws / 'raw_images' / 'flight_log_UTM.txt').write_text(
@@ -336,8 +315,8 @@ def test_the_publish_argv_is_accepted_by_publish_batchs_own_parser(tmp_path):
 
     Every stage selection is fed to main.py's real parser above, but the
     publish stage builds a publish_batch.py argv that nothing ever parsed.
-    On 2026-08-31 `--input-crs` was removed from publish_batch while WildScan
-    kept passing it: argparse exit 2, the whole publish stage dead, and the
+    When `--input-crs` was removed from publish_batch while WildScan
+    kept passing it, the result was argparse exit 2, the whole publish stage dead, and the
     full suite still green. Parse it for real, against publish_batch's OWN
     parser, so the two cannot drift again.
     """
@@ -353,40 +332,10 @@ def test_the_publish_argv_is_accepted_by_publish_batchs_own_parser(tmp_path):
     proc = subprocess.run(
         [sys.executable, argv[1], *argv[2:], '--help'],
         capture_output=True, text=True, stdin=subprocess.DEVNULL,
-        cwd=REPO_ROOT)
+        cwd=REPO_ROOT, check=False)
     # --help short-circuits before any work, but argparse still rejects an
     # unknown flag with exit 2 first, which is exactly what we are testing.
     assert proc.returncode == 0, (proc.stdout + proc.stderr)[-800:]
-
-
-# ------------------------------------------------------- camera records
-
-def test_collected_camera_answers_are_written_beside_the_results(tmp_path):
-    """The wizard asks for a new camera's lever arm and tilt as REQUIRED
-    answers and then drops every cam_* key from argv - by design. Leaving
-    them only in rs_settings.json lost the measurement the operator just
-    took."""
-    ws = tmp_path / 'ws'
-    session = Session(expedition='NA167', dive='H2075',
-                      results_root=str(ws), enabled=['align'],
-                      answers=dict(FULL_ANSWERS))
-    path = write_camera_records(session)
-    assert path is not None and path.name == 'camera_records.json'
-    payload = json.loads(path.read_text(encoding='utf-8'))
-    assert payload['cameras']['cam_vn_lever'] == '1.0/0.0/1.0'
-    assert payload['cameras']['cam_vn_tilt'] == '30'
-    assert payload['expedition'] == 'NA167'
-    # It must say what it is NOT: these are records, not runtime settings.
-    assert any('cameras.json' in line for line in payload['_comment'])
-
-
-def test_no_camera_answers_writes_no_file(tmp_path):
-    ws = tmp_path / 'ws'
-    ws.mkdir()
-    session = Session(results_root=str(ws), enabled=['align'],
-                      answers={'g_type': 'All'})
-    assert write_camera_records(session) is None
-    assert not (ws / 'camera_records.json').exists()
 
 
 # ------------------------------------------------- stale export resolution
@@ -431,10 +380,3 @@ def test_the_export_command_is_re_resolved_at_launch_time():
     # ... and it must happen BEFORE the runner starts the command.
     assert source.index('self._refresh_export_command()') < \
         source.index('self.runner.start')
-
-
-def test_camera_records_are_written_when_the_run_starts():
-    import ast
-    on_mount = _function(_app_tree(), 'on_mount', containing='build_commands')
-    assert on_mount is not None
-    assert 'write_camera_records' in ast.unparse(on_mount)

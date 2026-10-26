@@ -110,8 +110,10 @@ def test_every_family_maps_to_a_known_camera():
 
 
 def test_every_family_has_a_mount_entry():
-    """A family with no MOUNTS key would silently get zeros."""
-    for fam in camera_registry.FAMILY_CAMERA:
+    """Every legacy family keeps its original generic-navigation entry."""
+    for fam, camera in camera_registry.FAMILY_CAMERA.items():
+        if camera_registry.CAMERAS[camera].calibration_policy != 'legacy':
+            continue  # Sony uses its own intake and typed mount record.
         assert fam in MOUNTS, f'{fam} has no MOUNTS entry'
 
 
@@ -237,6 +239,8 @@ def test_cameras_json_mounts_match_the_runtime_mounts_table():
     data = _cameras_json()
     parsed = {}
     for entry in data['families']:
+        if entry['family'] in ('cam1', 'cam2'):
+            continue  # Sony uses its own intake; no generic ROV-nav mount.
         mount = entry['mount']
         if mount is not None:
             mount = {k: v for k, v in mount.items() if not k.startswith('_')}
@@ -259,6 +263,14 @@ def test_cameras_json_cameras_match_runtime_registry():
             principal_point_u=spec.get('principal_point_u'),
             principal_point_v=spec.get('principal_point_v'),
             opt_in_env=spec.get('opt_in_env'),
+            calibration_image_size=tuple(spec['resolution'])
+            if 'resolution' in spec else None,
+            calibration_focal_mm=spec.get('calibration_focal_mm'),
+            sensor_size_mm=tuple(spec['sensor_size_mm'])
+            if 'sensor_size_mm' in spec else None,
+            opencv_distortion=tuple(spec['opencv_distortion_k1_k2_p1_p2_k3'])
+            if 'opencv_distortion_k1_k2_p1_p2_k3' in spec else None,
+            calibration_policy=spec.get('calibration_policy', 'measured'),
         ), f'cameras.json diverges at cameras[{key!r}]'
 
 

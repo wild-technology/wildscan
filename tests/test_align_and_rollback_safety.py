@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Alignment resume, per-zone honesty, and rollback safety.
 
-Alignment (audit 2026-08-07):
+Alignment:
   - an align-only resume - the state default_enabled() produces once
     batching is done - passed the batched ROOT as rs_input_image_dir, and
     -addFolder's recursion fused EVERY zone into ONE scene. Measured with
@@ -10,9 +10,8 @@ Alignment (audit 2026-08-07):
   - 'Zones Failed: 9' with one success returned Success=True and exit 0.
   - a zone skipped for holding no images appeared in NO tally.
   - the calibration-sidecar repair sat AFTER the failure/no-component
-    returns, i.e. it was skipped precisely when the operator re-runs -
-    re-opening the FINDINGS 2026-07-25 defect (796 of 4,540 images left
-    with no calibration prior, which CONFOUNDED PD-4/PD-4a).
+    returns, i.e. it was skipped precisely when the operator re-runs,
+    leaving images with no calibration prior.
   - a re-run rmtree'd the previous run's zone output - saved .rsproj and
     every exported .rsalign, GPU-hours - on a logger.warning, and the only
     backup (the dated RC_projects copy) is OFF by default.
@@ -136,10 +135,6 @@ def test_a_batched_root_is_expanded_per_zone(tmp_path, monkeypatch):
         'output_dir': _param('output_dir', str(tmp_path)),
         'rs_input_image_dir': _param('rs_input_image_dir', str(batched)),
         'rs_display_output': _param('rs_display_output', False),
-        'rs_model_generate': _param('rs_model_generate', False),
-        'rs_model_cull_poly': _param('rs_model_cull_poly', False),
-        'rs_model_texture': _param('rs_model_texture', False),
-        'rs_model_simplify': _param('rs_model_simplify', False),
         'rs_project_label': _param('rs_project_label', ''),
     }
     module, queued = _module_with_stub(tmp_path, monkeypatch, params)
@@ -158,10 +153,6 @@ def test_a_plain_image_folder_is_still_one_scene(tmp_path, monkeypatch):
         'output_dir': _param('output_dir', str(tmp_path)),
         'rs_input_image_dir': _param('rs_input_image_dir', str(images)),
         'rs_display_output': _param('rs_display_output', False),
-        'rs_model_generate': _param('rs_model_generate', False),
-        'rs_model_cull_poly': _param('rs_model_cull_poly', False),
-        'rs_model_texture': _param('rs_model_texture', False),
-        'rs_model_simplify': _param('rs_model_simplify', False),
         'rs_project_label': _param('rs_project_label', ''),
     }
     module, queued = _module_with_stub(tmp_path, monkeypatch, params)
@@ -176,14 +167,14 @@ def test_zone_subfolders_detection(tmp_path):
         ['zone_1', 'zone_2']
     # A per-zone flight log is enough even without the zone_ prefix.
     other = tmp_path / 'other'
-    (other / 'dive_a').mkdir(parents=True)
-    (other / 'dive_a' / 'flight_log_53N_UTM.txt').write_text(
+    (other / 'segment_a').mkdir(parents=True)
+    (other / 'segment_a' / 'flight_log_53N_UTM.txt').write_text(
         LOG_HEADER, encoding='utf-8')
     assert RealityScanAlignment.zone_subfolders(str(other))
     # Per-CAMERA subfolders are NOT zones.
     plain = tmp_path / 'plain'
     (plain / 'port').mkdir(parents=True)
-    (plain / 'cinema').mkdir()
+    (plain / 'ilx_left').mkdir()
     assert RealityScanAlignment.zone_subfolders(str(plain)) == []
     assert RealityScanAlignment.zone_subfolders(str(tmp_path / 'nope')) == []
 
@@ -202,10 +193,6 @@ def _chained_params(tmp_path):
     return {
         'output_dir': _param('output_dir', str(tmp_path)),
         'rs_display_output': _param('rs_display_output', False),
-        'rs_model_generate': _param('rs_model_generate', False),
-        'rs_model_cull_poly': _param('rs_model_cull_poly', False),
-        'rs_model_texture': _param('rs_model_texture', False),
-        'rs_model_simplify': _param('rs_model_simplify', False),
         'rs_project_label': _param('rs_project_label', ''),
     }
 
@@ -213,7 +200,7 @@ def _chained_params(tmp_path):
 def test_one_failed_zone_among_successes_fails_the_run(tmp_path, monkeypatch):
     """The decisive case: 'Zones Failed: 9' WITH one success used to
     return Success=True and exit 0 - a merged deliverable missing nine
-    tenths of the dive. `succeeded == 0` is not the right test."""
+    tenths of the survey. `succeeded == 0` is not the right test."""
     _batched(tmp_path)
     results = [WorkflowResult(True, 0, None, '', [], 0.0),
                WorkflowResult(False, 1, None, 'boom', [], 0.0)]
@@ -272,7 +259,7 @@ def test_sidecar_repair_runs_before_the_failure_returns():
     source = open(os.path.join(REPO_ROOT, 'modules', 'realityscan_interface',
                                'realityscan_interface.py'),
                   encoding='utf-8').read()
-    repair = source.index('camera_registry.ensure_calibration_sidecars(')
+    repair = source.index('calibration_sidecars.ensure_calibration_sidecars(')
     failure_return = source.index('if not result.success:')
     no_components = source.index('if not component_files:')
     assert repair < failure_return, 'repair is unreachable on a failed align'
@@ -418,10 +405,10 @@ def test_relative_alignment_paths_survive_the_native_script_cwd(tmp_path, monkey
     images = caller / 'images'
     images.mkdir(parents=True)
     (images / 'image.jpg').write_bytes(b'fixture')
-    nav = caller / 'nav.txt'
+    nav = caller / 'flight_log_53N_UTM.txt'
     nav.write_text(LOG_HEADER, encoding='utf-8')
     params = caller / 'params.xml'
-    shutil.copyfile(Path(cli_mod.METADATA_DIR) / 'FlightLogParamsLocal.xml', params)
+    shutil.copyfile(Path(cli_mod.METADATA_DIR) / 'FlightLogParams.xml', params)
     alignment_params = caller / 'alignment.xml'
     shutil.copyfile(Path(cli_mod.METADATA_DIR) / 'AlignmentParams.xml', alignment_params)
     module = RealityScanAlignment(QUIET)
@@ -450,8 +437,11 @@ def test_relative_alignment_paths_survive_the_native_script_cwd(tmp_path, monkey
         calls.append((command, kwargs))
         assert kwargs['cwd'] == cli_mod.SCRIPTS_DIR
         assert command[1:5] == [str(images), str(caller / 'results' / 'zone'),
-                                str(nav), str(params)]
+                                str(nav),
+                                str(caller / 'logs' / 'FlightLogParams_53N.xml')]
         assert all(Path(value).is_absolute() for value in command[1:5])
+        # Generic datasets retain the historical threshold; Sony intake
+        # alone applies the small-scene export rule.
         assert command[5:] == ['ordinary_zone_name', '50']
         assert kwargs['env']['RS_ALIGN_PARAMS'] == str(alignment_params)
         assert kwargs['env']['RS_ALIGN_POOL_DIR'] == str(images)
@@ -459,11 +449,37 @@ def test_relative_alignment_paths_survive_the_native_script_cwd(tmp_path, monkey
 
     monkeypatch.setattr(cli_mod.subprocess, 'Popen', capture)
     result, _ = module._RealityScanAlignment__align_zone(
-        'images', 'results/zone', 'ordinary_zone_name', 'nav.txt', 'params.xml')
+        'images', 'results/zone', 'ordinary_zone_name',
+        'flight_log_53N_UTM.txt', 'params.xml')
     assert len(calls) == 1
     assert fingerprints[0][2] == str(alignment_params)
     assert result['Success'] is False
     assert (caller / 'results' / 'zone').is_dir()
+    assert 'epsg:32653' in (caller / 'logs' / 'FlightLogParams_53N.xml').read_text(
+        encoding='utf-8')
+
+
+def test_an_untagged_log_with_a_utm_template_fails_before_anything_moves(
+        tmp_path, monkeypatch):
+    """An untagged/local-frame log cannot use the UTM template: refuse the
+    mismatch before moving outputs or locating RealityScan."""
+    images = tmp_path / 'images'
+    images.mkdir()
+    (images / 'a.jpg').write_bytes(b'j')
+    nav = tmp_path / 'flight_log_UTM.txt'
+    nav.write_text(LOG_HEADER, encoding='utf-8')
+    out = tmp_path / 'aligned' / 'zone_1'
+    out.mkdir(parents=True)
+    (out / 'zone_1.rsproj').write_bytes(b'previous')
+    module = RealityScanAlignment(QUIET)
+    monkeypatch.delenv('RS_ALIGN_POOL_DIR', raising=False)
+    monkeypatch.setattr(module.cli, 'find_executable',
+                        lambda: pytest.fail('untagged log reached native preparation'))
+    with pytest.raises(ValueError, match='implies a local_euclidean frame.*declares utm'):
+        module._RealityScanAlignment__align_zone(
+            str(images), str(out), 'zone_1', str(nav),
+            os.path.join(cli_mod.METADATA_DIR, 'FlightLogParams.xml'))
+    assert (out / 'zone_1.rsproj').read_bytes() == b'previous'
 
 
 @pytest.mark.parametrize('output_folder', [None, '', ' ', '\t'])
@@ -549,34 +565,6 @@ def test_alignment_refuses_output_that_aliases_input(tmp_path, monkeypatch):
         assert sentinel.read_bytes() == b'original'
     finally:
         os.rmdir(alias)
-
-
-def test_validation_alignment_passes_absolute_filesystem_arguments(
-        tmp_path, monkeypatch):
-    from types import SimpleNamespace
-    from scripts.validation.run_zone9_validation import run_alignment
-    from modules.realityscan_interface.realityscan_cli import METADATA_DIR
-
-    images = tmp_path / 'images'
-    images.mkdir()
-    (images / 'image.jpg').write_bytes(b'fixture')
-    nav = images / 'nav.txt'
-    nav.write_text(LOG_HEADER, encoding='utf-8')
-    monkeypatch.chdir(tmp_path)
-    calls = []
-
-    def capture(script, args, log_dir):
-        calls.append((script, args, log_dir))
-        return WorkflowResult(False, 1)
-
-    result = run_alignment(SimpleNamespace(run_batch_script=capture),
-                           'images', 'results/zone', 'ordinary_label', QUIET)
-    assert calls == [('AlignImagesFromFolder.bat',
-                      [str(images), str(tmp_path / 'results' / 'zone'), str(nav),
-                       os.path.join(METADATA_DIR, 'FlightLogParams.xml'),
-                       'false', 'false', 'ordinary_label', 'false', 'false'],
-                      str(tmp_path / 'results' / 'zone' / 'logs'))]
-    assert result['success'] is False
 
 
 def _scene(tmp_path):

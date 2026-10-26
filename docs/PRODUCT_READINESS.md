@@ -32,6 +32,98 @@ photogrammetry datasets. For a first survey, use
   Cesium derivatives from Nira input, and requires all requested destinations
   for stage completion. Dry-run plans preserve existing publication reports.
 
+## Compatibility review — 26 October 2026
+
+Review scope: the `maintenance/restore-workflow-compatibility` branch, based on Sony intake
+commit `38e291515d1ac4f50cc0a9b6a5a8bea5aadc99b8`, compared with general-workflow
+`origin/main` at `ea3ad5d4493e45dea81c02dd17f12bce471223d8`.
+
+The Sony intake branch had removed generic extraction/georeferencing,
+registered camera profiles, utilities and documentation. Those entry points
+and historical evidence are restored. WCA and Zeuss retain filename matching,
+mount transforms, calibration defaults, local/UTM flight logs, stored settings,
+generic alignment settings and component-export defaults. The Sony Brown3
+template is selected by the actual intake manifest; explicit operator template
+overrides still win. Proximity to a Sony workspace cannot select Sony policy.
+
+Confirmed processing policies:
+
+- Generic preprocessing retains historical JPEG output and resume behavior;
+  Sony intake or `--p_preserve_exif true` enables EXIF preservation.
+- Moving Sony tracks use 10 m position uncertainty. Static fixes receive no
+  position prior. Altitude and orientation uncertainties are separate settings.
+- Python alignment, growth and merge preserve verified XMP snapshots before
+  native processing. Low-level batch scripts still require working copies.
+- Missing or static positions cannot silently create a scene exceeding the
+  configured maximum zone size. That requires explicit opt-in.
+- Sony intake rejects non-upright images before copying them. An asserted
+  missing focal length is accepted only for an otherwise applicable prior.
+
+Offline regression checks cover legacy entry points, camera profiles and
+mounts, workflow selection/resume, flight logs, historical preprocessing bytes,
+batch reuse, XMP preservation, Sony geometry guards and mocked native calls.
+They run from this worktree with `.venv/bin/python -m pytest -ra`; the
+environment uses Python 3.12. Native Windows/CUDA, image-registration quality
+and installed RealityScan import conventions remain untested in this review.
+Windows-only filesystem/process tests and the unavailable geoid-grid test
+are reported as skips, not successful native validation.
+
+Initial local offline result after the confirmed Sony policy changes, before
+the inventory tooling and its additional tests:
+**1,554 passed, 23 skipped, no failures**. Dependency
+consistency and whitespace checks passed. All production Python, batch and
+VBS entry points and documentation present in the compared main revision
+remain present in this worktree. The original checkout was left unchanged.
+
+### Sony decisions confirmed on 26 October 2026
+
+1. **Measured calibration.** Use `groups` by default until the RealityScan
+   distortion convention and principal-point conversion are validated. An
+   inherited old `auto` default becomes `groups`; a current explicit `auto` or
+   `prior` selection is still available. Existing manifests are not rewritten.
+2. **Physical camera mount.** The maintainer confirmed nominal downward 90°
+   pitch, zero yaw offset and the use of zero offset while no measured
+   navigation-to-camera lever arm is available. This confirms the intended
+   mount assumptions; IMU axes and import conventions still need native checks.
+3. **Very short GPS tracks.** Keep the 1 m rule: a position span below 1 m is
+   treated as static and receives no position prior. This deliberately also
+   excludes genuinely moving short tracks.
+
+These decisions are isolated from WCA/Zeuss compatibility. They are not
+evidence that the reported survey used these new Sony-processing settings.
+No new reconstruction was performed by this review.
+
+### Delivery completeness
+
+The canonical repository is `https://github.com/wild-technology/wildscan`, with
+`main` as the release branch. Publication and final Windows checks are recorded
+in [pull request 2](https://github.com/wild-technology/wildscan/pull/2).
+The original `v1.0.0` tag remains at
+`0401a5a04097cba149989f7e8c60e57c09c1c549`. Cite the updated delivery commit
+separately from any historical processing revision. No standalone application
+binaries are published; installation uses the editable source checkout.
+
+The refreshed SBOM records a clean Windows/Python 3.13.16 environment: 61
+installed third-party Python packages plus WildScan and three external
+prerequisites. It includes transitive relationships and 175 supplied licence
+payloads with verified hashes. Python-package licence declarations use SPDX
+expressions or preserved custom text. RealityScan and optional niraclient are
+separate installations, not inventoried binaries. Both Windows CI versions
+generate and verify their own inventories; the checked-in snapshot and optional
+constraints retain their exact source and environment scope. See
+[third-party notices](../THIRD_PARTY_NOTICES.md).
+
+The maintainer confirmed that separate COLMAP comparison runs were performed
+for the report. WildScan's reconstruction workflow uses RealityScan; the
+comparison runs do not make COLMAP a required WildScan runtime dependency.
+Original imagery and project data are held elsewhere, and were not inspected
+here. The separate data delivery must identify the exact image subsets,
+RealityScan projects and companion files, processing settings, XMP and
+calibration artifacts, plus the comparison inputs and outputs. Reference
+calibration and stereo geometry in this repository alone do not establish how
+the reported results were generated. These data checks are separate from
+merging the source compatibility cleanup.
+
 ## Historical ON2026 delivery backlog — July and August 2026
 
 The remainder preserves the delivery goals, issue identifiers, measurements,

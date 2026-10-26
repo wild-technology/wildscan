@@ -4,10 +4,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-from pathlib import Path
 import sys
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -114,25 +114,29 @@ def test_planned_paths_and_child_cwd_stay_with_the_intake_folder(tmp_path, monke
 
     caller = tmp_path / 'intake with spaces'
     caller.mkdir()
-    raw = caller / 'raw clip.mov'
-    raw.write_text('fixture input', encoding='utf-8')
+    raw = caller / 'raw images'
+    raw.mkdir()
+    (raw / 'Cam1_20260820_192542.42.jpg').write_text('fixture input',
+                                                     encoding='utf-8')
     results = caller / 'results'
     results.mkdir()
     monkeypatch.chdir(caller)
-    plan = build_commands(Session(results_root='results', enabled=['extract'],
-                                  answers={'i_input': raw.name}))[0]
+    plan = build_commands(Session(results_root='results', enabled=['preprocess'],
+                                  answers={'p_input': raw.name}))[0]
     assert plan.cwd == str(caller)
     assert plan.workspace == str(results)
     assert Path(plan.argv[1]).is_absolute()
-    input_path = plan.argv[plan.argv.index('--i_input') + 1]
+    input_path = plan.argv[plan.argv.index('--p_input') + 1]
     output_path = plan.argv[plan.argv.index('--output_dir') + 1]
     child = ("from pathlib import Path; import os,sys; "
              "assert Path.cwd() == Path(sys.argv[3]); "
              "root=Path(sys.argv[2]); root.mkdir(exist_ok=True); "
-             "(root/'copied.txt').write_text(Path(sys.argv[1]).read_text(),encoding='utf-8')")
+             "(root/'copied.txt').write_text("
+             "(Path(sys.argv[1])/'Cam1_20260820_192542.42.jpg').read_text(),"
+             "encoding='utf-8')")
     plan.argv = [sys.executable, '-B', '-c', child, input_path, output_path, str(caller)]
     marker = results / 'interrupted_stage.json'
-    marker.write_text(json.dumps({'stages': ['extract']}), encoding='utf-8')
+    marker.write_text(json.dumps({'stages': ['preprocess']}), encoding='utf-8')
     other = tmp_path / 'other'
     other.mkdir()
     monkeypatch.chdir(other)
@@ -158,7 +162,7 @@ def test_cancel_marker_is_anchored_to_the_explicit_child_cwd(tmp_path, monkeypat
     sink = Sink()
     runner = CommandRunner(sink)
     runner.start(StageCommand('fixture', [sys.executable, '-B', '-c', child], {},
-                              workspace='results', stages=('extract',), cwd=str(caller)))
+                              workspace='results', stages=('intake',), cwd=str(caller)))
     try:
         wait_for(ready)
         runner.terminate()
@@ -172,7 +176,7 @@ def test_cancel_marker_is_anchored_to_the_explicit_child_cwd(tmp_path, monkeypat
 
 
 def test_manual_command_keeps_the_default_checkout_cwd(tmp_path, monkeypatch):
-    from wildscan.runner import LogLine, REPO
+    from wildscan.runner import REPO, LogLine
 
     monkeypatch.chdir(tmp_path)
     sink = Sink()
@@ -200,11 +204,11 @@ def test_retry_clears_only_matching_stage_interruption(tmp_path, marker):
 
 def test_retry_preserves_unfinished_stages(tmp_path):
     path = tmp_path / "interrupted_stage.json"
-    path.write_text(json.dumps({"stages": ["extract", "georeference"]}), encoding="utf-8")
+    path.write_text(json.dumps({"stages": ["intake", "preprocess"]}), encoding="utf-8")
     sink = Sink()
     runner = CommandRunner(sink)
     runner.start(StageCommand("fixture", [sys.executable, "-c", "pass"], {},
-                              workspace=str(tmp_path), stages=("georeference",)))
+                              workspace=str(tmp_path), stages=("preprocess",)))
     assert sink.finished.wait(5)
     assert path.exists()
 

@@ -1,5 +1,5 @@
 """Unit tests for the feature-aware merge driver's pure logic
-(merge_zones.py rework, 2026-07-24): cluster partitioning, count
+(merge_zones.py): cluster partitioning, count
 attribution, and peel-count reading. No RealityScan interaction."""
 import json
 import logging
@@ -30,8 +30,8 @@ def mk(zone, comp, count, bbox, images=None):
 
 class TestPartitionClusters(unittest.TestCase):
     def test_bow_hull_pocket_partition(self):
-        # Mirrors the real H2023 geography: hull band, bow ~60 m away,
-        # pocket further west. Hull comps chain via overlapping boxes.
+        # Mirrors a real survey geography: a hull band, a bow area ~60 m
+        # away, a pocket further west. Hull comps chain via overlapping boxes.
         hull_a = mk('zone_1', 'c0', 1600, [594693, 2345108, 594718, 2345160])
         hull_b = mk('zone_1', 'c1', 941, [594704, 2345096, 594719, 2345127])
         bow = mk('zone_2', 'c0', 686, [594653, 2345217, 594668, 2345251])
@@ -107,7 +107,7 @@ class TestAttribution(unittest.TestCase):
         self.assertIsNone(res[0]['members'])
 
     def test_residual_sources_detected(self):
-        # CLI fact (smoke E2E 2026-07-24): the fused component coexists
+        # Observed RealityScan behaviour: the fused component coexists
         # with its source components in the scene - peel [120, 78, 42]
         # from inputs 78+42. Sources = residuals, never adopted.
         a = mk('z1', 'c0', 78, None)
