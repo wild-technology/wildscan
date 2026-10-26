@@ -223,3 +223,44 @@ def test_url_provenance_omits_credentials_local_paths_and_query_secrets():
     assert sbom.safe_url('file:///Users/private/source') == 'NOASSERTION'
     assert sbom._relative_label('/Users/private/site-packages/LICENSE') == 'LICENSE'
     assert sbom._relative_label('../../../private/LICENSE') == 'LICENSE'
+
+
+def test_licence_collector_excludes_python_modules_caches_and_binaries(tmp_path):
+    distribution = Distribution(tmp_path / 'site-packages', 'packaging', '26.3')
+    retained = {
+        'packaging-26.3.dist-info/licenses/vendor/terms.rst': b'Full nested licence terms.\n',
+        'packaging-26.3.dist-info/licenses/vendor/THIRD_PARTY_TERMS': b'Full attribution.\n',
+        'packaging/fonts/LICENSE_DEJAVU': b'Supplied font licence.\n',
+    }
+    excluded = {
+        'packaging/licenses/__init__.py': b'def canonicalize_license_expression(): pass\n',
+        'packaging/licenses/_spdx.py': b'LICENSES = {}\n',
+        'packaging/licenses/__pycache__/__init__.cpython-313.pyc': b'\xa7\r\r\n\x00bytecode',
+        'packaging/licenses/README.md': b'Implementation documentation, not licence text.\n',
+        'packaging-26.3.dist-info/licenses/vendor/helper.py': b'import os\n',
+        'packaging-26.3.dist-info/licenses/vendor/helper.pyd': b'MZ\x00binary',
+        'packaging-26.3.dist-info/licenses/vendor/payload.txt': b'not text\x00binary',
+        'packaging-26.3.dist-info/licenses/__pycache__/LICENSE.txt': b'cache artifact',
+    }
+    for relative, payload in (retained | excluded).items():
+        path = distribution.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+        distribution.files.append(relative)
+    files = dict(sbom._license_files(distribution))
+    assert set(files) == set(retained) | {
+        'packaging-26.3.dist-info/licenses/LICENSE.txt'}
+    for relative, payload in retained.items():
+        assert files[relative] == payload
+    assert not any(relative.endswith(('.py', '.pyc', '.pyd')) for relative in files)
+
+
+def test_explicit_license_file_metadata_preserves_unusual_text_names(tmp_path):
+    distribution = Distribution(tmp_path / 'site-packages', 'example', license_text=None)
+    distribution.metadata['License-File'] = 'custom/TERMS.agreement'
+    relative = 'example-1.0.dist-info/licenses/custom/TERMS.agreement'
+    path = distribution.root / relative
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b'Explicit supplied licence terms with a nonstandard filename.\n')
+    distribution.files.append(relative)
+    assert dict(sbom._license_files(distribution)) == {relative: path.read_bytes()}

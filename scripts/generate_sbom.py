@@ -40,6 +40,12 @@ PROJECT_ID = 'SPDXRef-Package-wildscan'
 REPOSITORY = 'https://github.com/wild-technology/wildscan'
 TOOL_VERSION = '1.0'
 LICENSE_WORD = re.compile(r'^(licen[cs]e|copying|notice|copyright)([._-]|$)', re.I)
+IMPLEMENTATION_SUFFIXES = {
+    '.py', '.pyi', '.pyw', '.pyc', '.pyo', '.pyd', '.dll', '.so', '.dylib',
+    '.exe', '.class', '.o', '.a', '.lib', '.wasm', '.bin', '.zip', '.whl',
+    '.c', '.cc', '.cpp', '.h', '.hpp', '.js', '.ts', '.ps1', '.sh', '.bat', '.vbs',
+}
+LEGAL_TEXT_SUFFIXES = {'', '.txt', '.md', '.rst', '.html', '.htm', '.license', '.licence'}
 SOURCE_SUFFIXES = {'.py', '.toml', '.json', '.xml', '.bat', '.vbs', '.txt'}
 
 
@@ -77,20 +83,48 @@ def _relative_label(value: str) -> str:
 
 
 def _license_files(distribution) -> list[tuple[str, bytes]]:
-    """Export only licence/notice payloads from the installed RECORD file list."""
+    """Export legal text, never a Python package merely named ``licenses``.
+
+    PEP 639 puts licence payloads beneath ``*.dist-info/licenses/``. Older
+    distributions also use legal basenames elsewhere, or explicit License-File
+    metadata. Implementation files and cache/binary payloads are excluded even
+    inside a metadata licence directory.
+    """
     result = {}
     declared = distribution.metadata.get_all('License-File') or []
-    declared_names = {PurePosixPath(value.replace('\\', '/')).name for value in declared}
+    declared_paths = {str(PurePosixPath(value.replace('\\', '/'))).lower()
+                      for value in declared}
     for entry in distribution.files or ():
         parts = PurePosixPath(str(entry).replace('\\', '/')).parts
         lower = [part.lower() for part in parts]
-        if not (LICENSE_WORD.match(parts[-1]) or parts[-1] in declared_names
-                or any(part in ('licenses', 'licences') or part.endswith('.licenses')
-                       for part in lower)):
+        suffix = PurePosixPath(parts[-1]).suffix.lower()
+        if '__pycache__' in lower or suffix in IMPLEMENTATION_SUFFIXES:
+            continue
+        normalized = '/'.join(lower)
+        metadata_tail = next(('/'.join(lower[index + 1:])
+                              for index, part in enumerate(lower)
+                              if part.endswith(('.dist-info', '.egg-info'))), '')
+        declared_file = (normalized in declared_paths or metadata_tail in declared_paths
+                         or any(metadata_tail == 'licenses/' + value
+                                for value in declared_paths))
+        metadata_license_dir = metadata_tail.startswith(('licenses/', 'licences/'))
+        if not (LICENSE_WORD.match(parts[-1]) or declared_file
+                or (metadata_license_dir and suffix in LEGAL_TEXT_SUFFIXES)):
             continue
         path = Path(distribution.locate_file(entry))
         if path.is_file():
-            result[_relative_label(str(entry))] = path.read_bytes()
+            data = path.read_bytes()
+            if data.startswith((b'\xff\xfe', b'\xfe\xff')):
+                try:
+                    text = data.decode('utf-16')
+                except UnicodeDecodeError:
+                    continue
+            else:
+                text = _decode(data)
+            if any(ord(character) < 32 and character not in '\t\n\r\f'
+                   for character in text):
+                continue
+            result[_relative_label(str(entry))] = data
     inline = distribution.metadata.get('License', '').strip()
     # A metadata-only custom licence is still useful supplied evidence.
     if not result and inline:
