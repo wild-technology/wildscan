@@ -10,6 +10,8 @@ import inquirer
 from module_base.parameter import Parameter
 from module_base.rs_module import RSModule
 from module_base.settings_store import SettingsStore
+from modules.extract_images.extract_images import ExtractImages
+from modules.georeference.georeference_images import GeoreferenceImages
 from modules.wildsync_intake.wildsync_intake import WildSyncIntake
 from modules.preprocess_images.preprocess_images import PreprocessImages
 from modules.image_batcher.batch_directory import BatchDirectory
@@ -20,7 +22,7 @@ def initialize_logger() -> logging.Logger:
     logger = logging.getLogger(__name__)
     return logger
 
-def initialize_modules(logger) -> dict[str, RSModule]:
+def initialize_modules(logger, *, help_only=False) -> dict[str, RSModule]:
     """
     Initializes the modules and returns a dict of the active modules.
 
@@ -28,15 +30,30 @@ def initialize_modules(logger) -> dict[str, RSModule]:
     inquirer checkbox requires a real terminal, which automated drivers
     do not have):
     - RS_MODULES: comma-separated list of module display names to enable
-    - RS_NO_INTERACTIVE: truthy value enables all modules (or the
-      RS_MODULES selection) without prompting
+    - RS_NO_INTERACTIVE: truthy value enables the legacy module chain (or
+      the explicit RS_MODULES selection) without prompting. Wild Sync Intake
+      is an alternative input workflow and must be selected explicitly.
     """
     available_modules: dict[str, RSModule] = {
+        'Extract Images': ExtractImages(logger),
+        'Georeference Images': GeoreferenceImages(logger),
         'Wild Sync Intake': WildSyncIntake(logger),
         'Preprocess Images': PreprocessImages(logger),
         'Batch Directory': BatchDirectory(logger),
         'RealityScan Alignment': RealityScanAlignment(logger)
     }
+    if help_only:
+        return available_modules
+    default_modules = [name for name in available_modules
+                       if name != 'Wild Sync Intake']
+
+    def selected(names):
+        if ('Wild Sync Intake' in names
+                and any(name in names for name in ('Extract Images', 'Georeference Images'))):
+            logger.error('Select Wild Sync Intake OR Extract Images/Georeference Images; '
+                         'they are alternative input workflows. Use separate workspaces.')
+            sys.exit(2)
+        return {name: mod for name, mod in available_modules.items() if name in names}
 
     no_interactive = _no_interactive()
     modules_env = os.environ.get('RS_MODULES')
@@ -48,16 +65,15 @@ def initialize_modules(logger) -> dict[str, RSModule]:
                 logger.error(f'RS_MODULES names unknown modules: {unknown}. '
                              f'Valid names: {list(available_modules.keys())}')
                 sys.exit(1)
-            return {name: mod for name, mod in available_modules.items()
-                    if name in wanted}
-        return dict(available_modules)
+            return selected(wanted)
+        return selected(default_modules)
 
     module_choices = [
         inquirer.Checkbox(
             'modules',
             message='Select modules to enable (arrow keys to move, space to select, enter to confirm)',
             choices=list(available_modules.keys()),
-            default=list(available_modules.keys()),
+            default=default_modules,
             carousel=True
         )
     ]
@@ -67,12 +83,7 @@ def initialize_modules(logger) -> dict[str, RSModule]:
         # user cancelled (Ctrl-C) or no interactive terminal
         sys.exit(1)
 
-    enabled_modules: dict[str, RSModule] = {}
-    for name, mod in available_modules.items():
-        if name in answers.get('modules', []):
-            enabled_modules[name] = mod
-
-    return enabled_modules
+    return selected(answers.get('modules', []))
 
 def initialize_parameters(modules) -> dict[str, Parameter]:
     """
@@ -155,7 +166,10 @@ def build_arg_parser(params) -> argparse.ArgumentParser:
         # percent in a description (e.g. "96.3% -> 89.6%") crashes --help
         # and every argparse error path. Descriptions stay human-readable
         # for the interactive prompts; the escaping belongs here.
-        parser.add_argument(f'-{p.cli_short}', f'--{p.cli_long}',
+        flags = [f'--{p.cli_long}']
+        if p.cli_short:
+            flags.insert(0, f'-{p.cli_short}')
+        parser.add_argument(*flags,
                             type=arg_type,
                             help=p.get_description().replace('%', '%%'))
     return parser
@@ -186,6 +200,16 @@ def parse_arguments(argv, params, logger) -> None:
         val = getattr(args, p.cli_long, None)
         if val is None and p.prompt_user:
             last_value = settings.get('main', p.cli_long, p.get_default_value())
+            if (p.cli_long == 'w_calibration'
+                    and str(last_value).strip().lower() == 'auto'):
+                # Older sessions saved auto as their default. They cannot
+                # establish a deliberate opt-in to measured Sony priors
+                # after groups became the default. Explicit CLI input is
+                # already handled above and remains authoritative.
+                last_value = 'groups'
+                logger.info('Stored automatic Sony calibration is no longer '
+                            'the default; using groups. Select auto again or '
+                            'pass --w_calibration auto to opt in.')
             if no_interactive:
                 if last_value is None and p.required:
                     missing.append(p)
@@ -259,11 +283,16 @@ def main(argv) -> None:
     # before argparse ever sees argv. With -h/--help present, enable every module
     # non-interactively so the FULL parser - all modules' options - builds,
     # prints, and exits.
-    if any(a in ('-h', '--help') for a in argv[1:]):
-        os.environ.setdefault('RS_NO_INTERACTIVE', '1')
-        os.environ.pop('RS_MODULES', None)
-    modules = initialize_modules(logger)
-    params = initialize_parameters(modules)
+    help_only = any(a in ('-h', '--help') for a in argv[1:])
+    modules = initialize_modules(logger, help_only=help_only)
+    if help_only:
+        # Alternative producers suppress each other's input parameters during
+        # execution. Help must still show every standalone/resume flag.
+        params = {}
+        for name, module in modules.items():
+            params.update(initialize_parameters({name: module}))
+    else:
+        params = initialize_parameters(modules)
     parse_arguments(argv, params, logger)
     update_parameters(params, modules)
 
@@ -299,7 +328,9 @@ def main(argv) -> None:
             log_output_data(logger, overall_data)
             sys.exit(1)
 
-        if not params['continue_automatically'].get_value() and idx < len(modules) - 1:
+        if (not _no_interactive()
+                and not params['continue_automatically'].get_value()
+                and idx < len(modules) - 1):
             # isatty() lies under hidden consoles and redirected pipes, so
             # this gate cannot be reached only when a human is present.
             # Unattended, stdin is at EOF immediately: continue rather than

@@ -270,10 +270,10 @@ def test_intake_status_comes_from_its_manifest(tmp_path):
 
 def test_the_stage_table_follows_the_module_chain(tmp_path):
     assert session_mod.ALL_STAGES == [
-        "intake", "preprocess", "batch", "align",
+        "extract", "georeference", "intake", "preprocess", "batch", "align",
         "merge", "model", "export", "publish"]
     assert [session_mod.MODULE_DISPLAY[k] for k in session_mod.CHAIN_STAGES] == [
-        "Wild Sync Intake", "Preprocess Images", "Batch Directory",
+        "Extract Images", "Georeference Images", "Wild Sync Intake", "Preprocess Images", "Batch Directory",
         "RealityScan Alignment"]
     registry = session_mod._module_registry()
     assert [registry[k].name for k in session_mod.CHAIN_STAGES] == [
@@ -330,7 +330,7 @@ def test_intake_questions_validate_their_answers(tmp_path):
     assert qs["w_variant"].validate("REVIEW") is None
     assert "card, review" in qs["w_variant"].validate("raw")
     assert qs["w_calibration"].choices == ("auto", "prior", "groups", "off")
-    assert qs["w_calibration"].default == "auto"
+    assert qs["w_calibration"].default == "groups"
     assert qs["w_calibration"].validate("bogus") is not None
     assert qs["w_declination"].validate("-14.5") is None
     assert qs["w_declination"].validate("east") is not None
@@ -581,7 +581,7 @@ def test_portal_walks_session_to_stage_pick(tmp_path, store):
             picker = app.screen.query_one("#stage-pick")
             # One option per stage: intake, preprocess, batch, align, merge,
             # model, export, publish.
-            assert picker.option_count == len(session_mod.ALL_STAGES) == 8
+            assert picker.option_count == len(session_mod.WILDSYNC_CHAIN_STAGES + session_mod.POST_STAGES) == 8
             assert picker.get_option_at_index(0).value == "intake"
             assert "Wild Sync Intake" in str(picker.get_option_at_index(0).prompt)
             assert "intake" in picker.selected
@@ -704,7 +704,7 @@ def test_intake_detection_debounces_and_scopes_the_run_scan(tmp_path, store, mon
             assert calls == [str(tmp_path / 'runs'), str(tmp_path / 'other_runs')]
             screen.query_one('#s-runs').value = ''
             await pilot.pause(0.5)
-            assert app.scan == RunDataScan()
+            assert app.run_scan == RunDataScan()
             assert len(calls) == 2
     asyncio.run(drive())
 
@@ -721,12 +721,12 @@ def test_run_preview_is_refreshed_when_continuing(tmp_path, store):
             screen.query_one('#s-runs').value = str(run)
             screen.query_one('#s-results').value = str(tmp_path / 'results')
             await pilot.pause(0.5)
-            assert app.scan.runs[0].cameras[0].card == 3
+            assert app.run_scan.runs[0].cameras[0].card == 3
             (run / 'cam1' / 'Cam1_20260820_192544.42.card.JPG').write_bytes(b'j')
             screen.query_one('#s-continue').press()
             await pilot.pause()
             assert isinstance(app.screen, app_mod.StagePickScreen)
-            assert app.scan.runs[0].cameras[0].card == 4
+            assert app.run_scan.runs[0].cameras[0].card == 4
     asyncio.run(drive())
 
 

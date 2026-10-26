@@ -52,6 +52,7 @@ import hashlib
 import json
 import logging
 import math
+import ntpath
 import os
 import re
 import shutil
@@ -63,6 +64,7 @@ from dataclasses import dataclass
 
 from .. import camera_registry
 from ..calibration_sidecars import (
+    DEFAULT_SONY_CALIBRATION_MODE,
     DECIDED_MODES,
     CalibrationDecision,
     CalibrationRefused,
@@ -139,7 +141,7 @@ def frame_id(name: str) -> str | None:
 
     ``Cam1_20260820_192542.42.card.JPG`` -> ``Cam1_20260820_192542.42``.
     """
-    base = os.path.basename(name)
+    base = ntpath.basename(name)
     match = _FRAME_SUFFIX.search(base)
     if match is None or match.start() == 0:
         return None
@@ -149,7 +151,7 @@ def frame_id(name: str) -> str | None:
 def image_variant(name: str) -> str | None:
     """``'card'``, ``'review'``, ``'raw'`` or ``'sidecar'`` for a Wild Sync
     file name, else None."""
-    match = _FRAME_SUFFIX.search(os.path.basename(name))
+    match = _FRAME_SUFFIX.search(ntpath.basename(name))
     if match is None or match.start() == 0:
         return None
     ext = match.group(2).lower()
@@ -175,7 +177,7 @@ class IntakeOptions:
     declination_deg: float = 0.0
     min_match_pct: float = DEFAULT_MIN_MATCH_PCT
     time_err_warn_ms: float = DEFAULT_TIME_ERR_WARN_MS
-    calibration: str = 'auto'
+    calibration: str = DEFAULT_SONY_CALIBRATION_MODE
     focal_asserted: bool = False
     focal_override_mm: float | None = None
 
@@ -822,7 +824,10 @@ def _calibration_record(camera: Camera, decision: CalibrationDecision,
     record = {**decision.as_dict(), **observed.as_dict()}
     if decision.mode == 'prior':
         record['starting_focal_35mm'] = camera.focal_length_35mm
-        record['starting_focal_source'] = 'calibration'
+        record['starting_focal_source'] = (
+            'asserted_calibration'
+            if observed.starting_focal_source == 'asserted_calibration'
+            else 'calibration')
     elif decision.mode == 'off':
         record['starting_focal_35mm'] = observed.exif_focal_35mm
         record['starting_focal_source'] = 'exif'
@@ -955,21 +960,34 @@ def run_intake(run_paths: Sequence[str], workspace: str,
             if frame.camera != key:
                 continue
             try:
-                geometries.append(read_image_geometry(frame.source))
+                geometry = read_image_geometry(frame.source)
             except (OSError, ValueError, SyntaxError) as exc:
                 # Pillow: OSError (incl. UnidentifiedImageError) for an
                 # unreadable file, ValueError/SyntaxError for a corrupt one.
                 unreadable.append(f'{frame.name} ({exc})')
+                continue
+            if geometry.orientation != 1:
+                raise IntakeError(
+                    f'{frame.source}: EXIF Orientation '
+                    f'{geometry.orientation!r} is not upright (1). Sony '
+                    'intake requires stored pixels in the calibrated camera '
+                    'axes: preprocessing would rotate or mirror them without '
+                    'transforming the calibration and orientation priors. '
+                    'Use an upright camera export, with matching calibration '
+                    'and camera axes; do not simply change the EXIF tag.')
+            geometries.append(geometry)
         if unreadable:
             warn(f'{key}: {len(unreadable)} image(s) could not be read for '
                  'the calibration decision: ' + _examples(unreadable))
         try:
-            observed = observe_focal(camera, geometries,
-                                     options.focal_override_mm)
             decision = decide_calibration(
                 camera, registry.rig_for(key), geometries,
                 options.calibration, options.focal_asserted,
                 options.focal_override_mm)
+            observed = observe_focal(
+                camera, geometries, options.focal_override_mm,
+                asserted_calibration=(options.focal_asserted
+                                      and decision.mode == 'prior'))
         except (CalibrationRefused, FocalRefused) as exc:
             raise IntakeError(str(exc)) from None
         decisions[key] = _calibration_record(camera, decision, observed)
@@ -1221,15 +1239,18 @@ def workspace_calibration(images_root: str
 
     ``images_root`` is ``<workspace>/batched_images_by_zone`` (the merge
     driver) or one zone directory under it (the growth driver); the manifest
-    is ``<workspace>/raw_images/wildsync_intake.json``, so only those two
-    parents are tried. Read, never recomputed, like
+    is ``<workspace>/raw_images/wildsync_intake.json``. The named batched
+    tree must own the images: a nearby manifest must not change a separate
+    WCA or Zeuss image folder. Read, never recomputed, like
     :func:`calibration_modes` and :func:`starting_focals`; ValueError as
     :func:`load_manifest` when a manifest exists but is unusable.
     """
     root = os.path.abspath(images_root)
-    for _level in range(2):
+    if os.path.basename(root).casefold() != 'batched_images_by_zone':
         root = os.path.dirname(root)
-        manifest = load_manifest(os.path.join(root, RAW_IMAGES))
-        if manifest is not None:
-            return calibration_modes(manifest), starting_focals(manifest)
-    return None
+        if os.path.basename(root).casefold() != 'batched_images_by_zone':
+            return None
+    manifest = load_manifest(os.path.join(os.path.dirname(root), RAW_IMAGES))
+    if manifest is None:
+        return None
+    return calibration_modes(manifest), starting_focals(manifest)

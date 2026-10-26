@@ -1,7 +1,7 @@
 # The ILX-LR1 stereo rig
 
-Wild Scan processes imagery from one rig: two Sony ILX-LR1 cameras mounted as a
-stereo pair and recorded with Wild Sync. This document describes the rig as the
+Wild Scan can process a Sony ILX-LR1 stereo pair recorded with Wild Sync alongside
+its existing WCA and Zeuss workflows. This document describes the Sony rig as the
 pipeline models it, the calibration reference data and the exact conditions
 under which it is used, the Wild Sync input, the orientation convention, the
 distortion model and the preprocessing.
@@ -13,10 +13,12 @@ are listed in [Not validated against RealityScan](#not-validated-against-reality
 and checked on the first real run with the
 [first-run validation checklist](validation/ILX-LR1_first_run_checklist.md).
 
-Wild Scan contains no COLMAP tooling. The camera-geometry study for the
-August 2026 data used separate tooling delivered with the data package, and
-the RealityScan project files and pose sidecars from the report's section 8.6
-comparison are not in this repository; they no longer exist.
+The active reconstruction workflow uses RealityScan. Raw imagery and project
+outputs are supplied separately from this source repository; their presence
+and provenance must be checked in the accompanying data delivery.
+Separate COLMAP comparison runs were performed for the report. Those runs
+are distinct from the active WildScan reconstruction workflow; their exact
+inputs, settings and outputs must be identified in the separate project data.
 
 ## Contents
 
@@ -48,13 +50,14 @@ a frame (`Cam1_....jpg`, `Cam1_....card.JPG`, `Cam1_....ARW`, `Cam1_....xmp`)
 resolves to the same camera. The camera key is also the name of the camera's
 subfolder in `raw_images/` and in each batched zone.
 
-Mount, per camera (`families[].mount`); none of these values is measured:
+Mount, per camera (`families[].mount`). The maintainer confirmed these nominal
+mount assumptions on 26 October 2026; no lever-arm measurement was supplied:
 
 | Field | Value | Meaning |
 |---|---|---|
 | `down_tilt_deg` | `90.0` | tilt below the vehicle's forward axis; 90 = looking straight down |
 | `yaw_offset_deg` | `0.0` | direction of the image top relative to the heading |
-| `pitch_accuracy_deg` | `15.0` | accuracy written for the pitch prior |
+| `pitch_accuracy_deg` | `10.0` | accuracy written for the pitch prior |
 | `lever_arm_m` | `null` | offset from the navigation reference not measured: a zero offset is used and a notice is logged |
 
 The rig `ilx_lr1_stereo` keeps the stereo geometry as data only:
@@ -147,10 +150,15 @@ and its alignment refines the focal from that starting value (see
 | `groups` | the camera's own calibration and lens-distortion group, the Brown3 model, and the focal length observed on the images as an initial (adjustable) 35 mm-equivalent focal; RealityScan solves each camera's intrinsics separately, starting from that focal |
 | `off` | no sidecars; RealityScan reads the focal length from the EXIF of the images it aligns (the preprocessed copies keep it) |
 
-The intake parameter `--w_calibration` chooses `auto` (default), `prior`,
-`groups` or `off`.
+The intake parameter `--w_calibration` chooses `groups` (default), `auto`,
+`prior` or `off`. The default lets RealityScan solve each camera's intrinsics
+without applying the measured calibration, until its conversion to RealityScan
+has been validated. Observed focal length still supplies the starting focal.
+An inherited `auto` setting from an earlier session falls back to `groups`;
+select `auto` explicitly again to use it. Existing intake manifests retain
+their recorded decisions.
 
-`auto` gives `prior` only when all three conditions hold for every image of the
+Explicit `auto` gives `prior` only when all three conditions hold for every image of the
 camera, and `groups` otherwise:
 
 1. the rig's `node_assignment_confirmed` is `true`;
@@ -158,7 +166,8 @@ camera, and `groups` otherwise:
    aspect ratio, 4096 / 3000 = 1.365;
 3. the EXIF `FocalLength` (or the `--w_focal_override` focal, when given) is
    within 0.5 mm of the calibration focal length, 16 mm, or the operator
-   asserts it with `--w_assert_focal true`.
+   asserts it with `--w_assert_focal true`. A focal assertion does not turn
+   `groups` into `prior`; it needs an explicit `auto` or `prior` selection.
 
 Image size and the EXIF `FocalLength` and `FocalLengthIn35mmFilm` are read
 with Pillow from the original files; the EXIF orientation tag is not applied. When `auto` falls back to `groups`, the
@@ -276,11 +285,19 @@ A previous run's zone output folder that holds a `pre_existing_sidecars`
 folder is moved to `superseded/` with its projects and components, never
 cleared.
 
+Before native alignment, Python also copies every remaining XMP in the input
+tree into a unique `pre_existing_sidecars/<snapshot>/` folder, verifies its
+SHA-256 hash and records `backup_manifest.json`. This includes the sidecars
+that will be imported when calibration is `off`. Growth and merge make the
+same snapshots before invoking RealityScan. Snapshots survive retries; a
+backup failure stops the operation before native processing. The direct
+low-level `.bat` utilities bypass this step and require a separate working copy.
+
 Pose-bearing sidecars beside images that get no calibration sidecar (every
 image when calibration is `off`) are not moved: RealityScan imports them as
 pose priors, its pose export overwrites them and the hygiene below rewrites
-or deletes what remains. The stage warns before the run that their content is
-not preserved.
+or deletes what remains. Their original bytes remain in the verified snapshot;
+the stage warns that the working files will change.
 
 A sidecar that cannot be read is never skipped silently: in place of a
 calibration sidecar it is moved aside like a foreign one; if it cannot be
@@ -347,9 +364,9 @@ This is why the prior is never locked.
 
 ## Distortion model
 
-Alignment uses RealityScan's Brown3 model (three radial coefficients, no
+Sony intake alignment uses RealityScan's Brown3 model (three radial coefficients, no
 tangential terms). `sfmDistortionModel` is set to `Brown3` in
-`modules/realityscan_interface/RS_CLI/Metadata/AlignmentParams.xml`, which
+`modules/realityscan_interface/RS_CLI/Metadata/AlignmentParamsSony.xml`, which
 `AlignZone.bat` applies with `-set` before every alignment. The setting is
 global and all-or-nothing: a per-image `xcr:DistortionModel` in a sidecar does
 not override it. Verified on an earlier dataset: with the global model set to
@@ -357,8 +374,11 @@ Division, sidecars that declared `brown3` were all exported back as
 `division`.
 The sidecars declare `brown3` to match.
 
-The camera registry accepts only `brown3` and refuses a camera whose stored
-tangential coefficients (p1, p2) are non-zero.
+The Sony measured-calibration entries accept only `brown3` and refuse stored
+non-zero tangential coefficients (p1, p2). This restriction does not change
+the legacy WCA and Zeuss profiles. Generic workflows retain the original
+`AlignmentParams.xml` and an explicit `RS_ALIGN_PARAMS` override takes precedence
+in either workflow.
 
 ## Wild Sync input
 
@@ -444,7 +464,10 @@ row); a duplicate image name across the runs taken in together; matched rows in
 more than one UTM zone; no matched row with a UTM position; a `utm_zone` whose
 hemisphere contradicts the row's latitude; an explicit calibration prior that
 cannot apply; an EXIF focal length that differs by more than 0.5 mm between
-images of one camera, or is missing, without `--w_focal_override`; an unusable
+images of one camera, or is missing, without `--w_focal_override` (or an explicit
+`--w_assert_focal` for an otherwise applicable calibration prior); a non-upright
+EXIF Orientation tag, because the calibration and pose use the stored pixel
+axes; an unusable
 focal override; and files in `raw_images/` that it did not plan or that differ
 from their source (use a fresh workspace). Re-running the same intake into the
 same workspace reuses identical copies. A `<stem>.xmp` beside a planned image
@@ -483,7 +506,7 @@ filename;X (East);Y (North);Alt;X Accuracy;Y Accuracy;Alt Accuracy;Yaw;Pitch;Rol
 | Column | Source | Default accuracy |
 |---|---|---|
 | `filename` | the copied image's name | |
-| `X (East)`, `Y (North)` | `xutm`, `yutm` (plus the horizontal lever arm, zero while it is not measured); empty for a static fix | 0.1 m (`--w_pos_accuracy`, the GPS receiver's accuracy) |
+| `X (East)`, `Y (North)` | `xutm`, `yutm` (plus the horizontal lever arm, zero while it is not measured); empty for a static fix | 10 m (`--w_pos_accuracy`, conservative end-to-end uncertainty until measured) |
 | `Alt` | `-abs(depth_from_xplore9)` minus the downward lever arm; empty when depth is empty | 1 m (`--w_alt_accuracy`) |
 | `Yaw`, `Pitch`, `Roll` | [orientation convention](#orientation-convention) | yaw and roll 10 degrees (`--w_orientation_accuracy`); pitch from the mount, 10 degrees |
 
@@ -546,8 +569,9 @@ One other help page assigns the axes differently; check C of the
 [first-run validation checklist](validation/ILX-LR1_first_run_checklist.md#c-orientation-convention)
 tests that alternative too.
 It has **not** been validated for the Wild Sync IMU axes: the sign and zero of
-the IMU pitch and roll, whether the IMU heading is magnetic or true, and the
-orientation of the image top relative to the heading are all unconfirmed.
+the IMU pitch and roll and whether the IMU heading is magnetic or true remain
+unconfirmed. The maintainer confirmed the nominal physical mount above;
+that does not establish how recorded IMU angles map into RealityScan.
 `FlightLogParams.xml` does not pin RealityScan's Euler-order or camera-mount
 import settings, so their installation defaults apply. Validate the convention
 on the first real run with the
@@ -569,13 +593,19 @@ The pipeline's preprocessing is this repository's CLAHE
   focal length from the copies when no calibration sidecar is written; the
   copies in `raw_images/` are kept unchanged.
 
-OpenCV encodes the pixels exactly as before EXIF was kept; the original APP1
+This EXIF policy is selected automatically only for images whose input folder
+owns a complete Wild Sync intake manifest. WCA, Zeuss and other generic inputs
+keep their historical output and can reuse their existing preprocessing
+manifests. `--p_preserve_exif true` explicitly opts another input into EXIF
+preservation. A nearby or unrelated Sony manifest does not change that policy.
+
+When EXIF is preserved, OpenCV encodes the pixels as before; the original APP1
 EXIF segment, read with Pillow, is then inserted into the encoded file
 unchanged, except that the Orientation tag is set to 1 because OpenCV has
 already applied it to the pixels. An EXIF block that cannot be carried over
-fails that image rather than producing a copy without it. Copies written by an
-earlier version, without EXIF, are not reused: the preprocessing manifest
-records the EXIF policy, and a manifest without it reprocesses every image.
+fails that image rather than producing a copy without it. Sony intake already
+rejects non-upright source images. Enabling preservation invalidates earlier
+processed copies that did not retain EXIF; only those copies are regenerated.
 
 Batching and alignment use the preprocessed copies when they exist. The
 defaults were chosen on earlier datasets taken with other cameras; they have

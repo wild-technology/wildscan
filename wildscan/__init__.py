@@ -1,5 +1,4 @@
-"""WildScan - Wild Technologies' interactive console for the two-camera ILX-LR1
-RealityScan pipeline.
+"""WildScan - Wild Technologies' interactive subsea photogrammetry console.
 
 A Textual interface over the repository's canonical pipeline drivers:
 main.py's module chain, merge_zones.py, the native workflows, and the

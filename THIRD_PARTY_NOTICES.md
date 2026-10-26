@@ -41,6 +41,7 @@ components and ship their own licence files inside the installed package.
 | shapely | 2.1.2 | BSD-3-Clause | License field |
 | textual | 8.2.8 | MIT | License field and classifier |
 | tqdm | 4.70.1 | MPL-2.0 AND MIT | License field |
+| utm | 0.9.0 | MIT | Installed distribution licence file and classifier; existing navigation workflows |
 
 ## Development and test dependencies
 
@@ -59,6 +60,9 @@ These files are in the repository and are in RealityScan's own formats.
   flight-log format definition in the structure of RealityScan's shipped
   `flightlogs.xml`, kept so the entry can be merged into the RealityScan
   installation's flight-log dictionary. It is derived from RealityScan's file.
+- `sensorsdb.xml` - the camera sensor database retained for existing workflows,
+  in RealityScan's camera/lens schema. This is reference data, not a Wild Scan
+  executable or a replacement for the user's RealityScan installation.
 - `modules/realityscan_interface/RS_CLI/Metadata/*.xml` - RealityScan
   parameter-configuration files (alignment, simplify, smoothing, texturing,
   unwrap and export settings, flight-log import) passed to RealityScan on its

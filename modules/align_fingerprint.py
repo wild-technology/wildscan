@@ -161,7 +161,7 @@ def build_fingerprint(flight_log: str | None,
     change when a prior in cameras.json is edited, the sidecar text does.
     """
     frame = ("utm" if (flight_log and utm_zone_from_flight_log_name(flight_log))
-             else None)
+             else "local_euclidean")
     fp = {
         "schema": SCHEMA,
         "created": time.strftime("%Y-%m-%d %H:%M:%S"),

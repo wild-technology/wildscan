@@ -42,11 +42,13 @@ from .wildsync_intake.intake import load_manifest
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".heif"}
 
 STAGE_ORDER = [
-    "intake", "preprocess", "batch",
+    "extract", "georeference", "intake", "preprocess", "batch",
     "align", "merge", "model", "export", "publish",
 ]
 
 STAGE_TITLES = {
+    "extract": "Extract Images",
+    "georeference": "Georeference",
     "intake": "Wild Sync Intake",
     "preprocess": "Preprocess (CLAHE)",
     "batch": "Batch into Zones",
@@ -195,6 +197,48 @@ class Workspace:
                     else 'partial', 'interrupted run - retry required',
                     [prior.summary, *prior.details])
         return statuses
+
+    def _detect_extract(self) -> StageStatus:
+        n = _count_images(self.raw_images)
+        if n:
+            return StageStatus("extract", "done", f"{n:,} images in raw_images/")
+        loose = _count_images(self.root) if self.root.is_dir() else 0
+        if loose:
+            return StageStatus("extract", "done",
+                               f"{loose:,} images at workspace root")
+        return StageStatus("extract", "pending", "no imagery found yet")
+
+
+    def _detect_georeference(self) -> StageStatus:
+        logs = _find_flight_logs(self.raw_images) or _find_flight_logs(self.root)
+        logs = [p for p in logs if self.batched not in p.parents]
+        if logs:
+            rows = 0
+            try:
+                with open(logs[0], encoding="utf-8") as fh:
+                    rows = max(0, sum(1 for _ in fh) - 1)
+            except OSError:
+                pass
+            # A header-only log is the "nothing matched the nav table"
+            # artifact, and reporting it 'done' laundered it into a
+            # completed stage (audit 2026-08-07). Silence is not success.
+            if rows == 0:
+                return StageStatus(
+                    "georeference", "blocked",
+                    f"{logs[0].name} has 0 rows - NO image matched the nav "
+                    "table (wrong nav file, wrong --g_type, or a clock "
+                    "offset). Re-run georeference before aligning.")
+            images = _count_images(self.raw_images)
+            if images and rows < images // 2:
+                return StageStatus(
+                    "georeference", "partial",
+                    f"{logs[0].name} ({rows:,} rows) covers only "
+                    f"{100.0 * rows / images:.0f}% of the {images:,} images "
+                    "in raw_images/")
+            return StageStatus("georeference", "done",
+                               f"{logs[0].name} ({rows:,} rows)")
+        return StageStatus("georeference", "pending", "no flight_log_*_UTM.txt")
+
 
     def _detect_intake(self) -> StageStatus:
         """Status of the Wild Sync Intake stage from its manifest in

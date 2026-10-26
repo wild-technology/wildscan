@@ -27,6 +27,7 @@ __pycache__/
 
 # publish_cesium.py staging (local-frame mesh copies)
 _cesium_local/
+_probe_cesium/
 
 # Packaging / build artifacts
 *.egg-info/

@@ -48,11 +48,11 @@ def _stubbed(monkeypatch) -> dict:
     return seen
 
 
-def test_the_threshold_is_a_parameter_defaulting_to_4000():
+def test_the_threshold_is_opt_in_and_preserves_legacy_batching():
     module = batch_directory.BatchDirectory(logging.getLogger(LOGGER_NAME))
     param = module.get_parameters()['batch_single_zone_below']
     assert param.cli_long == 'b_single_zone_below'
-    assert param.get_default_value() == 4000
+    assert param.get_default_value() == 0
     assert batch_directory.MIN_EXPECTED_IMAGES == 100
 
 

@@ -81,7 +81,7 @@ def test_frame_change_is_called_out(tmp_path):
     tagged = _mk(tmp_path, "flight_log_53N_UTM.txt", "n;x;y;a\n")
     old = build_fingerprint(None, flp, ap, 50)
     new = build_fingerprint(tagged, flp, ap, 50)
-    assert old["frame"] is None and new["frame"] == "utm"
+    assert old["frame"] == "local_euclidean" and new["frame"] == "utm"
     assert any("FRAME changed" in c for c in diff_fingerprints(old, new))
 
 

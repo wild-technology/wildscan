@@ -48,7 +48,9 @@ def test_header_matches_the_shipped_import_format():
     """flightlogs.xml maps the same 13 columns, image name first."""
     text = open(os.path.join(REPO_ROOT, 'flightlogs.xml'), encoding='utf-8').read()
     assert FLIGHT_LOG_FORMAT_ID in text
-    indices = dict(re.findall(r'<(\w+) index="(\d+)"', text))
+    format_text = re.search(r'<format id="' + re.escape(FLIGHT_LOG_FORMAT_ID)
+                            + r'".*?</format>', text, re.DOTALL).group(0)
+    indices = dict(re.findall(r'<(\w+) index="(\d+)"', format_text))
     order = sorted(indices, key=lambda k: int(indices[k]))
     assert order == ['Image', 'X', 'Y', 'Altitude', 'XAccuracy', 'YAccuracy',
                      'AltitudeAccuracy', 'Yaw', 'Pitch', 'Roll',

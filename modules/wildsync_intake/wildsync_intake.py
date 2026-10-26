@@ -68,9 +68,12 @@ class WildSyncIntake(RSModule):
             cli_short='w_cal',
             cli_long='w_calibration',
             type=str,
-            default_value='auto',
+            default_value=IntakeOptions().calibration,
             description=('Calibration delivered to RealityScan per camera: '
-                         + ', '.join(CALIBRATION_MODES) + '. auto applies the '
+                         + ', '.join(CALIBRATION_MODES) + '. Default groups '
+                         'lets RealityScan solve each camera separately until '
+                         'the measured-prior conversion is validated. '
+                         'Explicit auto applies the '
                          'stored calibration as a prior only when the images '
                          'match it (aspect ratio, EXIF focal length, confirmed '
                          'node assignment) and otherwise gives each camera '
@@ -86,7 +89,8 @@ class WildSyncIntake(RSModule):
             default_value=False,
             description=('Assert that the lenses were at the calibration focal '
                          'length when the EXIF focal length is missing or '
-                         'differs'),
+                         'differs. Requires an explicit auto or prior mode; '
+                         'does not enable a measured prior in groups mode'),
             prompt_user=False
         )
 
@@ -135,9 +139,9 @@ class WildSyncIntake(RSModule):
             type=float,
             default_value=_PRIOR.position_m,
             description=('X/Y position accuracy written for every image of a '
-                         'run with a GPS track, in metres (the receiver '
-                         'accuracy); a run whose position never moves (a '
-                         'static fix) gets no position at all'),
+                         'run with a GPS track, in metres (end-to-end '
+                         'uncertainty; conservative default 10 m); a static '
+                         'fix gets no position at all'),
             prompt_user=False
         )
 

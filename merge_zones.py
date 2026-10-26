@@ -75,6 +75,8 @@ from modules.harvest_guard import assert_harvestable
 from modules.realityscan_interface.realityscan_cli import (
     RealityScanCLI, METADATA_DIR, set_project_save_env)
 from modules.wildsync_intake.intake import workspace_calibration
+from modules.realityscan_interface.realityscan_interface import (
+    alignment_params_template, backup_pre_existing_sidecars)
 
 COMPONENT_EXTENSIONS = ('.rsalign', '.rcalign')
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.heif')
@@ -598,7 +600,7 @@ def build_union_flight_log(images_root: str, output_dir: str, logger,
     optionally filtered to `only_basenames`) + auto-generated CRS XML.
     The merge scene MUST have these constraints imported: a merged
     component is a NEW component and is not georeferenced otherwise
-    (observed)."""
+    (observed NA156 H2023)."""
     zone_logs = []
     for root, _dirs, files in os.walk(images_root):
         for f in files:
@@ -607,19 +609,32 @@ def build_union_flight_log(images_root: str, output_dir: str, logger,
     if not zone_logs:
         raise FileNotFoundError(f'No flight_log*_UTM.txt found under {images_root}')
 
-    # os.walk order is not deterministic, and the zone for the whole merge
-    # must not depend on which log comes first: sort once, then require
-    # unanimity. One log of another zone, or without a zone tag, anywhere
-    # under images_root refuses the merge.
+    # os.walk order is not deterministic and, more importantly, not
+    # CORRECT: the frame for the whole merge used to be read off
+    # zone_logs[0] while the rows were read in sorted() order, so one
+    # untagged (or foreign-zone) log anywhere under images_root flipped
+    # the entire merge to the local template on a logger.warning - the
+    # 2026-08-07 silent mis-frame class _FRAME_INCIDENT exists to prevent
+    # (audit 2026-08-07). Sort once, then require unanimity.
     zone_logs = sorted(zone_logs)
     zone_band = assert_one_zone(zone_logs, images_root)
-    if zone_band is None:
-        raise ValueError(
-            f'No flight log under {images_root} carries a UTM zone tag '
-            f'({", ".join(os.path.basename(p) for p in zone_logs)}). The '
-            'union log is imported in the zone the per-zone logs name; name '
-            'them flight_log_<zone><band>_UTM.txt.')
-    zone, band = zone_band
+
+    # No UTM tag in the filename = a LOCAL-frame campaign (e.g. COLMAP
+    # local:1 priors, ON2026; C-20260730-05): use the dedicated
+    # FlightLogParamsLocal.xml template. Never fall back to the shared
+    # UTM template "as-is" - a template carrying the wrong frame imports
+    # silently mis-registered (2026-08-07 incident: ON2026's local frame
+    # in the shared template poisoned a UTM 57L import; 3/32 registered,
+    # exit code 0).
+    local_frame = zone_band is None
+    if local_frame:
+        logger.warning(
+            'Flight log "%s" carries no UTM zone tag - LOCAL-frame campaign; '
+            'generating params from FlightLogParamsLocal.xml. Verify this '
+            'cruise really uses local:1 priors!', os.path.basename(zone_logs[0]))
+        zone, band = None, None
+    else:
+        zone, band = zone_band
 
     header, rows = None, {}
     for log_path in zone_logs:
@@ -639,7 +654,7 @@ def build_union_flight_log(images_root: str, output_dir: str, logger,
     # A union log with NO rows is not a georeferenced merge: the workflow
     # imports it, runs -update against zero constraints, and ships an
     # UNGEOREFERENCED merged component with workflow_success true
-    # Refuse instead, naming what was asked for.
+    # (audit 2026-08-07). Refuse instead, naming what was asked for.
     if not rows:
         raise ValueError(
             f'The union flight log for {output_dir} would have ZERO rows: '
@@ -656,14 +671,21 @@ def build_union_flight_log(images_root: str, output_dir: str, logger,
             len(rows), len(only_basenames))
 
     suffix = f'_{tag}' if tag else ''
-    union_path = os.path.join(output_dir, f'flight_log{suffix}_{zone}{band}_UTM.txt')
+    crs_tag = 'local' if local_frame else f'{zone}{band}'
+    union_path = os.path.join(output_dir, f'flight_log{suffix}_{crs_tag}_UTM.txt')
     with open(union_path, 'w', encoding='utf-8', newline='\r\n') as f:
         f.write(header + '\n' + '\n'.join(rows.values()) + '\n')
 
-    params_path = write_flight_log_params(
-        os.path.join(METADATA_DIR, 'FlightLogParams.xml'),
-        os.path.join(output_dir, f'FlightLogParams_{zone}{band}.xml'),
-        zone, band)
+    if local_frame:
+        params_path = write_flight_log_params(
+            os.path.join(METADATA_DIR, 'FlightLogParamsLocal.xml'),
+            os.path.join(output_dir, 'FlightLogParams_local.xml'),
+            frame='local_euclidean')
+    else:
+        params_path = write_flight_log_params(
+            os.path.join(METADATA_DIR, 'FlightLogParams.xml'),
+            os.path.join(output_dir, f'FlightLogParams_{zone}{band}.xml'),
+            zone, band)
     logger.info('flight log%s: %d rows -> %s', suffix, len(rows), union_path)
     return union_path, params_path
 
@@ -1295,9 +1317,8 @@ def main() -> int:
         logger.info('calibration sidecars kept through every attempt: %s',
                     calibration[0])
     else:
-        logger.info('no Wild Sync intake manifest above %s: pose sidecars '
-                    'are deleted after each attempt, no calibration sidecar '
-                    'is written', images_root)
+        logger.info('no Wild Sync intake manifest above %s: preserving legacy '
+                    'camera calibration during sidecar hygiene', images_root)
 
     try:
         inputs = load_inputs(components_root, args.complist, logger)
@@ -1333,7 +1354,16 @@ def main() -> int:
         clusters, plan = partition_clusters(inputs, logger, pair_gate=pair_gate)
     total_images = count_unique_images(images_root)
 
+    try:
+        preserved = backup_pre_existing_sidecars(images_root, output_dir)
+    except (OSError, ValueError) as exc:
+        logger.error('Could not preserve existing XMP sidecars: %s. Native processing was not started.', exc)
+        return 1
+    if preserved:
+        logger.info('Pre-existing XMP sidecars copied and verified in %s', preserved)
+
     cli = RealityScanCLI(logger)
+    cli.alignment_params_path = alignment_params_template(calibration is not None)
     report = {'schema': 2,
               'input_scales': input_scales,
               'scale_gate': {'enabled': scale_gate, 'min': scale_min,

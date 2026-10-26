@@ -107,6 +107,14 @@ POSE = '<x:xmpmeta><xcr:Position>1 2 3</xcr:Position></x:xmpmeta>'
 
 # -------------------------------------------------------- decision table
 
+@pytest.mark.parametrize('options', [{}, {'focal_asserted': True},
+                                      {'focal_override_mm': 16.0}])
+def test_default_uses_groups_even_when_measured_prior_checks_pass(options):
+    decision = decide_calibration(LEFT, RIG, [CALIBRATED], **options)
+    assert decision.requested == decision.mode == 'groups'
+    assert not decision.warnings
+
+
 @pytest.mark.parametrize('rig,geometries,asserted,mode', [
     # every condition holds
     (RIG, [CALIBRATED], False, 'prior'),
@@ -139,7 +147,7 @@ def test_auto_decision_table(rig, geometries, asserted, mode):
 @pytest.mark.parametrize('camera,geometry', [(LEFT, AUG20_CAM1),
                                              (RIGHT, AUG20_CAM2)])
 def test_the_2026_08_20_runs_come_out_as_groups(camera, geometry):
-    decision = decide_calibration(camera, RIG, [geometry] * 3)
+    decision = decide_calibration(camera, RIG, [geometry] * 3, 'auto')
     assert decision.mode == 'groups'
     focal = f'{geometry.focal_mm:g} mm'
     for text in (decision.reason, decision.warnings[0]):
@@ -155,7 +163,7 @@ def test_the_2026_08_20_runs_come_out_as_groups(camera, geometry):
 
 
 def test_the_warning_names_the_unconfirmed_node_assignment():
-    decision = decide_calibration(RIGHT, UNCONFIRMED, [CALIBRATED])
+    decision = decide_calibration(RIGHT, UNCONFIRMED, [CALIBRATED], 'auto')
     assert decision.mode == 'groups'
     assert 'node_assignment_confirmed is false' in decision.warnings[0]
 
@@ -192,11 +200,11 @@ def test_a_focal_override_is_checked_in_place_of_the_exif_focal():
     """The operator's focal replaces the EXIF focal in the decision; the
     decision still records the EXIF focal lengths it saw."""
     exif_29 = [ImageGeometry(4096, 3000, 29.0)]
-    decision = decide_calibration(LEFT, RIG, exif_29, focal_override_mm=16.0)
+    decision = decide_calibration(LEFT, RIG, exif_29, 'auto', focal_override_mm=16.0)
     assert decision.mode == 'prior'
     assert 'focal override matches 16 mm' in decision.reason
     assert decision.exif_focals_mm == (29.0,)
-    decision = decide_calibration(LEFT, RIG, [CALIBRATED], focal_override_mm=24.0)
+    decision = decide_calibration(LEFT, RIG, [CALIBRATED], 'auto', focal_override_mm=24.0)
     assert decision.mode == 'groups'
     assert 'focal override 24 mm vs calibration 16 mm' in decision.reason
 

@@ -111,7 +111,7 @@ def _intake_manifest(ws, payload):
 
 
 def test_the_census_stages_follow_the_module_chain():
-    assert STAGE_ORDER == ['intake', 'preprocess', 'batch', 'align',
+    assert STAGE_ORDER == ['extract', 'georeference', 'intake', 'preprocess', 'batch', 'align',
                            'merge', 'model', 'export', 'publish']
     assert STAGE_TITLES['intake'] == 'Wild Sync Intake'
     assert set(STAGE_TITLES) == set(STAGE_ORDER)

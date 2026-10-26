@@ -53,11 +53,16 @@ def _data(section: dict) -> dict:
 
 # ------------------------------------------------------------- contents
 
-def test_the_registry_holds_exactly_the_two_ilx_cameras():
-    assert set(camera_registry.CAMERAS) == {'ilx_left', 'ilx_right'}
-    assert dict(camera_registry.FAMILY_CAMERA) == {'cam1': 'ilx_left',
-                                                   'cam2': 'ilx_right'}
-    assert set(camera_registry.RIGS) == {'ilx_lr1_stereo'}
+ALL_CAMERAS = {'zeuss', 'port', 'cinema', 'starboard', 'voyis_left',
+               'voyis_right', 'ilx_left', 'ilx_right'}
+
+
+def test_the_registry_extends_the_legacy_cameras_with_the_ilx_pair():
+    assert set(camera_registry.CAMERAS) == ALL_CAMERAS
+    assert camera_registry.FAMILY_CAMERA['cam1'] == 'ilx_left'
+    assert camera_registry.FAMILY_CAMERA['cam2'] == 'ilx_right'
+    assert set(camera_registry.RIGS) == {'ilx_lr1_stereo', 'wca_zeuss',
+                                       'on2026_voyis'}
 
 
 def test_calibration_fields_are_loaded_and_typed():
@@ -136,6 +141,8 @@ def test_node_assignment_is_encoded_only_in_the_family_rows():
 def test_mounts_are_loaded_from_cameras_json():
     data = _load(CAMERAS_JSON)
     for entry in data['families']:
+        if entry['family'] not in ('cam1', 'cam2'):
+            continue
         spec = entry['mount']
         loaded = camera_registry.FAMILIES[entry['family']].mount
         assert loaded == Mount(
@@ -156,17 +163,17 @@ def test_prior_accuracies_come_from_the_rig():
         position_m=data['position_m'], altitude_m=data['altitude_m'],
         orientation_deg=data['orientation_deg'])
     assert camera_registry.PRIOR_ACCURACY == rig.prior_accuracy
-    # Owner, 2026-10-07: 10 cm GPS, 1 m depth, 10 deg attitude. The mount
-    # pitch accuracy and the AlignmentParams.xml fallback carry the same
-    # 10 deg, so one number describes the attitude prior.
-    assert camera_registry.PRIOR_ACCURACY == PriorAccuracy(0.1, 1.0, 10.0)
-    for family in camera_registry.FAMILIES.values():
+    # Conservative end-to-end position uncertainty: 10 m, not receiver spec. The mount
+    # Sony pitch accuracy is independent of generic per-row defaults.
+    assert camera_registry.PRIOR_ACCURACY == PriorAccuracy(10.0, 1.0, 10.0)
+    for key in ('cam1', 'cam2'):
+        family = camera_registry.FAMILIES[key]
         assert family.mount.pitch_accuracy_deg == \
             camera_registry.PRIOR_ACCURACY.orientation_deg
-    assert 'defaults' not in _load(CAMERAS_JSON)
+    assert camera_registry.LEGACY_PRIOR_ACCURACY == PriorAccuracy(10.0, 1.0, 15.0)
 
 
-def test_alignment_params_orientation_fallback_matches_the_rig():
+def test_generic_alignment_params_keep_legacy_orientation_fallback():
     xml = os.path.join(REPO_ROOT, 'modules', 'realityscan_interface', 'RS_CLI',
                        'Metadata', 'AlignmentParams.xml')
     with open(xml, encoding='utf-8') as f:
@@ -175,8 +182,9 @@ def test_alignment_params_orientation_fallback_matches_the_rig():
         match = re.search(r'key="sfmCameraPriorAccuracy' + axis
                           + r'" value="([^"]+)"', text)
         assert match, axis
-        assert float(match.group(1)) == \
-            camera_registry.PRIOR_ACCURACY.orientation_deg
+        # The old global template used 10 degrees, while generic per-row
+        # navigation logs use the separately preserved 15-degree default.
+        assert float(match.group(1)) == 10.0
 
 
 # ------------------------------------------ agreement with the record
@@ -229,7 +237,7 @@ def _mutated(tmp_path, mutate) -> str:
 
 def test_the_repository_file_loads():
     registry = load_registry(CAMERAS_JSON)
-    assert set(registry.cameras) == {'ilx_left', 'ilx_right'}
+    assert set(registry.cameras) == ALL_CAMERAS
 
 
 def test_comment_keys_are_ignored(tmp_path):
@@ -237,8 +245,7 @@ def test_comment_keys_are_ignored(tmp_path):
         data['cameras']['_note'] = ['anything']
         data['rigs']['_note'] = 'anything'
         data['cameras']['ilx_left']['_note'] = 1
-    assert set(load_registry(_mutated(tmp_path, mutate)).cameras) == {
-        'ilx_left', 'ilx_right'}
+    assert set(load_registry(_mutated(tmp_path, mutate)).cameras) == ALL_CAMERAS
 
 
 def _family(data, name):

@@ -75,6 +75,10 @@ def store(monkeypatch):
 # A full previous run's answers - what load_last_run() hands the next
 # session, and the state that broke 29 of 31 selections.
 FULL_ANSWERS = {
+    "i_input": "D:/data/video.mp4",
+    "g_input": "D:/data/images",
+    "g_flight_log": "D:/data/nav.csv",
+    "g_type": "WCA",
     "w_input": "D:/runs/260820_1925_transect-01",
     "w_variant": "card",
     "w_calibration": "auto",
@@ -88,7 +92,8 @@ FULL_ANSWERS = {
 
 ALL_SELECTIONS = [list(combo)
                   for size in range(1, len(CHAIN_STAGES) + 1)
-                  for combo in itertools.combinations(CHAIN_STAGES, size)]
+                  for combo in itertools.combinations(CHAIN_STAGES, size)
+                  if not ("intake" in combo and any(k in combo for k in ("extract", "georeference")))]
 
 
 def _chain_command(session):
@@ -167,7 +172,7 @@ def test_plan_anchors_filesystem_values_and_preserves_tokens(tmp_path, monkeypat
 
     monkeypatch.chdir(tmp_path)
     session = Session(run_dirs='runs', results_root='results',
-                      enabled=list(session_mod.ALL_STAGES), answers={
+                      enabled=list(session_mod.WILDSYNC_CHAIN_STAGES + session_mod.POST_STAGES), answers={
                           'w_input': 'runs/a;runs/b', 'p_input': 'raw',
                           'b_input': 'processed', 'b_flight_log_path': 'nav/flight_log.txt',
                           'r_input': 'zones', 'r_flight_log': 'nav/flight_log.txt',

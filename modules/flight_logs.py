@@ -1,25 +1,16 @@
-"""Shared flight-log naming, discovery, writing and orientation convention.
+"""Shared flight-log discovery.
 
 The pipeline writes flight logs under several names depending on which
 stage produced them:
 
-- ``flight_log_<zone><band>_UTM.txt``    the trajectory written for the
-  imagery (:func:`flight_log_name`, :func:`write_flight_log`)
+- ``flight_log_<zone>_UTM.txt``          georeference module (zone = UTM zone)
+- ``flight_log_<dive>_<zone>_UTM.txt``   georeference_survey.py (multi-dive)
 - ``flight_log<suffix>_UTM.txt``         per-zone copies from Batch Directory
   (suffix may be empty, giving ``flight_log_UTM.txt``)
 - ``flight_log.txt``                     legacy runs
 
 Every consumer that needs to locate a flight log on disk must go through
 :func:`find_flight_log` so the naming conventions stay in one place.
-
-Every trajectory is imported in WGS84 UTM, in the zone named by the log's
-own filename tag (``flight_log_19T_UTM.txt``). A log whose name carries no
-zone tag can still be found, but it is refused wherever a trajectory is
-imported (:func:`require_utm_zone`).
-
-The log format is RealityScan flight-log format
-``{B438A617-2434-5A24-C1B7-58980F28345A}`` (``flightlogs.xml``): 13
-semicolon-separated columns, one header line, image name first.
 """
 
 from __future__ import annotations
@@ -33,7 +24,7 @@ from typing import Iterable, NamedTuple
 # MGRS latitude bands C..M lie south of the equator, N..X north (I and O
 # are never used). The band letter rides along in the flight-log filename
 # (utm.from_latlon's zone letter), so the EPSG code can be derived instead
-# of hand-edited per dataset in FlightLogParams.xml.
+# of hand-edited per cruise in FlightLogParams.xml.
 _SOUTH_BANDS = set('CDEFGHJKLM')
 _NORTH_BANDS = set('NPQRSTUVWX')
 
@@ -43,14 +34,15 @@ _ZONE_IN_NAME = re.compile(r'_(\d{1,2})([C-HJ-NP-X])_UTM\.txt$', re.IGNORECASE)
 def assert_one_zone(paths, context: str) -> tuple[int, str] | None:
     """The single UTM zone shared by every flight log in ``paths``.
 
-    Returns the (zone, band) they agree on, or None when none of them
-    carries a zone tag (such a log cannot be imported; see
-    :func:`require_utm_zone`). Raises ValueError when they DISAGREE -
-    including a mix of tagged and untagged names.
+    Returns the (zone, band) they agree on, or None when they all carry no
+    zone tag (a local-frame campaign). Raises ValueError when they
+    DISAGREE - including a tagged/untagged mix, which is a frame
+    disagreement, not just a zone one.
 
     Determinism is not correctness: picking "the first" log out of a
-    mixed-zone directory georeferences the other dataset's imagery far
-    away, silently, under a CRS derived from the wrong filename.
+    mixed-zone directory georeferences the other cruise's imagery ~2,000 km
+    away, silently, under a CRS derived from the wrong filename
+    (audit 2026-08-07).
     """
     seen: dict[tuple[int, str] | None, list[str]] = {}
     for path in paths:
@@ -63,9 +55,10 @@ def assert_one_zone(paths, context: str) -> tuple[int, str] | None:
         for z, files in sorted(seen.items(),
                                key=lambda kv: (kv[0] is not None, kv[0])))
     raise ValueError(
-        f'{context} holds flight logs of DISAGREEING UTM zones '
-        f'({detail}). Refusing to pick one: {_WRONG_ZONE}. Keep exactly '
-        'one survey zone per directory, or pass the intended log explicitly.')
+        f'{context} holds flight logs of DISAGREEING '
+        f'{"coordinate frames" if None in seen else "UTM zones"} '
+        f'({detail}). Refusing to pick one: {_FRAME_INCIDENT}. Keep exactly '
+        'one cruise/zone per directory, or pass the intended log explicitly.')
 
 
 def find_flight_log(*directories: str | None) -> str | None:
@@ -97,7 +90,7 @@ def find_flight_log(*directories: str | None) -> str | None:
 
 def utm_zone_from_flight_log_name(path: str) -> tuple[int, str] | None:
     """(zone number, band letter) parsed from a flight-log filename like
-    ``flight_log_53N_UTM.txt`` / ``flight_log_<run>_53N_UTM.txt``,
+    ``flight_log_53N_UTM.txt`` / ``flight_log_NA167_H2075_53N_UTM.txt``,
     or None when the name carries no zone tag."""
     match = _ZONE_IN_NAME.search(os.path.basename(path))
     if not match:
@@ -133,7 +126,7 @@ def validate_utm_zone(zone, band) -> tuple[int, str]:
     below took whatever they were handed, so a typo produced a
     plausible-looking but nonexistent CRS with exit code 0 - and an
     unknown band silently fell into the NORTHERN branch, turning a
-    southern-hemisphere typo into a northern EPSG.
+    southern-hemisphere typo into a northern EPSG (audit 2026-08-07).
     """
     try:
         zone_int = int(zone)
@@ -156,7 +149,8 @@ def crs_for_flight_log(path: str | None) -> str | None:
     The publish path needs this: georeferenced OBJ/FBX exports carry raw
     UTM metres (ModelExportParamsOBJ_NiraParts sets
     MvsExportIsGeoreferenced with scale 1.0 and no offset), and uploading
-    them without a CRS puts the asset in the wrong part of the world.
+    them without a CRS puts the asset in the wrong part of the world
+    (audit 2026-08-07).
     """
     if not path:
         return None
@@ -172,59 +166,140 @@ def epsg_for_utm_zone(zone: int, band: str) -> int:
     return (32700 if band in _SOUTH_BANDS else 32600) + zone
 
 
-_WRONG_ZONE = (
-    "a trajectory imported under the wrong coordinate system is placed in "
-    "the wrong part of the world with exit code 0 and no warning")
+# The local-Euclidean coordinate-system pair RealityScan expects for
+# COLMAP-prior campaigns (validated on ON2026, FINDINGS C-20260730-05).
+_LOCAL_PROJ = '+proj=geocent +ellps=WGS84 +no_defs'
+_LOCAL_TYPE = 'local:1 - Euclidean'
 
+_WRONG_ZONE = "a trajectory imported under the wrong coordinate system is silently misplaced"
 
-def _read_params_template(template_path: str) -> str:
-    """Text of a FlightLogParams template, or a NAMED FileNotFoundError.
-
-    Named instead of a raw FileNotFoundError (missing file) or
-    PermissionError (a DIRECTORY passed as the template) out of open(),
-    so the operator is told WHICH file the pipeline wanted.
-    """
-    if not os.path.isfile(template_path):
-        raise FileNotFoundError(
-            f'FlightLogParams template not found (or is not a file): '
-            f'{template_path!r}. Expected Metadata/FlightLogParams.xml or an '
-            'explicit template with the same entries.')
-    with open(template_path, encoding='utf-8') as f:
-        return f.read()
+_FRAME_INCIDENT = (
+    "a frame mismatch imports the trajectory silently in the wrong frame "
+    "(2026-08-07 incident: the shared FlightLogParams template still "
+    "carried ON2026's local frame and a UTM 57L log imported through it "
+    "with exit code 0 and no warning)")
 
 
 def params_template_frame(template_path: str) -> str:
-    """``'utm'`` when a FlightLogParams XML declares a UTM coordinate
-    system, else ``'unknown'``."""
-    content = _read_params_template(template_path)
+    """Coordinate frame a FlightLogParams XML declares:
+    ``'utm'`` | ``'local_euclidean'`` | ``'unknown'``."""
+    # Named error instead of a raw FileNotFoundError (missing file) or
+    # PermissionError (a DIRECTORY passed as the template) out of open():
+    # this is reached from both public entry points, so the operator has
+    # to be told WHICH file the pipeline wanted (audit 2026-08-07).
+    if not os.path.isfile(template_path):
+        raise FileNotFoundError(
+            f'FlightLogParams template not found (or is not a file): '
+            f'{template_path!r}. Expected one of '
+            'Metadata/FlightLogParams.xml (UTM cruises) or '
+            'Metadata/FlightLogParamsLocal.xml (local-frame campaigns).')
+    with open(template_path, encoding='utf-8') as f:
+        content = f.read()
     proj_m = re.search(
         r'<entry key="CoordinateSystemFlightLog" value="([^"]*)"', content)
     type_m = re.search(
         r'<entry key="CoordinateSystemFlightLogType" value="([^"]*)"', content)
     proj = proj_m.group(1) if proj_m else ''
     crs_type = (type_m.group(1) if type_m else '').lower()
+    if '+proj=geocent' in proj or crs_type.startswith('local:'):
+        return 'local_euclidean'
     if '+proj=utm' in proj or crs_type.startswith('epsg:'):
         return 'utm'
     return 'unknown'
 
 
-def write_flight_log_params(template_path: str, output_path: str,
-                            zone: int, band: str) -> str:
-    """Copy the FlightLogParams template with its coordinate-system pair
-    rewritten for WGS84 UTM ``zone``/``band``. Returns output_path.
+def ensure_frame_match(flight_log_path: str, template_path: str) -> str:
+    """Frame the flight-log filename implies (``'utm'`` when it carries a
+    zone tag like ``_57L_UTM.txt``, ``'local_euclidean'`` otherwise), after
+    verifying the params template does not declare the OPPOSITE frame.
 
-    RealityScan mis-imports every trajectory silently when the params XML
-    declares the wrong zone, so the zone must come from the flight log
-    itself (:func:`require_utm_zone`), never a hand-edited template.
+    Raises ValueError on mismatch instead of importing: a frame mismatch
+    imports the trajectory silently in the wrong frame (2026-08-07
+    incident, see _FRAME_INCIDENT: UTM 57L log through the local template
+    imported in the wrong frame with exit code 0 and no warning;
+    the frame's effect on that fixture's registration was later isolated
+    as NOT the dominant suppressor - backlog B7 - but a silently
+    mis-framed trajectory is wrong regardless of what it costs).
     """
-    zone, band = validate_utm_zone(zone, band)
-    content = _read_params_template(template_path)
-    epsg = epsg_for_utm_zone(zone, band)
-    south = ' +south' if band in _SOUTH_BANDS else ''
-    hemisphere = 'S' if south else 'N'
-    proj = f'+proj=utm +zone={zone}{south} +datum=WGS84 +units=m +no_defs'
-    crs_type = f'epsg:{epsg} - WGS 84 / UTM zone {zone}{hemisphere}'
+    expected = ('utm' if utm_zone_from_flight_log_name(flight_log_path)
+                else 'local_euclidean')
+    declared = params_template_frame(template_path)
+    if declared not in ('unknown', expected):
+        remedy = (
+            'Use Metadata/FlightLogParams.xml for UTM cruises and '
+            'Metadata/FlightLogParamsLocal.xml for local-frame campaigns.')
+        if expected == 'local_euclidean':
+            # The untagged name is what implied 'local' - if this log is
+            # really from a UTM cruise (legacy flight_log.txt), the fix is
+            # the zone tag, not the local template.
+            remedy += (
+                ' If this log actually IS from a UTM cruise, rename it to '
+                'carry its zone tag (e.g. flight_log_53N_UTM.txt) so the '
+                'zone can be derived from the filename - proceeding with '
+                "the template's placeholder zone is the NA173 silent "
+                'mis-import.')
+        raise ValueError(
+            f'Flight log "{os.path.basename(flight_log_path)}" implies a '
+            f'{expected} frame but the params template {template_path} '
+            f'declares {declared}. Refusing to import: {_FRAME_INCIDENT}. '
+            f'{remedy}')
+    return expected
 
+
+def write_flight_log_params(template_path: str, output_path: str,
+                            zone: int | None = None, band: str | None = None,
+                            frame: str = 'utm') -> str:
+    """Copy the FlightLogParams template with its coordinate-system pair
+    rewritten for the requested frame. Returns output_path.
+
+    ``frame='utm'`` (default) requires ``zone`` and ``band`` and rewrites
+    the pair for that WGS84 UTM zone, exactly as before the frame
+    parameter existed. ``frame='local_euclidean'`` writes the
+    geocent / ``local:1 - Euclidean`` pair (COLMAP-prior campaigns such as
+    ON2026) and ignores ``zone``/``band``.
+
+    Two distinct hazards, both hit live, motivate this function:
+
+    - Wrong ZONE: RealityScan mis-imports every trajectory silently when
+      the params XML declares the wrong zone (status log: NA173 logs were
+      zone 57S while the template still said 4N) - so the zone must come
+      from the flight log itself, never a hand-edited template.
+    - Wrong FRAME (incident 2026-08-07): commit 902fcf7 promoted ON2026's
+      hand-made local-frame file over the shared template, and a UTM 57L
+      import went through geocent/local:1 silently with exit code 0
+      and no warning. A template that declares the opposite frame from
+      the one requested is therefore refused outright (ValueError); pick
+      FlightLogParams.xml (UTM) or FlightLogParamsLocal.xml (local).
+    """
+    if frame not in ('utm', 'local_euclidean'):
+        raise ValueError(
+            f"frame must be 'utm' or 'local_euclidean', got {frame!r}")
+    declared = params_template_frame(template_path)
+    if declared not in ('unknown', frame):
+        raise ValueError(
+            f'FlightLogParams template {template_path} declares a '
+            f'{declared} coordinate system but frame={frame!r} was '
+            f'requested. Refusing to write params: {_FRAME_INCIDENT}. '
+            'Use Metadata/FlightLogParams.xml for UTM cruises and '
+            'Metadata/FlightLogParamsLocal.xml for local-frame campaigns.')
+
+    if frame == 'utm':
+        if zone is None or band is None:
+            raise ValueError("frame='utm' requires zone and band "
+                             '(parse them from the flight-log filename via '
+                             'utm_zone_from_flight_log_name)')
+        zone, band = validate_utm_zone(zone, band)
+        epsg = epsg_for_utm_zone(zone, band)
+        south = ' +south' if band in _SOUTH_BANDS else ''
+        hemisphere = 'S' if south else 'N'
+        proj = f'+proj=utm +zone={zone}{south} +datum=WGS84 +units=m +no_defs'
+        crs_type = f'epsg:{epsg} - WGS 84 / UTM zone {zone}{hemisphere}'
+    else:
+        proj = _LOCAL_PROJ
+        crs_type = _LOCAL_TYPE
+
+    with open(template_path, encoding='utf-8') as f:
+        content = f.read()
     content = re.sub(
         r'(<entry key="CoordinateSystemFlightLog" value=")[^"]*("/>)',
         lambda m: m.group(1) + proj + m.group(2), content)
@@ -233,7 +308,7 @@ def write_flight_log_params(template_path: str, output_path: str,
         lambda m: m.group(1) + crs_type + m.group(2), content)
 
     # A bare relative output name has no dirname; makedirs('') raises
-    # WinError 3.
+    # WinError 3 (audit 2026-08-07).
     out_dir = os.path.dirname(output_path)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)

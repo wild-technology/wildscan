@@ -1,7 +1,7 @@
 # Contributing to Wild Scan
 
-Wild Scan targets native Windows, RealityScan 2.2 and one rig: the two-camera
-Sony ILX-LR1 stereo pair recorded with Wild Sync. Use 64-bit Python 3.13 (3.12 is
+Wild Scan targets native Windows and RealityScan 2.2 for WCA, Zeuss and other
+registered cameras, with an optional Sony ILX-LR1 Wild Sync intake. Use 64-bit Python 3.13 (3.12 is
 the declared floor), from a Git checkout with an editable installation (`pip install -e .`).
 A built wheel is not a supported way to run the pipeline.
 
@@ -28,7 +28,12 @@ your images; read its `--help` first.
 - Reuse the existing helpers for paths, settings, cameras, flight logs and
   processes. Check callers, stored data and downstream stages before changing
   a contract.
-- Camera, calibration and mount data live only in `modules/cameras.json`.
+- Shared camera and calibration data live in `modules/cameras.json`. The
+  restored legacy georeferencer also retains its `MOUNTS` table; preserve that
+  interface and its mount tests when changing generic navigation behavior.
+  Preserve existing filename families, mounts, settings keys and public commands
+  when adding cameras. Scope intake-specific policies to recordings that
+  explicitly select that intake; generic datasets must keep their defaults.
   Keep `calibration/ilx_lr1_stereo_dive_001.json` in agreement with it (a test
   checks this) and never change a calibration number without a new calibration
   record.
