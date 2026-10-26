@@ -12,8 +12,9 @@ extraction and georeferencing stages. It records Sony calibration decisions
 and uses its own alignment settings. Generic datasets keep their camera
 profiles, navigation conventions and alignment defaults.
 
-The [SPDX SBOM](sbom.spdx.json) and [third-party notices](THIRD_PARTY_NOTICES.md)
-cover the shared dependencies. Wild Scan runs from an editable source checkout;
+The [Windows SPDX SBOM](sbom.spdx.json), [licence evidence](third_party_licenses/)
+and [third-party notices](THIRD_PARTY_NOTICES.md) record the tested Python
+environment, including transitive dependencies. Wild Scan runs from an editable source checkout;
 a built wheel alone does not include the complete native workflow.
 
 Start with a dataset or an existing results folder. WildScan helps identify

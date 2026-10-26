@@ -33,6 +33,7 @@ _probe_cesium/
 *.egg-info/
 build/
 dist/
+/inventory/
 .venv/
 venv/
 

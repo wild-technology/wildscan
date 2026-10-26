@@ -9,6 +9,7 @@ from textual.widgets import Input, ProgressBar
 import wildscan.app as ui
 import wildscan.session as session_mod
 from tests.test_wildscan import FakeStore
+from tests.test_legacy_session import screen_mounted
 from wildscan.session import Question, RawDataScan, StageCommand
 
 
@@ -143,7 +144,7 @@ def test_explicit_external_alignment_input_keeps_its_own_navigation(
 
 @pytest.mark.parametrize('size', [(100, 40), (120, 50)])
 def test_intake_actions_and_read_only_status_are_available(
-        tmp_path, settings, monkeypatch, size):
+        tmp_path, settings, monkeypatch, size, screen_mounted):
     source = tmp_path / 'images'
     source.mkdir()
     (source / 'sample.jpg').write_bytes(b'fixture')
@@ -160,18 +161,17 @@ def test_intake_actions_and_read_only_status_are_available(
     async def drive():
         app = ui.WildScanApp(str(results))
         async with app.run_test(size=size) as pilot:
-            await pilot.pause()
-            screen = app.screen
+            screen = await screen_mounted(ui.SessionScreen)
             for name in ('s-continue', 's-status'):
                 assert screen.query_one('#' + name).region.bottom <= size[1] - 1
             screen.query_one('#s-rawimages', Input).value = str(source)
             await pilot.click('#s-status')
-            await pilot.pause()
+            await screen_mounted(ui.StatusScreen)
             assert isinstance(app.screen, ui.StatusScreen)
             assert app.screen.query_one('#st-pipeline').row_count == 9
             assert 'No final components' in str(app.screen.query_one('#st-note').content)
             app.screen.action_back()
-            await pilot.pause()
+            await screen.wait_for_refresh()
             assert app.screen is screen
             assert not settings.data
             assert sorted(p.name for p in results.iterdir()) == []
@@ -180,14 +180,13 @@ def test_intake_actions_and_read_only_status_are_available(
 
 
 def test_invalid_intake_path_has_visible_feedback_without_creating_results(
-        tmp_path, settings):
+        tmp_path, settings, screen_mounted):
     results = tmp_path / 'results'
 
     async def drive():
         app = ui.WildScanApp(str(results))
         async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.pause()
-            screen = app.screen
+            screen = await screen_mounted(ui.SessionScreen)
             screen.query_one('#s-rawimages').value = str(tmp_path / 'missing')
             await pilot.click('#s-continue')
             await pilot.pause()
@@ -200,7 +199,7 @@ def test_invalid_intake_path_has_visible_feedback_without_creating_results(
     asyncio.run(drive())
 
 
-def test_stills_intake_does_not_require_video_extraction(tmp_path, settings):
+def test_stills_intake_does_not_require_video_extraction(tmp_path, settings, screen_mounted):
     source = tmp_path / 'images'
     source.mkdir()
     (source / 'sample.jpg').write_bytes(b'fixture')
@@ -208,10 +207,10 @@ def test_stills_intake_does_not_require_video_extraction(tmp_path, settings):
     async def drive():
         app = ui.WildScanApp(str(tmp_path / 'results'))
         async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.pause()
+            await screen_mounted(ui.SessionScreen)
             app.screen.query_one('#s-rawimages').value = str(source)
             await pilot.click('#s-continue')
-            await pilot.pause()
+            await screen_mounted(ui.StagePickScreen)
             assert isinstance(app.screen, ui.StagePickScreen)
             assert 'extract' not in app.screen.query_one('#stage-pick').selected
             assert 'georeference' in app.screen.query_one('#stage-pick').selected
@@ -221,12 +220,11 @@ def test_stills_intake_does_not_require_video_extraction(tmp_path, settings):
 
 
 def test_automatic_results_name_tracks_typing_but_preserves_manual_folder(
-        tmp_path, settings):
+        tmp_path, settings, screen_mounted):
     async def drive():
         app = ui.WildScanApp()
         async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.pause()
-            screen = app.screen
+            screen = await screen_mounted(ui.SessionScreen)
             for value in ('N', 'NA', 'NA173'):
                 screen.query_one('#s-expedition').value = value
                 await pilot.pause()
@@ -243,32 +241,32 @@ def test_automatic_results_name_tracks_typing_but_preserves_manual_folder(
 
 
 def test_detected_question_defaults_and_summary_back_preserve_current_answers(
-        tmp_path, settings):
+        tmp_path, settings, screen_mounted):
     source = tmp_path / 'images'
     source.mkdir()
 
     async def drive():
         app = ui.WildScanApp(str(tmp_path / 'results'))
         async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.pause()
+            await screen_mounted(ui.SessionScreen)
             app.session.enabled = ['georeference']
             app.session.raw_images_dir = str(source)
             app.session.answers = {'g_input': 'old/dataset'}
             app.questions = [q for q in session_mod.build_questions(app.session, RawDataScan())
                              if q.arg == 'g_input']
             wizard = ui.WizardScreen()
-            app.push_screen(wizard)
-            await pilot.pause()
+            await app.push_screen(wizard)
+            await screen_mounted(ui.WizardScreen)
             assert wizard.query_one('#w-answer', Input).value == str(source)
             wizard._commit_and(1)
-            await pilot.pause()
+            await screen_mounted(ui.SummaryScreen)
             assert isinstance(app.screen, ui.SummaryScreen)
             app.screen.action_back()
-            await pilot.pause()
+            await wizard.wait_for_refresh()
             assert app.screen is wizard and wizard.index == 0
             assert wizard._question().arg == 'g_input'
             wizard._commit_and(1)
-            await pilot.pause()
+            await screen_mounted(ui.SummaryScreen)
             assert isinstance(app.screen, ui.SummaryScreen)
             assert app.session.answers['g_input'] == str(source)
 
@@ -301,7 +299,7 @@ def test_video_question_and_detection_match_the_extractors_supported_inputs(tmp_
 
 
 def test_run_planning_failure_stays_visible_and_can_return_to_edit(
-        tmp_path, settings, monkeypatch):
+        tmp_path, settings, monkeypatch, screen_mounted):
     def fail(session):
         raise OSError('results folder is not writable')
 
@@ -312,17 +310,17 @@ def test_run_planning_failure_stays_visible_and_can_return_to_edit(
     async def drive():
         app = ui.WildScanApp(str(tmp_path))
         async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.pause()
-            app.push_screen(ui.SummaryScreen())
-            await pilot.pause()
+            await screen_mounted(ui.SessionScreen)
+            await app.push_screen(ui.SummaryScreen())
+            await screen_mounted(ui.SummaryScreen)
             summary = app.screen
-            app.push_screen(ui.RunScreen())
-            await pilot.pause()
+            await app.push_screen(ui.RunScreen())
+            await screen_mounted(ui.RunScreen)
             assert 'Unable to prepare' in str(app.screen.query_one('#r-title').content)
             assert not app.screen.query_one('#r-back').disabled
             assert not app.screen.waiting_gate
             await pilot.click('#r-back')
-            await pilot.pause()
+            await summary.wait_for_refresh()
             assert app.screen is summary
             assert not settings.data
 
@@ -330,21 +328,20 @@ def test_run_planning_failure_stays_visible_and_can_return_to_edit(
 
 
 def test_review_uses_plain_labels_and_rejects_invalid_automatic_continue(
-        tmp_path, settings, monkeypatch):
+        tmp_path, settings, monkeypatch, screen_mounted):
     monkeypatch.delenv('CESIUM_ION_TOKEN', raising=False)
     monkeypatch.delenv('NIRACLIENT_DIR', raising=False)
 
     async def drive():
         app = ui.WildScanApp(str(tmp_path))
         async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.pause()
+            await screen_mounted(ui.SessionScreen)
             app.session.enabled = ['publish']
             app.session.answers['i_mpx'] = '3'
             app.questions = [Question('extract', 'i_mpx', 'Long description', 'number',
                                       label='Image megapixels')]
-            app.push_screen(ui.SummaryScreen())
-            await pilot.pause()
-            screen = app.screen
+            await app.push_screen(ui.SummaryScreen())
+            screen = await screen_mounted(ui.SummaryScreen)
             text = str(screen.query_one('#sum-params').content)
             assert 'Image megapixels: 3' in text and 'i_mpx' not in text
             assert 'preview only' in text
@@ -359,7 +356,7 @@ def test_review_uses_plain_labels_and_rejects_invalid_automatic_continue(
     asyncio.run(drive())
 
 
-def test_retry_resets_previous_operation_progress(tmp_path, settings, monkeypatch):
+def test_retry_resets_previous_operation_progress(tmp_path, settings, monkeypatch, screen_mounted):
     class FakeRunner:
         running = False
 
@@ -376,10 +373,10 @@ def test_retry_resets_previous_operation_progress(tmp_path, settings, monkeypatc
     async def drive():
         app = ui.WildScanApp(str(tmp_path))
         async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.pause()
+            await screen_mounted(ui.SessionScreen)
             screen = ui.RunScreen()
-            app.push_screen(screen)
-            await pilot.pause()
+            await app.push_screen(screen)
+            await screen_mounted(ui.RunScreen)
             screen.on_progress_update(ui.ProgressUpdate(.8, 300, 'align'))
             screen.on_run_finished(ui.RunFinished(1))
             screen.action_gate()
