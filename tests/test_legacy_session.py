@@ -52,6 +52,38 @@ def store(monkeypatch):
     return fake
 
 
+@pytest.fixture
+def screen_mounted(monkeypatch):
+    """Wait for the actual screen mount hook and following refresh.
+
+    A push updates the screen stack before its mount handler populates
+    child widgets. Observing the screen type or one pilot pause cannot
+    establish that its stage selection or launch state is ready.
+    """
+    import wildscan.app as app_mod
+    mounted = {}
+
+    def observed_mount(original, queue):
+        def on_mount(screen):
+            original(screen)
+            queue.put_nowait(screen)
+        return on_mount
+
+    for screen_type in (app_mod.SessionScreen, app_mod.StagePickScreen,
+                        app_mod.RunScreen, app_mod.SummaryScreen,
+                        app_mod.WizardScreen, app_mod.StatusScreen):
+        queue = mounted[screen_type] = asyncio.Queue()
+        monkeypatch.setattr(screen_type, 'on_mount',
+                            observed_mount(screen_type.on_mount, queue))
+
+    async def wait(screen_type):
+        screen = await asyncio.wait_for(mounted[screen_type].get(), timeout=5)
+        await asyncio.wait_for(screen.wait_for_refresh(), timeout=5)
+        return screen
+
+    return wait
+
+
 def make_workspace(tmp_path, *, stage: str) -> Workspace:
     """A results root advanced through the pipeline up to `stage`."""
     ws = tmp_path / "cruise"
@@ -443,22 +475,21 @@ def test_components_join_scale_models_exports(tmp_path):
 
 # ------------------------------------------------------------- app smoke
 
-def test_portal_walks_session_to_stage_pick(tmp_path, store):
-    from wildscan.app import StagePickScreen, WildScanApp
+def test_portal_walks_session_to_stage_pick(tmp_path, store, screen_mounted):
+    from wildscan.app import SessionScreen, StagePickScreen, WildScanApp
 
     results = tmp_path / "results"
 
     async def drive():
         app = WildScanApp()
         async with app.run_test(size=(120, 50)) as pilot:
-            await pilot.pause()
-            screen = app.screen
+            screen = await screen_mounted(SessionScreen)
             screen.query_one("#s-expedition").value = "NA156"
             screen.query_one("#s-dive").value = "H2024"
             screen.query_one("#s-results").value = str(results)
-            await pilot.pause()
+            await screen.wait_for_refresh()
             await pilot.click("#s-continue")
-            await pilot.pause()
+            await screen_mounted(StagePickScreen)
             assert isinstance(app.screen, StagePickScreen)
             picker = app.screen.query_one("#stage-pick")
             assert picker.option_count == 9
@@ -466,7 +497,7 @@ def test_portal_walks_session_to_stage_pick(tmp_path, store):
     asyncio.run(drive())
 
 
-def test_run_persists_anchored_source_paths_before_launch(tmp_path, store, monkeypatch):
+def test_run_persists_anchored_source_paths_before_launch(tmp_path, store, monkeypatch, screen_mounted):
     import wildscan.app as app_mod
     monkeypatch.chdir(tmp_path)
     launches = []
@@ -485,15 +516,15 @@ def test_run_persists_anchored_source_paths_before_launch(tmp_path, store, monke
     async def drive():
         app = app_mod.WildScanApp()
         async with app.run_test(size=(120, 50)) as pilot:
-            await pilot.pause()
+            await screen_mounted(app_mod.SessionScreen)
             app.session.results_root = 'results'
             app.session.raw_images_dir = 'raw'
             app.session.video_path = 'raw/clip.mov'
             app.session.enabled = ['extract']
             app.session.answers = {'i_input': 'raw/clip.mov',
                                    'r_input': 'zones', 'r_flight_log': 'nav.csv'}
-            app.push_screen(app_mod.RunScreen())
-            await pilot.pause()
+            await app.push_screen(app_mod.RunScreen())
+            await screen_mounted(app_mod.RunScreen)
             assert len(launches) == 1
             assert store.data['wildscan']['raw_images_dir'] == str(tmp_path / 'raw')
             assert store.data['wildscan']['video_path'] == str(tmp_path / 'raw' / 'clip.mov')
@@ -506,7 +537,7 @@ def test_run_persists_anchored_source_paths_before_launch(tmp_path, store, monke
 
 @pytest.mark.parametrize("launch_failure", [True, False])
 def test_failed_console_stage_retries_current_command(tmp_path, store, monkeypatch,
-                                                      launch_failure):
+                                                      launch_failure, screen_mounted):
     import wildscan.app as app_mod
     from wildscan.runner import RunFinished
     from wildscan.session import StageCommand
@@ -533,10 +564,10 @@ def test_failed_console_stage_retries_current_command(tmp_path, store, monkeypat
     async def drive():
         app = app_mod.WildScanApp(str(tmp_path))
         async with app.run_test(size=(120, 50)) as pilot:
-            await pilot.pause()
+            await screen_mounted(app_mod.SessionScreen)
             screen = app_mod.RunScreen()
-            app.push_screen(screen)
-            await pilot.pause()
+            await app.push_screen(screen)
+            await screen_mounted(app_mod.RunScreen)
             if not launch_failure:
                 screen.on_run_finished(RunFinished(1, cancelled=True))
             assert screen.waiting_gate
@@ -554,7 +585,7 @@ def test_resume_ignores_malformed_interruption_stages(tmp_path, stages):
     assert "model" in default_enabled(Workspace(tmp_path))
 
 
-def test_intake_detection_debounces_and_scopes_source_scans(tmp_path, store, monkeypatch):
+def test_intake_detection_debounces_and_scopes_source_scans(tmp_path, store, monkeypatch, screen_mounted):
     import wildscan.app as app_mod
     calls = {'cruise': [], 'raw_images': [], 'processed': []}
 
@@ -575,35 +606,52 @@ def test_intake_detection_debounces_and_scopes_source_scans(tmp_path, store, mon
     monkeypatch.setattr(session_mod, 'scan_processed_data', processed)
 
     async def drive():
+        refresh_ready = asyncio.Event()
+        expected = {}
+        original_refresh = app_mod.SessionScreen._refresh_detection
+
+        def refreshed(screen, *args, **kwargs):
+            original_refresh(screen, *args, **kwargs)
+            if expected and all(getattr(screen.app.session, key) == value
+                                for key, value in expected.items()):
+                refresh_ready.set()
+
+        monkeypatch.setattr(app_mod.SessionScreen, '_refresh_detection', refreshed)
         app = app_mod.WildScanApp()
         async with app.run_test(size=(120, 50)) as pilot:
-            await pilot.pause()
-            screen = app.screen
+            screen = await screen_mounted(app_mod.SessionScreen)
+            expected.update(cruise_folder=str(tmp_path / 'cruise'),
+                            raw_images_dir=str(tmp_path / 'stills'),
+                            processed_data=str(tmp_path / 'processed'))
             for widget, path in (('s-cruise', 'cruise'), ('s-rawimages', 'stills'),
                                  ('s-processed', 'processed')):
                 screen.query_one('#' + widget).value = str(tmp_path / 'partial')
                 screen.query_one('#' + widget).value = str(tmp_path / path)
-            await pilot.pause(0.5)
+            await asyncio.wait_for(refresh_ready.wait(), timeout=5)
             assert calls == {
                 'cruise': [str(tmp_path / 'cruise')],
                 'raw_images': [str(tmp_path / 'stills')],
                 'processed': [str(tmp_path / 'processed')],
             }
+            refresh_ready.clear()
+            expected['raw_images_dir'] = str(tmp_path / 'new_stills')
             screen.query_one('#s-video').value = str(tmp_path / 'dive.mov')
             screen.query_one('#s-rawimages').value = str(tmp_path / 'partial')
             screen.query_one('#s-rawimages').value = str(tmp_path / 'new_stills')
-            await pilot.pause(0.5)
+            await asyncio.wait_for(refresh_ready.wait(), timeout=5)
             assert len(calls['cruise']) == len(calls['processed']) == 1
             assert calls['raw_images'] == [str(tmp_path / 'stills'),
                                           str(tmp_path / 'new_stills')]
+            refresh_ready.clear()
+            expected['cruise_folder'] = ''
             screen.query_one('#s-cruise').value = ''
-            await pilot.pause(0.5)
+            await asyncio.wait_for(refresh_ready.wait(), timeout=5)
             assert app.scan == session_mod.RawDataScan()
             assert len(calls['cruise']) == 1
     asyncio.run(drive())
 
 
-def test_intake_preview_cache_is_refreshed_before_questions(tmp_path, store, monkeypatch):
+def test_intake_preview_cache_is_refreshed_before_questions(tmp_path, store, monkeypatch, screen_mounted):
     import wildscan.app as app_mod
     source = tmp_path / 'cruise_data'
     source.mkdir()
@@ -612,27 +660,13 @@ def test_intake_preview_cache_is_refreshed_before_questions(tmp_path, store, mon
 
     async def drive():
         preview_ready = asyncio.Event()
-        picker_ready = asyncio.Event()
         questions_ready = asyncio.Event()
-        summary_ready = asyncio.Event()
         original_refresh = app_mod.SessionScreen._refresh_detection
-        original_mount = app_mod.StagePickScreen.on_mount
-        original_summary_mount = app_mod.SummaryScreen.on_mount
 
         def refreshed(screen, *args, **kwargs):
             original_refresh(screen, *args, **kwargs)
             if len(screen.app.scan.videos) == 1:
                 preview_ready.set()
-
-        def mounted(screen):
-            original_mount(screen)
-            # Screen selection is usable only after on_mount has populated
-            # the list. A screen-stack change alone does not establish this.
-            picker_ready.set()
-
-        def summary_mounted(screen):
-            original_summary_mount(screen)
-            summary_ready.set()
 
         def questions(session, scan):
             scans.append(scan)
@@ -640,33 +674,30 @@ def test_intake_preview_cache_is_refreshed_before_questions(tmp_path, store, mon
             return []
 
         monkeypatch.setattr(app_mod.SessionScreen, '_refresh_detection', refreshed)
-        monkeypatch.setattr(app_mod.StagePickScreen, 'on_mount', mounted)
-        monkeypatch.setattr(app_mod.SummaryScreen, 'on_mount', summary_mounted)
         monkeypatch.setattr(app_mod, 'build_questions', questions)
         app = app_mod.WildScanApp()
         async with app.run_test(size=(120, 50)) as pilot:
-            await pilot.pause()
-            screen = app.screen
+            screen = await screen_mounted(app_mod.SessionScreen)
             screen.query_one('#s-cruise').value = str(source)
             screen.query_one('#s-results').value = str(tmp_path / 'results')
             await asyncio.wait_for(preview_ready.wait(), timeout=5)
             assert len(app.scan.videos) == 1
             (source / 'second.mov').write_bytes(b'video')
             screen.query_one('#s-continue').press()
-            await asyncio.wait_for(picker_ready.wait(), timeout=5)
+            await screen_mounted(app_mod.StagePickScreen)
             assert isinstance(app.screen, app_mod.StagePickScreen)
             assert app.screen.query_one('#stage-pick').selected
             assert len(app.scan.videos) == 2
             (source / 'third.mov').write_bytes(b'video')
             app.screen.action_confirm()
             await asyncio.wait_for(questions_ready.wait(), timeout=5)
-            await asyncio.wait_for(summary_ready.wait(), timeout=5)
+            await screen_mounted(app_mod.SummaryScreen)
             assert {path.name for path in scans[0].videos} == {
                 'first.mov', 'second.mov', 'third.mov'}
     asyncio.run(drive())
 
 
-def test_stage_picker_reuses_only_the_current_transition_census(tmp_path, store, monkeypatch):
+def test_stage_picker_reuses_only_the_current_transition_census(tmp_path, store, monkeypatch, screen_mounted):
     import wildscan.app as app_mod
     from modules.workspace_census import StageStatus
     calls = []
@@ -683,18 +714,19 @@ def test_stage_picker_reuses_only_the_current_transition_census(tmp_path, store,
     async def drive():
         app = app_mod.WildScanApp()
         async with app.run_test(size=(120, 50)) as pilot:
-            await pilot.pause()
+            session_screen = await screen_mounted(app_mod.SessionScreen)
             app.screen.query_one('#s-results').value = str(tmp_path / 'results')
             app.screen.query_one('#s-continue').press()
-            await pilot.pause()
+            await screen_mounted(app_mod.StagePickScreen)
             assert isinstance(app.screen, app_mod.StagePickScreen)
             assert len(calls) == 1
             assert 'align' not in app.session.enabled
             assert 'align' not in app.screen.query_one('#stage-pick').selected
             app.screen.action_back()
-            await pilot.pause()
+            await session_screen.wait_for_refresh()
+            assert app.screen is session_screen
             app.screen.query_one('#s-continue').press()
-            await pilot.pause()
+            await screen_mounted(app_mod.StagePickScreen)
             assert len(calls) == 2
             assert 'align' in app.session.enabled
             assert 'align' in app.screen.query_one('#stage-pick').selected

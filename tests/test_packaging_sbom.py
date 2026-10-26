@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import tomllib
 from pathlib import Path
 
@@ -107,3 +108,38 @@ def test_listed_versions_satisfy_the_declared_floors():
         requirement = Requirement(value)
         version = packages[canonicalize_name(requirement.name)]['versionInfo']
         assert requirement.specifier.contains(version), (requirement.name, version)
+
+
+def test_windows_delivery_licence_evidence_matches_the_inventory():
+    sbom = _sbom()
+    provenance = json.loads(sbom['creationInfo']['comment'])
+    assert provenance['platform'] == 'Windows'
+    assert provenance['python'].startswith('3.13.')
+    bundle = REPO / 'third_party_licenses'
+    manifest = json.loads((bundle / 'manifest.json').read_text(encoding='utf-8'))
+    assert manifest['inventory_identity'] == sbom['documentNamespace'].rsplit('/', 1)[-1]
+    evidence = []
+    for package in sbom['packages']:
+        if package.get('externalRefs'):
+            evidence.extend(json.loads(package['comment']).get('licence_evidence', []))
+    assert sorted(evidence, key=lambda x: (x['package'], x['path'])) == \
+        sorted(manifest['files'], key=lambda x: (x['package'], x['path']))
+    for record in evidence:
+        path = Path(record['path'])
+        assert not path.is_absolute() and '..' not in path.parts
+        data = (bundle / path).read_bytes()
+        assert len(data) == record['bytes']
+        assert hashlib.sha256(data).hexdigest() == record['sha256']
+
+
+def test_optional_windows_constraints_match_recorded_package_versions():
+    expected = {p['name']: p['versionInfo'] for p in _sbom()['packages']
+                if p['name'] != 'wildscan' and any(
+                    r.get('referenceType') == 'purl' for r in p.get('externalRefs', []))}
+    constraints = {}
+    for line in (REPO / 'constraints-windows-py313.txt').read_text().splitlines():
+        if not line.strip() or line.startswith('#'):
+            continue
+        req = Requirement(line)
+        constraints[canonicalize_name(req.name)] = str(req.specifier).removeprefix('==')
+    assert constraints == expected

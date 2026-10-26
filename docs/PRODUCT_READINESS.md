@@ -34,8 +34,7 @@ photogrammetry datasets. For a first survey, use
 
 ## Compatibility review — 26 October 2026
 
-Review scope: the local, uncommitted
-`maintenance/restore-workflow-compatibility` branch, based on Sony intake
+Review scope: the `maintenance/restore-workflow-compatibility` branch, based on Sony intake
 commit `38e291515d1ac4f50cc0a9b6a5a8bea5aadc99b8`, compared with general-workflow
 `origin/main` at `ea3ad5d4493e45dea81c02dd17f12bce471223d8`.
 
@@ -69,7 +68,8 @@ and installed RealityScan import conventions remain untested in this review.
 Windows-only filesystem/process tests and the unavailable geoid-grid test
 are reported as skips, not successful native validation.
 
-Final offline result after the confirmed Sony policy changes:
+Initial local offline result after the confirmed Sony policy changes, before
+the inventory tooling and its additional tests:
 **1,554 passed, 23 skipped, no failures**. Dependency
 consistency and whitespace checks passed. All production Python, batch and
 VBS entry points and documentation present in the compared main revision
@@ -91,22 +91,27 @@ remain present in this worktree. The original checkout was left unchanged.
 
 These decisions are isolated from WCA/Zeuss compatibility. They are not
 evidence that the reported survey used these new Sony-processing settings.
-No commit, release, push or new reconstruction was made by this review.
+No new reconstruction was performed by this review.
 
 ### Delivery completeness
 
 The canonical repository is `https://github.com/wild-technology/wildscan`, with
-`main` as the release branch. At this review, published main remains
-`ea3ad5d4493e45dea81c02dd17f12bce471223d8`; the original `v1.0.0` tag points to
-`0401a5a04097cba149989f7e8c60e57c09c1c549`. The compatibility candidate is
-uncommitted and has not undergone Windows CI at its final revision. No GitHub
-Release binaries are published. Cite the eventual merged commit separately
-from any historical processing revision.
+`main` as the release branch. Publication and final Windows checks are recorded
+in [pull request 2](https://github.com/wild-technology/wildscan/pull/2).
+The original `v1.0.0` tag remains at
+`0401a5a04097cba149989f7e8c60e57c09c1c549`. Cite the updated delivery commit
+separately from any historical processing revision. No standalone application
+binaries are published; installation uses the editable source checkout.
 
-The current SBOM is a dated direct-dependency inventory. It omits transitive
-dependencies, has unresolved licence metadata, and five recorded versions
-differ from the current local test environment. Refresh it and identify its
-environment and scope before describing it as the complete delivery inventory.
+The refreshed SBOM records a clean Windows/Python 3.13.16 environment: 61
+installed third-party Python packages plus WildScan and three external
+prerequisites. It includes transitive relationships and 183 supplied licence
+payloads with verified hashes. Python-package licence declarations use SPDX
+expressions or preserved custom text. RealityScan and optional niraclient are
+separate installations, not inventoried binaries. Both Windows CI versions
+generate and verify their own inventories; the checked-in snapshot and optional
+constraints retain their exact source and environment scope. See
+[third-party notices](../THIRD_PARTY_NOTICES.md).
 
 The maintainer confirmed that separate COLMAP comparison runs were performed
 for the report. WildScan's reconstruction workflow uses RealityScan; the

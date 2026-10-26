@@ -182,6 +182,18 @@ invoke the environment's Python directly. They work without
 activation or a PowerShell execution-policy change. Run them from the checkout
 folder; use the full quoted executable path with `&` from another directory.
 
+To reproduce the Python package versions recorded by the Windows/Python 3.13
+checks, install with the optional snapshot constraints instead:
+
+```powershell
+& ".\.venv\Scripts\python.exe" -m pip install -c constraints-windows-py313.txt -e ".[dev]" build
+```
+
+Those constraints describe the tested software environment, not the historical
+survey-processing environment. RealityScan, CUDA and the original project data
+are separate. See [third-party notices](../THIRD_PARTY_NOTICES.md) for the full
+inventory, licence evidence and regeneration commands.
+
 - **Only Python 3.12 installed?** Use `py -3.12 -m venv .venv` to meet the
   declared package floor; 3.13+ remains recommended for native validation.
 - **Command Prompt instead of PowerShell?** Omit `&` when invoking
