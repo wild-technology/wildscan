@@ -79,6 +79,8 @@ from ..calibration_sidecars import (
 from ..calibration_sidecars import MODES as CALIBRATION_MODES
 from ..camera_registry import Camera, Mount, Registry
 from ..flight_logs import (
+    NO_POSITION_ACCURACY_M,
+    positionless_priors_enabled,
     FlightLogRow,
     flight_log_name,
     realityscan_orientation,
@@ -116,8 +118,10 @@ HEADING_SOURCES = ('auto', 'heading_imu', 'yaw', 'heading_mag_xplore')
 
 # A run whose positions all lie within this distance of each other (bounding
 # box diagonal, metres) carries one static fix, not a track. Its images get
-# no position prior at all (owner decision 2026-10-07): one repeated
-# position says nothing about where each camera was.
+# no position (owner decision 2026-10-07): one repeated position says
+# nothing about where each camera was. Where they carry an orientation, the
+# empty position cells get NO_POSITION_ACCURACY_M, and a log without any
+# position is imported in the local Euclidean system.
 STATIC_FIX_SPREAD_M = 1.0
 
 DEFAULT_MIN_MATCH_PCT = 80.0
@@ -671,7 +675,9 @@ def flight_log_prior(frame: Frame, options: IntakeOptions,
     """The 13-column row for one image (see :func:`orientation_prior` and
     :func:`altitude_prior`). An image of a static-fix run, or one without a
     UTM position, gets no position cells; one without depth gets no altitude
-    cells; one without heading, pitch or roll gets no orientation cells."""
+    cells; one without heading, pitch or roll gets no orientation cells. An
+    image with an orientation but no position gets NO_POSITION_ACCURACY_M
+    in the accuracy cells of the X, Y and (without depth) Alt it lacks."""
     row = frame.row
     mount = frame.mount
     heading, column = select_heading(row, options.heading_source)
@@ -689,14 +695,23 @@ def flight_log_prior(frame: Frame, options: IntakeOptions,
         offset = (0.0, 0.0)
 
     position = None if static_fix else _position(row)
+    # Without a position RealityScan stores 0 with accuracy 0 for the empty
+    # cells, so an image that still carries an orientation prior gets the
+    # loose NO_POSITION_ACCURACY_M on every position axis it lacks.
+    loose = (NO_POSITION_ACCURACY_M
+             if has_orientation and positionless_priors_enabled() else None)
     if position is None:
-        x = y = x_acc = y_acc = None
+        x = y = None
+        x_acc = y_acc = loose
     else:
         x, y = position[0] + offset[0], position[1] + offset[1]
         x_acc = y_acc = options.position_accuracy_m
     depth = row.number('depth_from_xplore9')
     alt = altitude_prior(depth, lever[2])
-    alt_acc = options.altitude_accuracy_m if alt is not None else None
+    if alt is not None:
+        alt_acc = options.altitude_accuracy_m
+    else:
+        alt_acc = loose if position is None else None
 
     accuracy = options.orientation_accuracy_deg
     log_row = FlightLogRow(
@@ -1001,11 +1016,17 @@ def run_intake(run_paths: Sequence[str], workspace: str,
     for plan in plans:
         if static_runs[plan.run_dir]:
             spread = plan.position_spread_m()
+            policy_note = (
+                f' With RS_POSITIONLESS_PRIORS=1, missing position axes '
+                f'get {NO_POSITION_ACCURACY_M:g} m uncertainty where an '
+                'orientation remains, and a log with no XY positions uses '
+                'local Euclidean coordinates.'
+                if positionless_priors_enabled() else '')
             warn(f'{plan.run_id}: every row carries the same position '
                  f'(spread {spread:.3f} m over {len(plan.positions)} rows): '
                  'a static fix, not a track. No position is written for its '
-                 'images: RealityScan gets no position prior and Batch '
-                 'Directory puts them in one zone. Check the GPS feed.')
+                 'images: Batch Directory puts them in one zone. Check the '
+                 f'GPS feed.{policy_note}')
     total = len(priors)
     no_depth = sum(1 for p in priors if not p.has_depth)
     if no_depth:
@@ -1023,6 +1044,13 @@ def run_intake(run_paths: Sequence[str], workspace: str,
         warn(f'{no_utm} of {total} images carry no UTM position: written '
              'without a position prior (Batch Directory keeps them only under '
              'the single-zone rule; zones are built from positions)')
+    if positionless_priors_enabled() and 0 < no_position < total:
+        warn(f'{no_position} of {total} images have no position while the '
+             'others do: the log is imported in UTM, where RealityScan places '
+             'an image without a position at easting 0, northing 0 '
+             f'(accuracy {NO_POSITION_ACCURACY_M:g} m where it carries an '
+             'orientation). Align such a mixed log only after checking those '
+             'images.')
     lever_skipped = sum(1 for p in priors if p.lever_arm_skipped)
     if lever_skipped:
         warn(f'{lever_skipped} image(s) have no heading, so the horizontal '

@@ -64,11 +64,14 @@ import logging
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 from module_base.settings_store import SettingsStore, realityscan_env
-from modules import calibration_sidecars
+from modules import align_fingerprint, calibration_sidecars, camera_registry
 from modules import component_analysis
 from modules import component_manifest
 from modules import scale_oracle
 from modules.flight_logs import (assert_one_zone,
+                                 flight_log_has_positions,
+                                 flight_log_frame,
+                                 positionless_priors_enabled,
                                  utm_zone_from_flight_log_name,
                                  write_flight_log_params)
 from modules.harvest_guard import assert_harvestable
@@ -618,6 +621,13 @@ def build_union_flight_log(images_root: str, output_dir: str, logger,
     # (audit 2026-08-07). Sort once, then require unanimity.
     zone_logs = sorted(zone_logs)
     zone_band = assert_one_zone(zone_logs, images_root)
+    effective_frame = None
+    if positionless_priors_enabled():
+        frames = {flight_log_frame(path) for path in zone_logs}
+        if len(frames) != 1:
+            raise ValueError('Cannot merge flight logs with different effective '
+                             'coordinate frames; align them under one frame first')
+        effective_frame = frames.pop()
 
     # No UTM tag in the filename = a LOCAL-frame campaign (e.g. COLMAP
     # local:1 priors, ON2026; C-20260730-05): use the dedicated
@@ -626,10 +636,10 @@ def build_union_flight_log(images_root: str, output_dir: str, logger,
     # silently mis-registered (2026-08-07 incident: ON2026's local frame
     # in the shared template poisoned a UTM 57L import; 3/32 registered,
     # exit code 0).
-    local_frame = zone_band is None
+    local_frame = zone_band is None or effective_frame == 'local_euclidean'
     if local_frame:
         logger.warning(
-            'Flight log "%s" carries no UTM zone tag - LOCAL-frame campaign; '
+            'Flight log "%s" uses the local coordinate frame; '
             'generating params from FlightLogParamsLocal.xml. Verify this '
             'cruise really uses local:1 priors!', os.path.basename(zone_logs[0]))
         zone, band = None, None
@@ -671,10 +681,19 @@ def build_union_flight_log(images_root: str, output_dir: str, logger,
             len(rows), len(only_basenames))
 
     suffix = f'_{tag}' if tag else ''
+    if effective_frame == 'utm' and not any(
+            len(cells := row.split(';')) > 2
+            and cells[1].strip() and cells[2].strip() for row in rows.values()):
+        raise ValueError('Filtered union has no XY positions but its source '
+                         'components use UTM; refusing a coordinate-frame change')
     crs_tag = 'local' if local_frame else f'{zone}{band}'
     union_path = os.path.join(output_dir, f'flight_log{suffix}_{crs_tag}_UTM.txt')
     with open(union_path, 'w', encoding='utf-8', newline='\r\n') as f:
         f.write(header + '\n' + '\n'.join(rows.values()) + '\n')
+
+    if positionless_priors_enabled() and not flight_log_has_positions(union_path):
+        local_frame = True
+        logger.info('Union log has no XY positions; using the opted-in local frame')
 
     if local_frame:
         params_path = write_flight_log_params(
@@ -1310,6 +1329,19 @@ def main() -> int:
         return 1
     try:
         calibration = workspace_calibration(images_root)
+        modes, focals = calibration if calibration else (None, None)
+        fixed_modes = {}
+        if os.environ.get('RS_VOYIS_FIXED_CALIBRATION') == '1':
+            paths = (os.path.join(root, name)
+                     for root, _dirs, files in os.walk(images_root) for name in files
+                     if name.lower().endswith(IMAGE_EXTENSIONS))
+            fixed_modes = calibration_sidecars.fixed_calibration_modes(
+                paths, modes, include_existing=True)
+            if fixed_modes:
+                modes = {**(calibration_sidecars.default_calibration_modes()
+                            if modes is None else modes), **fixed_modes}
+                if calibration is not None:
+                    calibration = modes, focals
     except ValueError as exc:
         logger.error('%s', exc)
         return 1
@@ -1327,6 +1359,17 @@ def main() -> int:
         return 1
     if not inputs:
         logger.error('No manifested components under %s', components_root)
+        return 1
+    try:
+        for component in inputs:
+            member_cameras = {
+                camera.key for name in component.get('images', [])
+                if (camera := camera_registry.identify(name)) is not None}
+            align_fingerprint.assert_continuation_policy(
+                component['rsalign'], modes, focals,
+                member_cameras.intersection(fixed_modes))
+    except ValueError as exc:
+        logger.error('%s', exc)
         return 1
 
     # Metric scale FIRST, before any ladder spends GPU hours: a component

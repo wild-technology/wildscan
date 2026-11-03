@@ -23,7 +23,7 @@ import math
 import os
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 
 SCHEMA_VERSION = 2
@@ -49,6 +49,16 @@ class RegistryError(ValueError):
 
 
 @dataclass(frozen=True)
+class FixedCalibration:
+    """Optional rectified pinhole calibration; never a default profile."""
+    resolution: tuple[int, int]
+    focal_length_35mm: float
+    principal_point_u: float
+    principal_point_v: float
+    opt_in_env: str
+
+
+@dataclass(frozen=True)
 class Camera:
     """One physical camera and the calibration it may be given."""
     key: str                                  # also the batch subfolder name
@@ -66,6 +76,9 @@ class Camera:
     sensor_size_mm: tuple[float, float] | None = None
     opencv_distortion: tuple[float, float, float, float, float] | None = None
     calibration_policy: str = 'legacy'
+    # Optional capability metadata does not change legacy profile equality;
+    # selecting it produces a different optical profile and sidecar hash.
+    fixed_calibration: FixedCalibration | None = field(default=None, compare=False)
 
     @property
     def calibration_aspect(self) -> float:
@@ -274,6 +287,7 @@ class _Loader:
                 lens_distortion_prior=self.choice(spec, 'lens_distortion_prior',
                                                   where, CALIBRATION_PRIORS),
                 opt_in_env=opt_in, calibration_policy=policy,
+                fixed_calibration=self.fixed_calibration(spec, where),
             )
         size = self.require(spec, 'resolution', where)
         if (not isinstance(size, list) or len(size) != 2
@@ -307,6 +321,22 @@ class _Loader:
             lens_distortion_prior=spec['lens_distortion_prior'],
             calibration_policy=policy,
         )
+
+    def fixed_calibration(self, spec, where: str) -> FixedCalibration | None:
+        if 'fixed_calibration' not in spec:
+            return None
+        where += '.fixed_calibration'
+        fixed = self.obj(spec['fixed_calibration'], where)
+        size = self.require(fixed, 'resolution', where)
+        if (not isinstance(size, list) or len(size) != 2
+                or not all(isinstance(v, int) and not isinstance(v, bool)
+                           and v > 0 for v in size)):
+            self.fail(where + '.resolution', 'must be two positive whole pixels')
+        return FixedCalibration(
+            tuple(size), self.number(fixed, 'focal_length_35mm', where, positive=True),
+            self.number(fixed, 'principal_point_u', where),
+            self.number(fixed, 'principal_point_v', where),
+            self.text(fixed, 'opt_in_env', where))
 
     def mount(self, spec, where: str) -> Mount | None:
         if spec is None:
@@ -483,6 +513,26 @@ def rig_for(camera_key: str) -> Rig:
     return REGISTRY.rig_for(camera_key)
 
 
+def fixed_calibration_camera(camera: Camera, *, enabled_only: bool = True
+                             ) -> Camera | None:
+    """Opt-in fixed variant, preserving the legacy camera and its groups.
+
+    ``enabled_only=False`` is for byte ownership checks after disabling the
+    option, so a former fixed sidecar can still be removed safely.
+    """
+    fixed = camera.fixed_calibration
+    if fixed is None or (enabled_only and os.environ.get(fixed.opt_in_env) != '1'):
+        return None
+    return replace(camera, calibration_prior='exact', lens_distortion_prior='exact',
+                   distortion_model='perspective', calibration_policy='fixed',
+                   calibration_image_size=fixed.resolution,
+                   focal_length_35mm=fixed.focal_length_35mm,
+                   principal_point_u=fixed.principal_point_u,
+                   principal_point_v=fixed.principal_point_v,
+                   opencv_distortion=(0.0, 0.0, 0.0, 0.0, 0.0),
+                   fixed_calibration=None)
+
+
 def calibration_xmp(camera: Camera) -> str:
     """Calibration-ONLY XMP sidecar content for a camera.
 
@@ -491,9 +541,10 @@ def calibration_xmp(camera: Camera) -> str:
     priors measurably reduced registration on NA167. Calibration groups
     are what separate the EXIF-identical WCA cameras.
     """
-    if camera.calibration_policy != 'legacy':
+    fixed = fixed_calibration_camera(camera)
+    if fixed is not None or camera.calibration_policy != 'legacy':
         from .calibration_sidecars import sidecar_xmp
-        return sidecar_xmp(camera, 'prior')
+        return sidecar_xmp(fixed or camera, 'prior')
     if camera.principal_point_u is not None:
         return _calibration_xmp_full_intrinsics(camera)
     lines = [

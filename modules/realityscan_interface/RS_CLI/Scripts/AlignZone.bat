@@ -83,6 +83,14 @@ if errorlevel 1 exit /b 1
 echo Creating new scene
 call :run -newScene || goto :fail
 
+:: Opt-in orientation-only logs use generated local-frame import params.
+if "%RS_POSITIONLESS_PRIORS%" == "1" if not "%flight_log_dir%" == "" (
+    findstr /i /c:"local:1 - Euclidean" "%flight_log_params_dir%" >nul
+    if not errorlevel 1 (
+        call :run -setProjectCoordinateSystem Local:1 || goto :fail
+    )
+)
+
 if defined RS_ALIGN_POOL_DIR if not "%RS_ALIGN_POOL_DIR%" == "" goto :addViaList
 if not "%calibration_rscmd%" == "" goto :addViaRscmd
 echo Adding images to project
