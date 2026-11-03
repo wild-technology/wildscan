@@ -111,6 +111,14 @@ if errorlevel 1 exit /b 1
 echo Creating new scene
 call :run -newScene || goto :fail
 
+:: Match the opted-in orientation-only union log's local coordinate frame.
+if "%RS_POSITIONLESS_PRIORS%" == "1" if defined RS_MERGE_FLIGHT_LOG_PARAMS (
+    findstr /i /c:"local:1 - Euclidean" "%RS_MERGE_FLIGHT_LOG_PARAMS%" >nul
+    if not errorlevel 1 (
+        call :run -setProjectCoordinateSystem Local:1 || goto :fail
+    )
+)
+
 echo Importing %component_count% components
 if defined list_mode (
     for /f "usebackq delims=" %%F in ("%components_dir%") do (

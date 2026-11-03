@@ -162,6 +162,12 @@ call :run -deselectAllImages || goto :fail
 if defined RS_GROW_FLIGHT_LOG if not "%RS_GROW_FLIGHT_LOG%" == "" (
     if not exist "%RS_GROW_FLIGHT_LOG%" ( echo ERROR: RS_GROW_FLIGHT_LOG not found: %RS_GROW_FLIGHT_LOG% & goto :fail )
     echo Re-importing flight log at step start [%RS_GROW_FLIGHT_LOG%]
+    if "%RS_POSITIONLESS_PRIORS%" == "1" (
+        findstr /i /c:"local:1 - Euclidean" "%RS_GROW_FLIGHT_LOG_PARAMS%" >nul
+        if not errorlevel 1 (
+            call :run -setProjectCoordinateSystem Local:1 || goto :fail
+        )
+    )
     call :run -importFlightLog "%RS_GROW_FLIGHT_LOG%" "%RS_GROW_FLIGHT_LOG_PARAMS%" || goto :fail
     call :run -update || goto :fail
     call :run -deselectAllImages || goto :fail

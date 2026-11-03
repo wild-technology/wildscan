@@ -36,10 +36,14 @@ image and refines it during alignment (:func:`observe_focal`).
 
 The registry values follow the conversion in
 :func:`intrinsics_to_xmp_values`. Two parts of it are not verified against
-RealityScan, which is why the prior is never locked or exact: the radius
+RealityScan, which is why the measured Sony prior is never locked or exact: the radius
 normalisation of the distortion coefficients (the Brown slot order itself is
 documented by RealityScan's shipped export templates), and the normalisation
 of the principal point for an image that is not square.
+
+Rectified Voyis images may separately opt in to the stored exact pinhole
+calibration with ``RS_VOYIS_FIXED_CALIBRATION=1``. It requires upright,
+2816-square images and does not change the historical approximate opt-in.
 
 The hygiene functions (:func:`sanitize_and_census`,
 :func:`ensure_calibration_sidecars`, :func:`remove_calibration_sidecars`)
@@ -54,7 +58,7 @@ import os
 import re
 import statistics
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from . import camera_registry
 from .camera_registry import Camera, Rig
@@ -89,7 +93,7 @@ XCR_NAMESPACE = 'http://www.capturingreality.com/ns/xcr/1.1#'
 # 'initial', the value RealityScan's own sample sidecar carries, and the
 # documented token set is initial / exact / locked (RealityScan 2.2 CLI
 # help, XMP export).
-_PRIOR_TOKEN = {'approximate': 'initial'}
+_PRIOR_TOKEN = {'approximate': 'initial', 'exact': 'exact'}
 
 
 def default_calibration_modes() -> dict[str, str]:
@@ -104,7 +108,8 @@ def default_calibration_modes() -> dict[str, str]:
         camera.key: 'prior'
         for camera in camera_registry.CAMERAS.values()
         if camera.calibration_policy == 'legacy'
-        and (not camera.opt_in_env or os.environ.get(camera.opt_in_env))
+        and (not camera.opt_in_env or os.environ.get(camera.opt_in_env)
+             or camera_registry.fixed_calibration_camera(camera) is not None)
     }
 
 
@@ -120,6 +125,60 @@ class CalibrationRefused(ValueError):
 
 class FocalRefused(ValueError):
     """No single starting focal length can be given for a camera."""
+
+
+def fixed_calibration_modes(image_paths: Iterable[str],
+                             modes: Mapping[str, str] | None = None, *,
+                             include_existing: bool = False
+                             ) -> dict[str, str]:
+    """Enabled fixed defaults among these images, after geometry preflight.
+
+    Explicit camera decisions (including ``off`` and ``groups``) win.
+    Call before moving existing sidecars or changing alignment outputs.
+    ``include_existing`` also returns prior cameras already in ``modes``
+    for continuation checks scoped to images that are actually present.
+    """
+    decisions = dict(modes or {})
+    _check_modes(decisions)
+    found: dict[str, str] = {}
+    for path in image_paths:
+        camera = camera_registry.identify(os.path.basename(path))
+        if camera is None:
+            continue
+        fixed = camera_registry.fixed_calibration_camera(camera)
+        if fixed is None or decisions.get(camera.key, 'prior') != 'prior':
+            continue
+        geometry = read_image_geometry(path)
+        if ((geometry.width, geometry.height) != fixed.calibration_image_size
+                or geometry.orientation != 1):
+            raise CalibrationRefused(
+                f'{camera.key}: {path} must be upright and exactly '
+                f'{_size(fixed.calibration_image_size)} for fixed calibration; '
+                f'got {geometry.width}x{geometry.height}, EXIF orientation '
+                f'{geometry.orientation}')
+        if include_existing or camera.key not in decisions:
+            found[camera.key] = 'prior'
+    return found
+
+
+def _preflight_fixed(image_paths: Iterable[str], modes: Mapping[str, str]) -> None:
+    # Only validate modes that will actually deliver a fixed sidecar. Missing
+    # camera decisions are deliberately not implicit permission to write one.
+    fixed_calibration_modes(image_paths, {
+        key: modes.get(key, 'off') for key in camera_registry.CAMERAS})
+
+
+def _image_paths(image_root: str) -> list[str]:
+    return [os.path.join(root, name)
+            for root, _dirs, files in os.walk(image_root) for name in files
+            if os.path.splitext(name)[1].lower() in PROCESSABLE_IMAGE_EXTS]
+
+
+def _preflight_fixed_tree(image_root: str, modes: Mapping[str, str]) -> None:
+    if any(modes.get(camera.key) == 'prior'
+           and camera_registry.fixed_calibration_camera(camera) is not None
+           for camera in camera_registry.CAMERAS.values()):
+        _preflight_fixed(_image_paths(image_root), modes)
 
 
 # ------------------------------------------------------------- inputs
@@ -547,6 +606,8 @@ def sidecar_xmp(camera: Camera, mode: str,
     """
     if mode not in SIDECAR_MODES:
         raise ValueError(f'mode {mode!r} writes no sidecar')
+    if mode == 'prior':
+        camera = camera_registry.fixed_calibration_camera(camera) or camera
     if camera.calibration_policy == 'legacy' and mode == 'prior':
         return camera_registry.calibration_xmp(camera)
     if mode == 'groups':
@@ -643,7 +704,15 @@ def is_own_sidecar(content: bytes, camera: Camera) -> bool:
     for ``camera``: its ``prior`` sidecar, a ``groups`` sidecar with any
     positive starting focal (:func:`sidecar_xmp`), or the earlier
     ``groups`` form without a focal."""
-    if content in (sidecar_xmp(camera, 'prior').encode('utf-8'),
+    # Recognise both variants regardless of the current opt-in. This lets
+    # explicit off remove a fixed sidecar left by an earlier opted-in run.
+    fixed = camera_registry.fixed_calibration_camera(camera, enabled_only=False)
+    legacy = camera
+    if fixed is not None:
+        legacy = replace(camera, fixed_calibration=None)
+        if content == sidecar_xmp(fixed, 'prior').encode('utf-8'):
+            return True
+    if content in (sidecar_xmp(legacy, 'prior').encode('utf-8'),
                    _legacy_groups_xmp(camera).encode('utf-8')):
         return True
     match = _groups_pattern(camera).fullmatch(content)
@@ -677,6 +746,8 @@ def move_foreign_sidecars(image_paths: Iterable[str],
     :func:`write_sidecars`. Returns ``(source, moved to)`` pairs.
     """
     _check_modes(modes)
+    image_paths = list(image_paths)
+    _preflight_fixed(image_paths, modes)
     image_root = os.path.abspath(image_root)
     moved: list[tuple[str, str]] = []
     for image in sorted(os.path.abspath(p) for p in image_paths):
@@ -755,6 +826,8 @@ def write_sidecars(image_paths: Iterable[str] | None = None,
     if image_paths is None or modes is None:
         raise TypeError('write_sidecars() needs image_paths and modes')
     _check_modes(modes)
+    image_paths = list(image_paths)
+    _preflight_fixed(image_paths, modes)
     plan: list[tuple[str, str | None, str | None]] = []
     claimed: dict[str, str] = {}
     for image in sorted(os.path.abspath(p) for p in image_paths):
@@ -843,6 +916,7 @@ def ensure_calibration_sidecars(image_root: str,
     if not modes:
         return 0, 0
     _check_modes(modes)
+    _preflight_fixed_tree(image_root, modes)
     created = unknown = 0
     for root, _dirs, files in os.walk(image_root):
         present = {name.lower() for name in files}
@@ -881,17 +955,29 @@ def remove_calibration_sidecars(image_root: str,
     imported beside its image once calibration is off. Only a sidecar that
     is byte for byte one this module writes for that image's camera
     (:func:`is_own_sidecar`) is removed; any other sidecar of an ``off``
-    camera (a pose, an edited or foreign file) is left in place and counted. Cameras of any other mode,
-    and images of no known camera, are never touched.
+    camera (a pose, an edited or foreign file) is left in place and counted.
+    A former opt-in fixed sidecar is also removed when that option is now
+    disabled and its camera has no explicit decision. Other cameras and
+    other sidecar bytes are never touched.
 
     Returns (removed, left in place).
     """
-    if not modes:
-        return 0, 0
+    modes = modes or {}
     _check_modes(modes)
     off = {key for key, mode in modes.items() if mode == 'off'}
-    if not off:
+    # Disabling the new opt-in must not leave its fixed bytes auto-importing
+    # on the next run. Historical approximate and foreign sidecars remain
+    # untouched for cameras with no explicit mode.
+    inactive_fixed = {
+        camera.key: fixed
+        for camera in camera_registry.CAMERAS.values()
+        if camera.key not in modes
+        and camera_registry.fixed_calibration_camera(camera) is None
+        and (fixed := camera_registry.fixed_calibration_camera(
+            camera, enabled_only=False)) is not None}
+    if not off and not inactive_fixed:
         return 0, 0
+    candidates = off | inactive_fixed.keys()
     removed = kept = 0
     for root, _dirs, files in os.walk(image_root):
         by_lower = {name.lower(): name for name in files}
@@ -899,20 +985,32 @@ def remove_calibration_sidecars(image_root: str,
             if os.path.splitext(filename)[1].lower() not in PROCESSABLE_IMAGE_EXTS:
                 continue
             camera = camera_registry.identify(filename)
-            if camera is None or camera.key not in off:
+            if camera is None or camera.key not in candidates:
                 continue
             sidecar = by_lower.get(sidecar_path(filename).lower())
             if sidecar is None:
                 continue
             path = os.path.join(root, sidecar)
-            with open(path, 'rb') as f:
-                content = f.read()
-            if is_own_sidecar(content, camera):
+            try:
+                with open(path, 'rb') as f:
+                    content = f.read()
+            except OSError:
+                if camera.key in off:
+                    raise
+                continue  # Not provably fixed-owned; preserve it.
+            if camera.key in off:
+                own = is_own_sidecar(content, camera)
+            else:
+                fixed_bytes = sidecar_xmp(
+                    inactive_fixed[camera.key], 'prior').encode('utf-8')
+                own = content == fixed_bytes
+            if own:
                 os.remove(path)
                 del by_lower[sidecar.lower()]
                 removed += 1
                 continue
-            kept += 1
+            if camera.key in off:
+                kept += 1
     return removed, kept
 
 
@@ -937,6 +1035,7 @@ def sanitize_and_census(image_root: str,
     """
     modes = default_calibration_modes() if modes is None else modes
     _check_modes(modes)
+    _preflight_fixed_tree(image_root, modes)
     pose_count = restored = cleared = removed = 0
     removed_examples: list[str] = []
     unreadable: list[str] = []

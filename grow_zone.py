@@ -59,7 +59,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 from module_base.settings_store import SettingsStore, realityscan_env
-from modules import calibration_sidecars
+from modules import align_fingerprint, calibration_sidecars
 from modules.flight_logs import (ensure_frame_match, require_utm_zone,
                                  write_flight_log_params)
 from modules.realityscan_interface.realityscan_interface import (
@@ -406,6 +406,18 @@ def main() -> int:
         return 1
     try:
         calibration = workspace_calibration(images_root)
+        modes, focals = calibration if calibration else (None, None)
+        fixed_modes = {}
+        if os.environ.get('RS_VOYIS_FIXED_CALIBRATION') == '1':
+            fixed_modes = calibration_sidecars.fixed_calibration_modes(
+                build_image_index(images_root)[0].values(), modes,
+                include_existing=True)
+            if fixed_modes:
+                modes = {**(calibration_sidecars.default_calibration_modes()
+                            if modes is None else modes), **fixed_modes}
+                if calibration is not None:
+                    calibration = modes, focals
+        align_fingerprint.assert_continuation_policy(scene, modes, focals, fixed_modes)
     except ValueError as exc:
         logger.error('%s', exc)
         return 1
