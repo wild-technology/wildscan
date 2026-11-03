@@ -30,6 +30,48 @@ _NORTH_BANDS = set('NPQRSTUVWX')
 
 _ZONE_IN_NAME = re.compile(r'_(\d{1,2})([C-HJ-NP-X])_UTM\.txt$', re.IGNORECASE)
 
+NO_POSITION_ACCURACY_M = 100.0
+
+
+def positionless_priors_enabled() -> bool:
+    """Opt in to loose orientation-only priors and local-frame imports."""
+    return os.environ.get('RS_POSITIONLESS_PRIORS') == '1'
+
+
+def flight_log_has_positions(path: str) -> bool:
+    """Whether a semicolon-delimited log contains a complete finite XY pair.
+
+    Refuse partial or non-finite positions rather than classifying them as
+    orientation-only data. Read every row, including rows after a valid pair.
+    """
+    positioned = False
+    with open(path, encoding='utf-8-sig') as source:
+        next(source, None)
+        for number, line in enumerate(source, 2):
+            if not line.strip():
+                continue
+            cells = line.rstrip('\r\n').split(';')
+            if len(cells) < 3:
+                raise ValueError(f'{path}:{number}: flight-log row needs XY cells')
+            x, y = cells[1].strip(), cells[2].strip()
+            if bool(x) != bool(y):
+                raise ValueError(f'{path}:{number}: incomplete flight-log XY position')
+            if x and y:
+                if _finite(x) is None or _finite(y) is None:
+                    raise ValueError(f'{path}:{number}: non-finite flight-log XY position')
+                positioned = True
+    return positioned
+
+
+def flight_log_frame(path: str | None) -> str:
+    """Keep legacy filename frames; optionally detect tagged positionless logs."""
+    if not path or utm_zone_from_flight_log_name(path) is None:
+        return 'local_euclidean'
+    if (positionless_priors_enabled() and os.path.isfile(path)
+            and not flight_log_has_positions(path)):
+        return 'local_euclidean'
+    return 'utm'
+
 
 def assert_one_zone(paths, context: str) -> tuple[int, str] | None:
     """The single UTM zone shared by every flight log in ``paths``.
@@ -157,6 +199,8 @@ def crs_for_flight_log(path: str | None) -> str | None:
     zone_band = utm_zone_from_flight_log_name(path)
     if zone_band is None:
         return None
+    if flight_log_frame(path) != 'utm':
+        return None
     return f'EPSG:{epsg_for_utm_zone(*zone_band)}'
 
 
@@ -221,8 +265,7 @@ def ensure_frame_match(flight_log_path: str, template_path: str) -> str:
     as NOT the dominant suppressor - backlog B7 - but a silently
     mis-framed trajectory is wrong regardless of what it costs).
     """
-    expected = ('utm' if utm_zone_from_flight_log_name(flight_log_path)
-                else 'local_euclidean')
+    expected = flight_log_frame(flight_log_path)
     declared = params_template_frame(template_path)
     if declared not in ('unknown', expected):
         remedy = (

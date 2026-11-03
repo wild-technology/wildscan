@@ -19,7 +19,7 @@ from .. import (
     camera_registry,
     component_manifest,
 )
-from ..flight_logs import (ensure_frame_match, find_flight_log, require_utm_zone,
+from ..flight_logs import (ensure_frame_match, find_flight_log, flight_log_frame, require_utm_zone,
                            utm_zone_from_flight_log_name, write_flight_log_params)
 from ..image_exts import PROCESSABLE_IMAGE_EXTS
 from ..wildsync_intake.intake import (
@@ -45,8 +45,8 @@ def flight_log_params_template(metadata_dir: str, log_path: str | None = None,
     """
     if explicit:
         return explicit
-    name = ("FlightLogParamsLocal.xml" if log_path and not
-            utm_zone_from_flight_log_name(log_path) else "FlightLogParams.xml")
+    name = ("FlightLogParamsLocal.xml" if log_path and
+            flight_log_frame(log_path) == 'local_euclidean' else "FlightLogParams.xml")
     return os.path.join(metadata_dir, name)
 
 
@@ -397,6 +397,16 @@ class RealityScanAlignment(RSModule):
         if not os.path.isdir(input_folder):
             raise ValueError(f"Input folder {input_folder} is not a directory")
 
+        image_paths = self.__image_paths(input_folder)
+        fixed_modes = calibration_sidecars.fixed_calibration_modes(
+            image_paths, calibration_modes)
+        if fixed_modes:
+            calibration_modes = {
+                **(calibration_sidecars.default_calibration_modes()
+                   if calibration_modes is None else calibration_modes),
+                **fixed_modes,
+            }
+
         sidecar_modes = sidecar_focals = None
         if calibration_modes and any(
                 mode in calibration_sidecars.SIDECAR_MODES
@@ -426,7 +436,6 @@ class RealityScanAlignment(RSModule):
         # A scene smaller than the export threshold could never export a
         # component, however well it aligned.
         configured_min_component_size = min_component_size
-        image_paths = self.__image_paths(input_folder)
         lowered = (small_scene_min_component_size(min_component_size, len(image_paths))
                    if require_flight_log else min_component_size)
         if lowered != min_component_size:

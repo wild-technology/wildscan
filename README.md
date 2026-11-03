@@ -269,6 +269,30 @@ Reserved section `"realityscan"`:
 All keys are optional; omit the file entirely for auto-detection and
 defaults.
 
+## Optional prior policies
+
+Existing camera and navigation defaults remain unchanged. Two policies can
+be selected explicitly in the PowerShell session that starts the pipeline:
+
+- `$env:RS_VOYIS_FIXED_CALIBRATION = "1"` selects the rectified Voyis
+  Discovery Stereo pinhole calibration with an exact prior. Images must be
+  upright and exactly 2816 x 2816 pixels; incompatible images are refused
+  before sidecars are changed. Existing filename families and camera groups
+  are retained. Explicit `off` or `groups` decisions take precedence. The
+  older `RS_VOYIS_CALIB_SIDECARS` approximate-prior option remains available.
+- `$env:RS_POSITIONLESS_PRIORS = "1"` writes 100 m uncertainty for missing
+  position axes when a Sony image still has an orientation prior. Position
+  cells remain empty. A tagged flight log with no XY positions is imported
+  in local Euclidean coordinates; logs with positions keep their UTM frame.
+  Mixed position coverage produces a warning, and merging logs with
+  different effective frames is refused. Explicit import templates must
+  match the selected frame. Existing untagged local-frame logs are supported.
+
+Remove the corresponding environment variable to restore the default policy.
+Changing either policy changes the alignment fingerprint; re-align affected
+inputs before growing or merging them. Validate these options on a small
+dataset in the target RealityScan installation before production use.
+
 ## RealityScan execution
 
 RealityScan workflows use a shared execution layer —

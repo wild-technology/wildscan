@@ -25,13 +25,13 @@ import json
 import os
 import subprocess
 import time
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from module_base.scene_checkpoint import scene_bundle
 
 from . import calibration_sidecars, camera_registry
-from .flight_logs import utm_zone_from_flight_log_name
+from .flight_logs import flight_log_frame
 
 FINGERPRINT_NAME = "align_inputs.json"
 SCHEMA = 1
@@ -160,8 +160,7 @@ def build_fingerprint(flight_log: str | None,
     (``calibration_sidecar_sha256``): the mode and focal alone do not
     change when a prior in cameras.json is edited, the sidecar text does.
     """
-    frame = ("utm" if (flight_log and utm_zone_from_flight_log_name(flight_log))
-             else "local_euclidean")
+    frame = flight_log_frame(flight_log)
     fp = {
         "schema": SCHEMA,
         "created": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -267,6 +266,50 @@ def read_fingerprint(out_dir: str) -> dict | None:
             return json.load(fh)
     except (OSError, ValueError):
         return None
+
+
+def assert_continuation_policy(component_path: str,
+                               modes: Mapping[str, str] | None = None,
+                               starting_focals: Mapping[str, float] | None = None,
+                               fixed_cameras: Iterable[str] = ()
+                               ) -> None:
+    """Refuse known frame/fixed-profile changes before continuing a scene.
+
+    Historical scenes without recorded inputs remain supported. This checks
+    recorded evidence only; it does not certify an unrecorded native scene.
+    """
+    saved = read_fingerprint(os.path.dirname(os.path.abspath(component_path)))
+    if not saved:
+        return
+    log = saved.get('flight_log') or {}
+    path = log.get('path')
+    frame = saved.get('frame')
+    if frame == 'euclidean':
+        frame = 'local_euclidean'
+    if (path and os.path.isfile(path) and frame in ('utm', 'local_euclidean')
+            and frame != flight_log_frame(path)):
+        raise ValueError('Flight-log coordinate policy changed since alignment; '
+                         're-align before growing or merging this component')
+    current = (calibration_sidecars.default_calibration_modes()
+               if modes is None else modes)
+    old_hashes = saved.get('calibration_sidecar_sha256') or {}
+    for key in set(old_hashes) | set(fixed_cameras):
+        old_hash = old_hashes.get(key)
+        camera = camera_registry.CAMERAS.get(key)
+        if camera is None:
+            continue
+        fixed = camera_registry.fixed_calibration_camera(camera, enabled_only=False)
+        if fixed is None:
+            continue
+        fixed_hash = hashlib.sha256(
+            calibration_sidecars.sidecar_xmp(fixed, 'prior').encode('utf-8')).hexdigest()
+        if (old_hash == fixed_hash
+                or camera_registry.fixed_calibration_camera(camera) is not None):
+            expected = calibration_sidecar_hashes(
+                {key: current.get(key, 'off')}, starting_focals).get(key)
+            if expected != old_hash:
+                raise ValueError(f'{key} calibration policy changed since alignment; '
+                                 're-align before growing or merging this component')
 
 
 def matches_current(out_dir: str, current: dict) -> bool:
