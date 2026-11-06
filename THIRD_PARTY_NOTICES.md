@@ -6,7 +6,7 @@ Wild Scan is released under the MIT licence (see `LICENSE`). Third-party package
 
 [`sbom.spdx.json`](sbom.spdx.json) is the SPDX 2.3 inventory generated in a clean **Windows / Python 3.13.16 / AMD64** environment during [Windows checks](https://github.com/wild-technology/wildscan/actions/runs/40266672247). It records exact installed versions, transitive dependency relationships and runtime, development and build scopes.
 
-The source revision recorded by that run is [`60b5fe0`](https://github.com/wild-technology/wildscan/commit/60b5fe08a82f48e73d3b8a42532d62e2c3330ae4). The snapshot describes that tested environment, rather than the historical survey-processing environment or every future installation.
+The original source revision is retained in the SPDX provenance. That revision predates the historical-report cleanup; the inventory remains a record of the original tested environment. The snapshot describes that tested environment, rather than the historical survey-processing environment or every future installation.
 
 [`third_party_licenses/`](third_party_licenses/) contains the licence and notice files supplied by the installed distributions. Its [`manifest.json`](third_party_licenses/manifest.json) records their SHA-256 hashes. Custom `LicenseRef` values preserve supplied text when metadata provides no unambiguous SPDX expression; no licence is guessed from a generic classifier. Git preserves the evidence files byte for byte.
 
