@@ -1,4 +1,4 @@
-"""Per-feature merge planning (PRODUCT_READINESS must-fix 1 groundwork).
+"""Per-feature merge planning.
 
 The delivery target is ONE unified component per major surveyed feature
 (ON2026: hull, two masts, a stern flag-pole), and the machine constraint

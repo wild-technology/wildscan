@@ -768,7 +768,7 @@ Variables are **popped**, not left stale, when the feature is off — a leftover
 A pre-consolidation workflow that aligned and modelled in one pass (and exhausted all nine
 argument slots on booleans) has been removed from the repository. Do not rebuild it;
 `AlignZone.bat` plus `GenerateModel.bat` is the supported split [VERIFIED: project testing 2026-07-28 deprecation
-sweep; ARCHITECTURE.md architecture section].
+sweep].
 
 Three shapes recur across all of them and are worth copying:
 

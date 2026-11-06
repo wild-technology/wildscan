@@ -184,6 +184,4 @@ dive_1/
 Keep the reports and project files with the exports. For scripted operation,
 see [the command-line stages](SETUP-AND-RUN.md#63-the-stages-on-the-command-line).
 For interpretation of flight logs, scale, and coordinate frames, use the
-[RealityScan reference](rs-reference/README.md). The
-[historical H2023 walkthrough](WORKFLOW_WALKTHROUGH.md) shows one recorded
-dataset's decisions and outcomes; its counts are not targets for every survey.
+[RealityScan reference](rs-reference/README.md).

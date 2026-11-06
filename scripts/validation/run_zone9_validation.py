@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Automated CLI test plan for the zone_9 dataset (see docs/validation/zone9_test_plan.md).
+"""Automated CLI validation for the zone_9 dataset.
 
 Phases:
   0  preflight   - executable/dataset/GPU/flight-log checks, no RealityScan run

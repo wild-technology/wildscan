@@ -170,7 +170,6 @@ working copies or the pipeline's prepared zone tree.
 | Understand a new dataset or resume a workspace | [Analyze a dataset](docs/ANALYZE_A_DATASET.md) |
 | Understand the code and native execution rules | [Architecture](ARCHITECTURE.md) |
 | Look up a RealityScan command, setting, or failure mode | [RealityScan reference](docs/rs-reference/README.md) |
-| Read past experiments and product decisions | [Historical records](docs/README.md#historical-records) |
 
 ## Repository layout
 
@@ -197,9 +196,7 @@ working copies or the pipeline's prepared zone tree.
 | `scripts/campaigns/` | Dataset-specific ON2026 drivers, the calibration ladder, and the overnight workbench campaign |
 | `scripts/validation/` | Explicit manual checks: zone_9 native validation, preprocessing checks, and the Cesium depth probe |
 | `scripts/analysis/score_yellow_pixels.py` | Image analysis for yellow-pixel contamination; writes scores without changing images |
-| `docs/validation/`, `docs/validation/results/` | Dated experiment plans and preserved result evidence |
 | `flightlogs.xml`, `sensorsdb.xml` | RealityScan reference data |
-| `docs/code-review-2026-07.md` | What the first-machine validation changed and why (read before trusting older assumptions about the CLI layer) |
 
 The canonical utility names are `georeference_survey.py`, `decimate_images.py`,
 and `poses_to_flight_log.py`. The former names `geoall.py`, `decimator.py`, and
@@ -219,12 +216,6 @@ omitting it uses a temporary directory. The native zone_9 runner is
 It runs RealityScan alignment; `probe_cesium_depth.py` creates a real Cesium
 probe asset. Campaign drivers live under `scripts/campaigns/` and retain their
 campaign-specific paths and settings.
-
-Retired scripts are excluded from the published tree. Their
-[original archive snapshot](https://github.com/wild-technology/wildscan/tree/0401a5a04097cba149989f7e8c60e57c09c1c549/archive)
-remains available for historical citations; a local `archive/` is ignored.
-The dated plans in `docs/validation/` retain the filenames and commands used
-when those experiments were recorded. Current commands use the layout above.
 
 ### Preprocessing default
 
@@ -516,6 +507,4 @@ All prompts default to your previous answers (see `rs_settings.json`).
 Set `RS_HEADLESS=0` to boot the RealityScan instance with its GUI
 visible; alignment settings always come from
 `modules/realityscan_interface/RS_CLI/Metadata/AlignmentParams.xml`,
-never instance defaults. Design
-rationale for the settings and the merge strategy:
-`docs/settings-evaluation-2026-07.md`.
+never instance defaults.

@@ -2,7 +2,7 @@ r"""ON2026 run3: planned campaign from M:\ON2026_run3 (2026-08-28).
 
 Campaign requirements (all mandatory):
   - zones <= 10,000 images, Z-aware 3D zoning (C-20260730-06), POOL layout
-    (canonical pool + full-path logs + .imagelist - FLIGHTLOG_ARCHITECTURE)
+    (canonical pool + full-path logs + .imagelist)
   - per-eye calibration groups L/R with the COLMAP-solved PINHOLE
     intrinsics, delivered via the VALIDATED channel: per-image XMPs in a
     separate dir + -addImageWithCalibration rscmd (calibration_sidecars

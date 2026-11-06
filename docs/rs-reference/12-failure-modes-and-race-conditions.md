@@ -932,8 +932,7 @@ happened".
   the pattern — a `for` loop firing 20 `-delegateTo * -add`, then `-align`, `-save`,
   `-quit`. [OFFICIAL: tutorials/commandline_deleg]
 - **Behaviour, established here.** The delegating process returns at **hand-over**, not at
-  completion, and the queue is **FIFO**. [UNDOCUMENTED] [VERIFIED: every production run;
-  `ARCHITECTURE.md` "RealityScan 2.2 CLI facts"]
+  completion, and the queue is **FIFO**. [UNDOCUMENTED] [VERIFIED: project testing]
 - **Consequence, useful.** Instant commands such as `-set` can be fired without a
   completion wait, because FIFO guarantees they are applied before the next queued
   operation. This is what makes the F-04 mitigation (parse `AlignmentParams.xml`, apply
@@ -1042,10 +1041,6 @@ happened".
   Bounds: `SHUTDOWN_VERIFY_TIMEOUT_SECONDS = 900`, `STATUS_CALL_TIMEOUT_SECONDS = 60`.
   A hung `-getStatus` is treated as *running* so callers stay conservative.
   [VERIFIED: `realityscan_cli.py`]
-- **Note a live doc discrepancy.** `ARCHITECTURE.md` documents the shutdown bound as 300 s while
-  the code uses 900 s. **The code is authoritative for behaviour; the doc is stale.**
-  [VERIFIED: realityscan_cli.py lines 190–191 vs ARCHITECTURE.md hard rule 3]
-
 ### F-31 — Two orchestrators on one instance name; and `RS_INSTANCE` that was never an input
 - **Symptom.** A probe session believed it was isolated on `RS2` and ran on `RS1` — the
   production instance. It could have `-quit` a live production run.
@@ -1779,7 +1774,7 @@ the substrate. Every trap below was hit in practice.
   routed to stdout raises.
 - **Mitigation.** ASCII-only console output everywhere; `PYTHONIOENCODING=utf-8` when
   parsing UTF-8 sources. Hit twice.
-  [VERIFIED: project testing, 2026-07; `ARCHITECTURE.md` "Environment"]
+  [VERIFIED: project testing, 2026-07]
 - **Note for readers of the app log.** `RealityScan.log` itself is not ASCII — its banner
   line contains a non-ASCII copyright glyph (`RealityScan 2.2.0.119430 ... 2026 Epic Games,
   Inc.`), so a parser that opens it in the console codepage can fail on line 1. Read it

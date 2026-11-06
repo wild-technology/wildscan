@@ -70,7 +70,7 @@ MOUNTS: dict[str, dict | None] = {
 # FRAGMENTS solves: on the known-good bow fixture, loose gave ONE
 # component at scale ~1.0 under both distortion models, while tight split
 # it into 2-3 and pushed the maximal component's scale further from truth
-# (0.886 / 0.826). See docs/validation/priors_distortion_test_plan.md "bow 2x2".
+# (0.886 / 0.826).
 # An intermediate ladder (3/3/0.5 etc.) is untested - queued, and now
 # REACHABLE: these are the defaults of real parameters/flags rather than
 # function locals in two files (audit 2026-08-07 - step 6 of the operator's
@@ -78,8 +78,8 @@ MOUNTS: dict[str, dict | None] = {
 #
 # Orientation: HONEST 15 deg until the camera mounts are ground-truthed
 # (PD-0/PD-0b dose-response, 2026-07-25: 3-5 deg claimed accuracy
-# FRAGMENTS the solve, 15 deg gains registration; see the
-# PRIORS_DISTORTION_TEST_PLAN orientation-frame caveat). Pitch accuracy is
+# FRAGMENTS the solve, 15 deg gains registration; see the orientation-frame
+# discussion in docs/rs-reference/13-camera-rigs-priors-and-orientation.md). Pitch accuracy is
 # per-mount (MOUNTS[...]['p_acc']) and is deliberately NOT listed here.
 #
 # ONE table, shared by modules/georeference and georeference_survey.py (which already

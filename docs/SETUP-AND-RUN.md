@@ -6,8 +6,7 @@ start at [part 6](#6-run-the-pipeline).
 
 For the first-use input checklist and workspace inspection, follow
 [Analyze a dataset](ANALYZE_A_DATASET.md). The
-[documentation index](README.md) routes the current guides and historical
-experiment records.
+[documentation index](README.md) lists the current guides.
 
 Commands are written for **Windows PowerShell**, the platform the pipeline
 runs on. Where a step differs in Command Prompt, the alternative is given.
@@ -227,7 +226,7 @@ and skips. The geoid check skips when the EGM2008 grid is unavailable.
 Investigate failures before processing a dive; a failure can concern the
 environment, a fixture, or the code. Offline tests do not establish native
 RealityScan acceptance. Manual validation commands live in
-`scripts/validation/`, with historical plans under `docs/validation/`.
+`scripts/validation/`.
 
 ---
 
@@ -575,5 +574,3 @@ Settings you typed live in `rs_settings.json` in the checkout root.
   routing index that sends any RealityScan question to the right one of its
   14 documents in a single hop. Its "facts that silently destroy a run"
   table is worth reading before your first production run.
-- `docs/WORKFLOW_WALKTHROUGH.md` — a plain-language end-to-end walkthrough
-  of one real dive, from raw images to a final project.

@@ -1,6 +1,6 @@
 @echo off
 setlocal
-:: One-click launcher for the zone_9 CLI test plan (see docs/validation/zone9_test_plan.md).
+:: One-click launcher for zone_9 CLI validation.
 :: Pass-through args go to run_zone9_validation.py (e.g. run_zone9_validation.bat --full).
 
 set "TEST_PYTHON=%VIRTUAL_ENV%\Scripts\python.exe"
