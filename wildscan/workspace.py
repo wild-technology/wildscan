@@ -1,11 +1,7 @@
-"""Compatibility shim - the census implementation moved to
-modules/workspace_census.py.
+"""Compatibility exports for the processing-layer workspace census.
 
-WHY: run_models.py (a repo-root driver) needed the Workspace census, and
-the layering rule is that wildscan may import modules, never the reverse -
-so the implementation lives in modules/ and this module re-exports it for
-the TUI package and any older imports. The private helpers are re-exported
-too because wildscan.session imports them (_find_flight_logs, _load_json).
+The implementation lives in modules.workspace_census so both drivers and the
+terminal interface share the same output and stage-status interpretation.
 """
 from __future__ import annotations
 

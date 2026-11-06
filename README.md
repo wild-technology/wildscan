@@ -25,7 +25,7 @@ WildScan prepares the inputs and runs the workflows around it.
 **New users:** [install the checkout](docs/SETUP-AND-RUN.md), then follow
 [Analyze a dataset](docs/ANALYZE_A_DATASET.md). Browse the
 [documentation index](docs/README.md) for current instructions, developer
-guidance, and dated experiment records.
+guidance, and native command reference.
 
 The project is beta software for **native Windows 11** and RealityScan 2.2.
 Offline regression tests cover planning, calculations, artifact detection,
@@ -136,7 +136,19 @@ filename. OpenCV supplies the decoder; a separate `ffmpeg.exe` is unnecessary.
 Check the [video and navigation formats](docs/SETUP-AND-RUN.md#your-data) before
 preparing a dive.
 
-## Analyze a dataset
+## Terminal interface
+
+WildScan uses a Textual interface inside the terminal. It supports keyboard
+navigation and clickable controls. Launch it with `python -m wildscan` after
+installation, optionally followed by a workspace path.
+
+The screens follow this sequence: dataset setup → stage selection → parameter
+questions → plan summary → live execution → workspace results. Completed stages
+start unselected. Preparation and alignment run as one command; execution pauses
+between subsequent stage commands unless **Continue Automatically** is enabled. The results screen lists recorded outputs; inspect reconstruction
+quality separately in RealityScan or your mesh viewer.
+
+### Analyze a dataset
 
 1. Open WildScan and identify the expedition and dive.
 2. Point it at a delivered cruise folder, a folder of still images, or a
@@ -176,7 +188,10 @@ working copies or the pipeline's prepared zone tree.
 | Path | Purpose |
 |---|---|
 | `main.py` | Interactive orchestrator: Extract Images → Georeference → Preprocess Images → Batch Directory → RealityScan Alignment (per-zone `AlignZone.bat`; `RS_MODULES`/`RS_NO_INTERACTIVE` env vars for non-interactive runs; a failed module stops the chain) |
-| `wildscan/` | WildScan, the interactive TUI portal over the whole pipeline (`wildscan [workspace]`): session setup, resume-aware stage picking, parameter wizard, live run screen, pipeline census + final-components browser — always launching stages through the canonical drivers |
+| `wildscan/app.py` | Terminal screens and application entry point |
+| `wildscan/discovery.py` | Read-only imagery, navigation and camera inventories |
+| `wildscan/session.py` | Session settings, stage selection, parameter questions and command assembly |
+| `wildscan/runner.py` | Driver subprocesses, streamed logs, progress and cancellation |
 | `merge_zones.py` | Iterative component-merge driver: imports every per-zone component into a fresh scene and escalates mechanism/flags (georef merge → align+rematch → +High overlap) until the registration target is met; writes `merge_report.json` |
 | `grow_zone.py` | Within-zone component growth driver: on a zone's ORIGINAL aligned scene, checkpointed global re-align → rigid `-mergeComponents` → per-component grow passes, each accepted or rolled back on the never-shrink invariant; writes `grow_report.json` |
 | `run_models.py` | Models every final component of a workspace's assembly via `GenerateModel.bat`, scale-gated (metric-scale oracle per component) and smallest-first; resumable via `models_report.json` |
@@ -187,8 +202,8 @@ working copies or the pipeline's prepared zone tree.
 | `georeference_survey.py` | Standalone georeferencing (ROV nav CSV → RealityScan flight logs), including multiprocessing image copying. |
 | `poses_to_flight_log.py` | Post-alignment: rewrite camera locations back to UTM from the computed poses (XMP sidecars), producing a refined flight log + per-image nav-error QC |
 | `decimate_images.py` | Copy a percentage of images to a new folder (dataset thinning) |
-| `timestamp_rename.py` | Rename `cam*_TIMESTAMP.jpg` → `TIMESTAMP_cam*.jpg` and validate JPEG integrity (was the misnamed `masking.py` — it never masked; renamed 2026-08-07) |
-| `organize_by_date.py` | Sort images into per-date subfolders (was `test.py`) |
+| `timestamp_rename.py` | Rename `cam*_TIMESTAMP.jpg` → `TIMESTAMP_cam*.jpg` and validate JPEG integrity |
+| `organize_by_date.py` | Sort images into per-date subfolders |
 | `module_base/` | Framework: `RSModule` base class, `Parameter`, `SettingsStore` |
 | `modules/realityscan_interface/` | Everything that talks to RealityScan — see below |
 | `modules/extract_images/`, `modules/georeference/`, `modules/preprocess_images/`, `modules/image_batcher/` | Pipeline modules used by `main.py` |
@@ -222,11 +237,7 @@ campaign-specific paths and settings.
 `Preprocess Images` applies CLAHE (clip 2.0, 8×8 tiles, L channel in LAB)
 to copies under `<output>/preprocessed_images`, leaving the originals in
 place. The current workflow uses those processed copies for both alignment
-and texturing. The default was A/B-measured on a zone_9 400-image subset (2026-07-21,
-`scripts/validation/run_zone9_validation.py`): baseline registered 0% (no component at
-all), CLAHE 2.0/8×8 registered 59.8% and beat every neighboring clip/tile
-setting; gray-world white balance *reduced* registration (~34%) and is
-off by default.
+and texturing. Gray-world white balance is off by default.
 
 ### Known duplication
 
@@ -396,28 +407,6 @@ once), give each its own instance name and GPU set:
 
 The per-instance lock makes concurrent same-instance runs fail fast instead
 of corrupting each other.
-
-## Lessons learned
-
-Collected from prior iterations of this repo (some of which only survive in
-git history — see `git log`):
-
-- **Delegation pickup race**: use the delegation and completion checks
-  described in [RealityScan execution](#realityscan-execution).
-- **No operation timeouts**: 10+ hour alignments are normal on these
-  datasets. Startup and shutdown verification are bounded; the defaults live
-  in `modules/realityscan_interface/realityscan_cli.py` and can be overridden in settings.
-- **Never detect completion by process name** — see the
-  `RealityCapture.exe`/`RealityScan.exe` bug above.
-- **Suppress dialogs for unattended runs**: `-silent` + `appAutoSaveMode=false`;
-  a modal dialog on a headless box hangs the pipeline forever.
-- **`-set` keys changed with the RealityScan rename**: the app settings are
-  `appQuitOnError`, `appProcessAction`, `appProcessExecCmd`,
-  `appProcessActionTime` — the legacy `RealityCapture*` key names the old
-  scripts used are not valid in 2.x.
-- **Network drives are slow for RealityScan file operations** — export to a
-  local disk first, then copy to network storage.
-- **One instance, one orchestrator** — enforced by the lock file.
 
 ## Typical workflows
 

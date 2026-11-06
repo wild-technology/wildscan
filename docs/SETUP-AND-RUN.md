@@ -394,7 +394,8 @@ dive and folder and remembers your answers.
 On the first screen, enter the dataset locations and a separate results root.
 Choose **View results** to inspect an existing workspace without processing,
 or **Continue** to create or open the working results root and choose stages.
-The nine stages are shown in order with a detected state and summary:
+The imagery/video workflow shows these stages in order, with a detected state
+and summary:
 
 1. Extract Images
 2. Georeference
@@ -405,6 +406,9 @@ The nine stages are shown in order with a detected state and summary:
 7. Generate Models
 8. Export Deliverables
 9. Publish (Cesium / Nira)
+
+Wild Sync replaces Extract Images and Georeference with a single **Wild Sync
+Intake** stage; the remaining stages are shared.
 
 Select the needed stages, answer the parameter wizard, then review the source
 paths, settings, and publishing notice before choosing **Run**. The app streams

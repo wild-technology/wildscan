@@ -22,7 +22,10 @@ publishing acceptance.
 
 | Location | Responsibility |
 | --- | --- |
-| `wildscan/` | Interactive interface, session planning and stage supervision |
+| `wildscan/app.py` | Terminal interface screens |
+| `wildscan/discovery.py` | Read-only source and camera discovery |
+| `wildscan/session.py` | Session planning, persistence, questions and stage commands |
+| `wildscan/runner.py` | Subprocess supervision, logs and progress |
 | `main.py` | Extraction, georeferencing, preprocessing, batching and alignment |
 | `grow_zone.py`, `merge_zones.py` | Component growth and assembly |
 | `run_models.py`, `finish_model.py` | Model creation and finishing |
